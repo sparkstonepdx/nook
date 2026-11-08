@@ -5,30 +5,37 @@
 #   app delete NAME
 #   app sync NAME|--all
 #   app invite                      one-time dashboard login link
+#   app grant list|add|rm ...       which domains an app may use (app grant for help)
 # As an app user (over SSH from GitHub Actions, or by hand):
-#   app site deploy DIR SUBDOMAIN   publish DIR at https://SUBDOMAIN.<base domain> (atomic swap)
-#   app site rm SUBDOMAIN           take it down
-#   app site restart SUBDOMAIN      restart a running app
-#   app site list                   what's live
-#   app site logs SUBDOMAIN [N]     last N lines (default 100) of a running app's log
+#   app site deploy DIR SITE        publish DIR (atomic swap). SITE: "blog" = blog.<default domain>,
+#                                   "client.com" / "www.client.com" = exactly that (needs a grant)
+#   app site rm SITE                take it down
+#   app site restart SITE           restart a running app
+#   app site list                   what's in sites/
+#   app site logs SITE [N]          last N lines (default 100) of a running app's log
 # A folder with an executable "run" is started as a service on $PORT; anything else is served as static files.
 set -euo pipefail
-case "${1:-}" in create|delete|sync|invite)
+case "${1:-}" in create|delete|sync|invite|grant)
   [ "$(id -u)" = 0 ] || { echo "app $1: run as root"; exit 1; }
   c="$1"; shift; [ "$c" = invite ] && c=dashboard-invite
   exec "/usr/local/sbin/app-$c" "$@";;
 esac
 S="$HOME/sites"
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [ -d "$S" ] || usage
-sub() { [[ "${1:-}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo "bad subdomain: '${1:-}' (lowercase letters, digits, dashes)"; exit 1; }; }
-wait_live() { sleep 3; }
+sub() { [[ "${1:-}" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo "bad site name: '${1:-}' (a subdomain like blog, or a hostname like client.com)"; exit 1; }; }
+# app-sync runs a few seconds after sites/ changes; report whether the site actually went live
+live() {  # site -> 0 once its hostname is in this app's Caddy config
+  local f; f="/etc/caddy/apps/$(basename "$HOME").caddy"
+  if [[ "$1" == *.* ]]; then grep -qxF "$1 {" "$f" 2>/dev/null; else grep -qE "^$1\.[a-z0-9.-]+ [{]$" "$f" 2>/dev/null; fi
+}
+wait_live() { local _; for _ in 1 2 3 4 5 6 7 8 9 10; do live "$1" && return 0; sleep 1; done; return 1; }
 
 [ "${1:-}" = site ] || usage
 case "${2:-}" in
   deploy)
     src="${3:-}"; s="${4:-}"
-    [ -d "$src" ] || { echo "usage: app site deploy DIR SUBDOMAIN"; exit 1; }; sub "$s"
+    [ -d "$src" ] || { echo "usage: app site deploy DIR SITE"; exit 1; }; sub "$s"
     rm -rf "$S/.new-$s" "$S/.old-$s"
     cp -a "$src" "$S/.new-$s"
     chmod -R a+rX,go-w "$S/.new-$s"
@@ -36,9 +43,10 @@ case "${2:-}" in
     mv "$S/.new-$s" "$S/$s"
     rm -rf "$S/.old-$s"
     kind=static; [ -x "$S/$s/run" ] && kind="running app"
-    wait_live; echo "deployed $s ($kind)";;
+    if wait_live "$s"; then echo "deployed $s ($kind)"
+    else echo "deployed $s ($kind), but it is NOT live: this app isn't allowed that hostname, it's reserved, or another app has it. Ask the server admin."; exit 2; fi;;
   rm) sub "${3:-}"; rm -rf "${S:?}/$3"; echo "removed $3";;
-  restart) sub "${3:-}"; [ -x "$S/$3/run" ] || { echo "$3 is not a running app"; exit 1; }; touch "$S/.restart-$3"; wait_live; echo "restarted $3";;
+  restart) sub "${3:-}"; [ -x "$S/$3/run" ] || { echo "$3 is not a running app"; exit 1; }; touch "$S/.restart-$3"; sleep 3; echo "restarted $3";;
   list)
     for d in "$S"/*/; do [ -d "$d" ] || continue; n=$(basename "$d")
       if [ -x "$d/run" ]; then echo "$n  (running app)"; else echo "$n  (static)"; fi; done;;

@@ -36,7 +36,7 @@ fi
 chmod 600 /etc/apps/config
 . /etc/apps/config
 
-install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite /usr/local/sbin/
+install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite sbin/app-grant sbin/app-admin-caddy /usr/local/sbin/
 install -m 755 bin/app /usr/local/bin/
 install -m 644 systemd/app-sync@.path systemd/app-sync@.service /etc/systemd/system/
 install -m 644 logrotate/apps /etc/logrotate.d/apps
@@ -47,19 +47,26 @@ systemctl daemon-reload
 # --- dashboard at admin.$BASE_DOMAIN ---
 [ -f /etc/apps/dashboard.env ] || printf 'DASHBOARD_PORT=19999\n' > /etc/apps/dashboard.env
 chmod 600 /etc/apps/dashboard.env
-DASHBOARD_PORT=$(sed -n 's/^DASHBOARD_PORT=//p' /etc/apps/dashboard.env)
-printf 'admin.%s {\n\treverse_proxy 127.0.0.1:%s\n}\n' "$BASE_DOMAIN" "$DASHBOARD_PORT" > /etc/caddy/admin.caddy
-grep -qxF 'import /etc/caddy/admin.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/admin.caddy\n' >> /etc/caddy/Caddyfile
 systemctl enable app-dashboard >/dev/null 2>&1; systemctl restart app-dashboard
+
+# grants: which hostnames each app may use. Apps from before grants existed keep *.BASE_DOMAIN.
+if [ ! -f /etc/apps/grants ]; then
+  : > /etc/apps/grants
+  for h in /srv/apps/*/; do [ -d "$h" ] && echo "$(basename "$h") sub $BASE_DOMAIN" >> /etc/apps/grants; done
+fi
+chmod 600 /etc/apps/grants
 
 grep -qxF 'import /etc/caddy/apps/*.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/apps/*.caddy\n' >> /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && systemctl reload caddy
+app-admin-caddy >/dev/null
 echo "App host installed (base domain $BASE_DOMAIN, SSH host $SSH_HOST)."
 echo "Each app's subdomains need DNS: easiest is one wildcard record, *.$BASE_DOMAIN -> this server."
-echo "Create an app with: app create NAME, or at https://admin.$BASE_DOMAIN"
+echo "Create an app with: app create NAME, or in the dashboard"
 if [ ! -s /etc/apps/dashboard/users.json ] || [ "$(cat /etc/apps/dashboard/users.json)" = "{}" ]; then
   echo
-  echo "Dashboard setup (one use, expires in 24h). Open it to create your admin login:"
-  app-dashboard-invite
-  echo "Lost it? Run app invite for a new one."
+  echo "Dashboard setup: open this to create your admin login (one use, expires in 24h)."
+  echo "The certificate is self-signed, so accept the browser warning:"
+  echo "  $(app-dashboard-invite)"
+  echo "Then set the dashboard's address (e.g. admin.$BASE_DOMAIN) on its Domains page."
+  echo "Lost it? Run: app invite"
 fi

@@ -20,6 +20,8 @@ List everything live: `app sync --all` prints each site and its port. Ports are 
 - Folder layout: `/srv/apps/NAME/{sites,builds,data,logs}` plus `secrets.env` (600, loaded into running apps)
 - A site folder with an executable `run` file is a running app: it gets `$PORT`, `$SITE`, `$SITE_HOST`, and runs as unit `site-APP--SUB.service`. Any other folder is served as static files (`200.html` = SPA fallback, `404.html` = not found).
 - As the app user (`runuser -u app-NAME -- bash -l`): `app site deploy DIR SUB`, `app site list|rm|restart|logs SUB`
+- Dashboard: `https://<server ip>:8443` (self-signed, always on as the backup way in) and the address set on its Domains page. New login link: `app invite`
+- Domains: `app grant list`, `app grant add APP domain|sub|host NAME`. Site folder `blog` = blog.<default domain>; `client.com` = exactly that.
 - Config: `/etc/apps/config` (base domain, reserved names, default limits)
 
 ## Caddy

@@ -42,6 +42,9 @@ MemoryMax=$MEM
 CPUQuota=$CPU
 TasksMax=$TASKS
 EOF
+# by default an app may use any subdomain of the default domain (not the root domain itself)
+G=/etc/apps/grants; touch "$G"; chmod 600 "$G"
+grep -qxF "$NAME sub $BASE_DOMAIN" "$G" || echo "$NAME sub $BASE_DOMAIN" >> "$G"
 systemctl daemon-reload
 systemctl enable --now "app-sync@$NAME.path" >/dev/null 2>&1 || echo "warning: could not start the sites/ watcher"
 
@@ -66,6 +69,7 @@ $(cat "$KEYTMP/key")
 --- Variables ---
 APP_DIR       $DIR
 BASE_DOMAIN   $BASE_DOMAIN
+SITE          $NAME            (production hostname or subdomain; change it if this app serves its own domain)
 
 ================ Paste this to Claude ================
 
@@ -73,14 +77,14 @@ Write the GitHub Actions workflow(s) that deploy this repo to my server.
 
 How the server works (already set up, don't change it):
 - SSH as \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }} with the private key in secrets.DEPLOY_SSH_KEY. Write secrets.DEPLOY_KNOWN_HOSTS to ~/.ssh/known_hosts; never disable host key checking. No root, no sudo, no pty. The user can only write inside \${{ vars.APP_DIR }}.
-- Every folder in \${{ vars.APP_DIR }}/sites/ is live at https://<folder>.\${{ vars.BASE_DOMAIN }} within a few seconds, and goes away when the folder is deleted. Folder names: lowercase letters, digits, dashes.
+- Every folder in \${{ vars.APP_DIR }}/sites/ is live within a few seconds, and goes away when the folder is deleted. The folder name is the hostname: a name without a dot ("blog") is a subdomain of \${{ vars.BASE_DOMAIN }}; a name with a dot ("client.com", "www.client.com", "pr-12.client.com") is used exactly. The server only publishes hostnames this app has been granted; use vars.SITE as the production name. A root domain with no www folder automatically gets www redirecting to it.
   - Static site (Surge-style): just files. 200.html is the SPA fallback, 404.html the not-found page.
-  - Running app: if the folder contains an executable named "run", the server starts it as a service with the working directory set to that folder. It must listen on 127.0.0.1:\$PORT. Also in its environment: \$SITE (the folder/subdomain), \$SITE_HOST (the full hostname), \$HOME. Caddy proxies HTTPS and websockets to it. It's restarted on redeploy and on crash. Logs go to \${{ vars.APP_DIR }}/logs/<folder>.log. Runtime secrets: write them to \${{ vars.APP_DIR }}/secrets.env (KEY=value lines) from repo secrets; every running app gets them as environment variables.
+  - Running app: if the folder contains an executable named "run", the server starts it as a service with the working directory set to that folder. It must listen on 127.0.0.1:\$PORT. Also in its environment: \$SITE (the folder name), \$SITE_HOST (the full hostname), \$HOME. Caddy proxies HTTPS and websockets to it. It's restarted on redeploy and on crash. Logs go to \${{ vars.APP_DIR }}/logs/<folder>.log. Runtime secrets: write them to \${{ vars.APP_DIR }}/secrets.env (KEY=value lines) from repo secrets; every running app gets them as environment variables.
   - A running app can only see its own app folder; keep anything persistent in \${{ vars.APP_DIR }}/data/, never inside the site folder (a redeploy replaces it).
 - Deploy with the helper on the server (atomic swap, triggers the restart):
     rsync -a --delete ./out/ \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }}:builds/<name>/
-    ssh ... app site deploy builds/<name> <subdomain>
-  Other commands: app site rm <subdomain>, app site restart <subdomain>, app site list, app site logs <subdomain>.
+    ssh ... app site deploy builds/<name> <site>
+  Other commands: app site rm <site>, app site restart <site>, app site list, app site logs <site>.
 - Build in the Action (the server has 1 GB RAM). For binaries, build for x86_64 Linux (glibc, Debian 13).
-- Production: deploy main to the repo's subdomain. PR previews: deploy pull requests to <name>-pr-<number>, post the URL as a PR comment, and run "app site rm" when the PR closes.
+- Production: deploy main to \${{ vars.SITE }}. PR previews: if SITE has no dot, deploy to <SITE>-pr-<number>; if it has a dot, deploy to pr-<number>.<SITE with any leading "www." removed> (e.g. pr-12.client.com). Post the URL as a PR comment, and run "app site rm" when the PR closes.
 EOF
