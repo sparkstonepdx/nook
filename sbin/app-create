@@ -1,12 +1,16 @@
 #!/bin/bash
-# app-create NAME
+# app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]
 # Creates an isolated app user + folder (/srv/apps/NAME) and a deploy key for GitHub Actions,
 # then prints the secrets/variables to paste into the repo and instructions to hand to Claude.
 set -euo pipefail
 . /etc/apps/config
 
-NAME="${1:-}"
-[[ "$NAME" =~ ^[a-z][a-z0-9-]{1,23}$ ]] || { echo "usage: app-create NAME  (lowercase letters, digits, dashes)"; exit 1; }
+NAME="${1:-}"; shift || true
+MEM="$APP_MEMORY_MAX"; CPU="$APP_CPU_QUOTA"; TASKS="$APP_TASKS_MAX"
+while [ $# -gt 0 ]; do case "$1" in
+  --memory) MEM="$2"; shift 2;; --cpu) CPU="$2"; shift 2;; --tasks) TASKS="$2"; shift 2;;
+  *) echo "unknown option $1"; exit 1;; esac; done
+[[ "$NAME" =~ ^[a-z][a-z0-9-]{1,23}$ ]] || { echo "usage: app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]"; exit 1; }
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 U="app-$NAME"; DIR="$APPS_DIR/$NAME"
 id "$U" >/dev/null 2>&1 && { echo "$U already exists"; exit 1; }
@@ -34,9 +38,9 @@ cat > "/etc/systemd/system/app-$NAME.slice" <<EOF
 Description=Resource limits for app $NAME
 
 [Slice]
-MemoryMax=$APP_MEMORY_MAX
-CPUQuota=$APP_CPU_QUOTA
-TasksMax=$APP_TASKS_MAX
+MemoryMax=$MEM
+CPUQuota=$CPU
+TasksMax=$TASKS
 EOF
 systemctl daemon-reload
 systemctl enable --now "app-sync@$NAME.path" >/dev/null 2>&1 || echo "warning: could not start the sites/ watcher"
@@ -71,7 +75,7 @@ How the server works (already set up, don't change it):
 - SSH as \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }} with the private key in secrets.DEPLOY_SSH_KEY. Write secrets.DEPLOY_KNOWN_HOSTS to ~/.ssh/known_hosts; never disable host key checking. No root, no sudo, no pty. The user can only write inside \${{ vars.APP_DIR }}.
 - Every folder in \${{ vars.APP_DIR }}/sites/ is live at https://<folder>.\${{ vars.BASE_DOMAIN }} within a few seconds, and goes away when the folder is deleted. Folder names: lowercase letters, digits, dashes.
   - Static site (Surge-style): just files. 200.html is the SPA fallback, 404.html the not-found page.
-  - Running app: if the folder contains an executable named "run", the server starts it as a service with the working directory set to that folder. It must listen on 127.0.0.1:\$PORT (provided in the environment). Caddy proxies HTTPS and websockets to it. It's restarted on redeploy and on crash. Logs go to \${{ vars.APP_DIR }}/logs/<folder>.log. Runtime secrets: write them to \${{ vars.APP_DIR }}/secrets.env (KEY=value lines) from repo secrets; every running app gets them as environment variables.
+  - Running app: if the folder contains an executable named "run", the server starts it as a service with the working directory set to that folder. It must listen on 127.0.0.1:\$PORT. Also in its environment: \$SITE (the folder/subdomain), \$SITE_HOST (the full hostname), \$HOME. Caddy proxies HTTPS and websockets to it. It's restarted on redeploy and on crash. Logs go to \${{ vars.APP_DIR }}/logs/<folder>.log. Runtime secrets: write them to \${{ vars.APP_DIR }}/secrets.env (KEY=value lines) from repo secrets; every running app gets them as environment variables.
   - A running app can only see its own app folder; keep anything persistent in \${{ vars.APP_DIR }}/data/, never inside the site folder (a redeploy replaces it).
 - Deploy with the helper on the server (atomic swap, triggers the restart):
     rsync -a --delete ./out/ \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }}:builds/<name>/

@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
-command -v caddy >/dev/null || { echo "install Caddy first (setup-subduction.sh does)"; exit 1; }
+command -v caddy >/dev/null || { echo "install Caddy first (setup-server.sh does)"; exit 1; }
 
 BASE_DOMAIN="${BASE_DOMAIN:-sparkstonepdx.com}"
 SSH_HOST="${SSH_HOST:-$(hostname -I | awk '{print $1}')}"
@@ -22,11 +22,11 @@ APPS_DIR=/srv/apps
 PORTS_FILE=/etc/apps/ports
 STATE_DIR=/etc/apps/state
 CADDY_APPS_DIR=/etc/caddy/apps
-# running apps get ports from this range (Subduction 8080, push 8090, analytics 8100 sit outside it)
+# running apps get ports from this range
 PORT_MIN=20000
 PORT_MAX=29999
 # subdomains no app can claim
-RESERVED_SUBDOMAINS="www subduction sync push analytics mail admin api"
+RESERVED_SUBDOMAINS="www mail admin"
 # limits shared by everything one app runs
 APP_MEMORY_MAX=256M
 APP_CPU_QUOTA=50%

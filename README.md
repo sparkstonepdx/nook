@@ -12,13 +12,23 @@ Create a folder: it's live within seconds. Delete it: it's gone. Swap it: a runn
 
 ## Install (once, as root)
 
-1. Caddy must already be installed (`setup-subduction.sh` does it).
+On a fresh Debian VPS, run in this order:
+
+```
+sh setup-server.sh            # packages, swap, Caddy, Subduction binaries, /root/README.md
+./install.sh                  # app-host
+./extras/subduction-app.sh    # Subduction as the first app (subduction.sparkstonepdx.com)
+```
+
+Details:
+
+1. Caddy must already be installed (`setup-server.sh` does it).
 2. Add a wildcard DNS record `*.sparkstonepdx.com` pointing at this server.
 3. `./install.sh` (set `BASE_DOMAIN=` / `SSH_HOST=` to override). Settings live in `/etc/apps/config`.
 
 ## Admin commands (root)
 
-- `app-create NAME`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
+- `app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
 - `app-delete NAME`: stops everything the app runs, removes its sites, user, and folder (asks for confirmation).
 - `app-sync NAME | --all`: regenerate an app's routes and services. Runs automatically when `sites/` changes; run it by hand after editing `/etc/apps/config`.
 
@@ -42,7 +52,7 @@ app site logs SUBDOMAIN [N]
 | `logs/<sub>.log` | stdout/stderr of running apps (rotated at 10 MB, 3 kept) |
 | `secrets.env` | `KEY=value` lines, loaded into every running app's environment |
 
-Running apps listen on `127.0.0.1:$PORT`. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice capped by `APP_MEMORY_MAX` / `APP_CPU_QUOTA` / `APP_TASKS_MAX` (256M / 50% / 256 by default).
+Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are set too. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice, capped at 256M memory / 50% CPU / 256 tasks by default (set per app with `app-create` options, or edit `/etc/systemd/system/app-NAME.slice`).
 
 ## Rules and isolation
 

@@ -50,7 +50,7 @@ Group=app-$a
 Slice=app-$a.slice
 WorkingDirectory=$home/sites/$s
 ExecStart=$home/sites/$s/run
-Environment=PORT=$3 HOST=127.0.0.1
+Environment=PORT=$3 HOST=127.0.0.1 SITE=$s SITE_HOST=$s.$BASE_DOMAIN
 EnvironmentFile=-$home/secrets.env
 Restart=always
 RestartSec=2
