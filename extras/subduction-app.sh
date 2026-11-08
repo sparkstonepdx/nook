@@ -56,7 +56,8 @@ exec ./subduction_cli server --socket "127.0.0.1:$PORT" --data-dir "$HOME/data/s
   --key-file "$HOME/data/subduction.key" --service-name "$SITE_HOST"
 RUN
 chown "$U:$U" "$R/run"; chmod 755 "$R/run"
-runuser -u "$U" -- bash -lc "cd ~ && app site deploy $R $SUB"
+# the deploy's own live check can finish before the sites/ watcher fires; sync here either way
+runuser -u "$U" -- bash -lc "cd ~ && app site deploy $R $SUB" || true
 app-sync "$A"
 echo
 echo "Subduction is live at wss://$HOST  (logs: $H/logs/$SUB.log)"
