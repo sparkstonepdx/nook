@@ -1,5 +1,5 @@
-// app-host dashboard: list apps and their sites, run the admin commands, read logs.
-// Runs as root on 127.0.0.1 behind Caddy (https://admin.<domain>).
+// app-host dashboard: a JSON API (root-only commands) plus the static UI in ./public (built from ./ui).
+// Runs as root on 127.0.0.1 behind Caddy.
 // Users log in with a username + password; sessions are HMAC-signed cookies.
 // New users (including the first admin) join through one-time invite links.
 //   node server.mjs                        run the server (DASHBOARD_PORT, default 19999)
@@ -30,7 +30,6 @@ const hostOf = (site) => (site.includes(".") ? site : `${site}.${CONFIG.BASE_DOM
 const readGrants = () => { try { return fs.readFileSync(GRANTS_FILE, "utf8").split("\n").filter(Boolean).map((l) => l.split(" ")); } catch { return []; } };
 
 // ---------- helpers ----------
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 function run(cmd, args, { input, timeout = 120_000 } = {}) {
   return new Promise((resolve) => {
@@ -112,213 +111,6 @@ function tail(file, lines = 300) {
   } catch (e) { return `(no log: ${e.code || e.message})`; }
 }
 
-// ---------- pages ----------
-const CSS = `
-:root{color-scheme:light dark;--line:color-mix(in oklch,currentColor 18%,transparent);--muted:color-mix(in oklch,currentColor 60%,transparent)}
-body{font:14px/1.45 system-ui,sans-serif;max-width:1100px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 12px}h2{font-size:16px;margin:24px 0 8px}
-table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
-th{font-weight:600;color:var(--muted)}.app{border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.muted{color:var(--muted)}
-pre{background:color-mix(in oklch,currentColor 6%,transparent);padding:10px;border-radius:6px;overflow:auto;white-space:pre-wrap;max-height:70vh}
-form{display:inline}button,input{font:inherit;padding:3px 8px}input{width:8em}
-.ok{color:oklch(0.6 0.15 145)}.bad{color:oklch(0.6 0.2 25)}a{color:inherit}
-`;
-const page = (title, body) => `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${CSS}</style>${body}`;
-const btn = (action, fields, label, confirm) =>
-  `<form method=post action="/action"${confirm ? ` onsubmit="return confirm(${esc(JSON.stringify(confirm))})"` : ""}><input type=hidden name=do value="${esc(action)}">${Object.entries(fields).map(([k, v]) => `<input type=hidden name="${esc(k)}" value="${esc(v)}">`).join("")}<button>${esc(label)}</button></form>`;
-const stateClass = (s) => (s === "active" ? "ok" : s ? "bad" : "muted");
-
-async function home(me) {
-  const [apps, sys] = await Promise.all([listApps(), systemInfo()]);
-  const appsHtml = apps.map((a) => `
-<div class=app>
-  <div class=row><h2 style="margin:0">${esc(a.name)}</h2>
-    <span class=muted>memory ${esc(a.memory || "?")} / ${esc(a.memoryMax || "?")} · cpu ${esc(a.cpu || "?")} · watcher <span class=${stateClass(a.watcher)}>${esc(a.watcher)}</span></span>
-    <span style="flex:1"></span>${btn("sync", { app: a.name }, "sync")}
-    <a href="/logs?app=${encodeURIComponent(a.name)}">sync log</a>
-  </div>
-  ${a.sites.length ? `<table><tr><th>site</th><th>type</th><th>state</th><th>port</th><th>memory</th><th></th></tr>
-  ${a.sites.map((s) => `<tr>
-    <td><a href="https://${esc(s.host)}" target=_blank rel=noopener>${esc(s.host)}</a>${s.live ? "" : ` <span class=bad title="skipped by app-sync: not granted, reserved, or claimed by another app. Run sync to see why.">not live</span>`}</td>
-    <td>${s.running ? "app" : "static"}</td>
-    <td>${s.running ? `<span class=${stateClass(s.ActiveState)}>${esc(s.ActiveState || "?")}</span> <span class=muted>${esc(s.SubState || "")}${s.MainPID && s.MainPID !== "0" ? ` pid ${esc(s.MainPID)}` : ""}${Number(s.NRestarts) ? ` · ${esc(s.NRestarts)} restarts` : ""}</span>` : ""}</td>
-    <td>${esc(s.port)}</td><td>${esc(mb(s.MemoryCurrent))}</td>
-    <td class=row>${s.running ? `${btn("restart", { app: a.name, site: s.name }, "restart")}${btn("stop", { app: a.name, site: s.name }, "stop")}${btn("start", { app: a.name, site: s.name }, "start")}<a href="/logs?app=${encodeURIComponent(a.name)}&site=${encodeURIComponent(s.name)}">logs</a>` : ""}
-      ${btn("rmsite", { app: a.name, site: s.name }, "remove", `Remove ${s.host}? This deletes sites/${s.name}.`)}</td>
-  </tr>`).join("")}</table>` : `<p class=muted>No sites yet.</p>`}
-  ${a.redirects.length ? `<p class=muted>Redirects: ${a.redirects.map((r) => esc(r)).join(", ")} → root domain</p>` : ""}
-  <p class=muted>Allowed: ${a.grants.length ? a.grants.map(([, k, n]) => esc(grantLabel(k, n))).join(", ") : "nothing"} · <a href="/domains">edit</a></p>
-  <details><summary class=muted>delete app</summary>
-    <form method=post action="/action"><input type=hidden name=do value=delete><input type=hidden name=app value="${esc(a.name)}">
-    Type <b>${esc(a.name)}</b> to delete its folder, user and everything in it: <input name=confirm autocomplete=off> <button>delete</button></form>
-  </details>
-</div>`).join("");
-
-  return page("app-host", `
-<div class=row><h1>app-host</h1><span class=muted>${esc(CONFIG.BASE_DOMAIN)} · caddy <span class=${stateClass(sys.caddy)}>${esc(sys.caddy)}</span></span>
-<span style="flex:1"></span>${btn("syncall", {}, "sync all")}${btn("caddy", {}, "reload caddy")}
-<a href="/domains">domains</a><a href="/users">users</a><span class=muted>${esc(me)}</span><form method=post action="/logout"><button>log out</button></form></div>
-<h2>New app</h2>
-<form method=post action="/action"><input type=hidden name=do value=create>
-  <input name=app placeholder=name required pattern="[a-z][a-z0-9\\-]{1,23}" style="width:12em">
-  memory <input name=memory value="${esc(CONFIG.APP_MEMORY_MAX)}"> cpu <input name=cpu value="${esc(CONFIG.APP_CPU_QUOTA)}"> tasks <input name=tasks value="${esc(CONFIG.APP_TASKS_MAX)}">
-  <button>create</button></form>
-<h2>Apps</h2>${appsHtml || "<p class=muted>No apps.</p>"}
-<h2>System</h2><pre>${esc(sys.free)}\n${esc(sys.df)}</pre>`);
-}
-
-function resultPage(title, cmd, r, note = "") {
-  return page(title, `<h1>${esc(title)}</h1><p><a href="/">← back</a></p>${note}
-<p class=muted>$ ${esc(cmd)} → exit <span class=${r.code === 0 ? "ok" : "bad"}>${esc(r.code)}</span></p><pre>${esc(r.out || "(no output)")}</pre>`);
-}
-
-// ---------- actions ----------
-async function action(f) {
-  const app = f.get("app") || "", site = f.get("site") || "", what = f.get("do");
-  if (app && !NAME_RE.test(app)) return resultPage("Bad app name", "", { code: 1, out: "invalid app name" });
-  if (site && !SITE_RE.test(site)) return resultPage("Bad site name", "", { code: 1, out: "invalid site name" });
-  const exists = app && fs.existsSync(path.join(APPS_DIR, app));
-  const needApp = () => (!exists ? resultPage("No such app", "", { code: 1, out: app }) : null);
-  const unit = `site-${app}--${site}.service`;
-
-  switch (what) {
-    case "create": {
-      const mem = f.get("memory"), cpu = f.get("cpu"), tasks = f.get("tasks");
-      if (!/^\d+[KMG]$/.test(mem) || !/^\d+%$/.test(cpu) || !/^\d+$/.test(tasks)) return resultPage("Bad limits", "", { code: 1, out: "memory like 256M, cpu like 50%, tasks a number" });
-      const args = [app, "--memory", mem, "--cpu", cpu, "--tasks", tasks];
-      return resultPage(`Created ${app}`, `app-create ${args.join(" ")}`, await run("app-create", args),
-        `<p class=bad><b>This page shows the deploy private key once.</b> Copy the secrets into GitHub now; reloading won't bring them back.</p>`);
-    }
-    case "delete": {
-      if (needApp()) return needApp();
-      if (f.get("confirm") !== app) return resultPage("Not deleted", "", { code: 1, out: "confirmation didn't match the app name" });
-      return resultPage(`Deleted ${app}`, `app-delete ${app}`, await run("app-delete", [app], { input: `${app}\n` }));
-    }
-    case "sync": if (needApp()) return needApp(); return resultPage(`Synced ${app}`, `app-sync ${app}`, await run("app-sync", [app]));
-    case "syncall": return resultPage("Synced all", "app-sync --all", await run("app-sync", ["--all"]));
-    case "caddy": {
-      const v = await run("caddy", ["validate", "--config", "/etc/caddy/Caddyfile"]);
-      if (v.code !== 0) return resultPage("Caddy config invalid, not reloaded", "caddy validate", v);
-      return resultPage("Reloaded Caddy", "systemctl reload caddy", await run("systemctl", ["reload", "caddy"]));
-    }
-    case "restart": case "stop": case "start":
-      if (needApp()) return needApp();
-      return resultPage(`${what} ${hostOf(site)}`, `systemctl ${what} ${unit}`, await run("systemctl", [what, unit]));
-    case "rmsite": {
-      if (needApp()) return needApp();
-      const dir = path.join(APPS_DIR, app, "sites", site);
-      if (!site || !fs.existsSync(dir)) return resultPage("No such site", "", { code: 1, out: dir });
-      fs.rmSync(dir, { recursive: true, force: true });
-      return resultPage(`Removed ${hostOf(site)}`, `rm -rf ${dir} && app-sync ${app}`, await run("app-sync", [app]));
-    }
-  }
-  return resultPage("Unknown action", "", { code: 1, out: String(what) });
-}
-
-async function logs(q) {
-  const app = q.get("app") || "", site = q.get("site") || "";
-  if (!NAME_RE.test(app) || (site && !SITE_RE.test(site))) return page("Logs", "bad name");
-  const auto = `<script>scrollTo(0,document.body.scrollHeight)</script>`;
-  if (site) {
-    const file = path.join(APPS_DIR, app, "logs", `${site}.log`);
-    const unit = await run("systemctl", ["status", "--no-pager", "-n", "0", `site-${app}--${site}.service`], { timeout: 5000 });
-    return page(`${site} logs`, `<h1>${esc(hostOf(site))}</h1><p><a href="/">← back</a> · <a href="">refresh</a></p>
-<pre>${esc(unit.out)}</pre><h2>${esc(file)}</h2><pre>${esc(tail(file))}</pre>${auto}`);
-  }
-  const j = await run("journalctl", ["--no-pager", "-n", "200", "-u", `app-sync@${app}.service`], { timeout: 10000 });
-  return page(`${app} sync log`, `<h1>${esc(app)}: app-sync log</h1><p><a href="/">← back</a> · <a href="">refresh</a></p><pre>${esc(j.out)}</pre>${auto}`);
-}
-
-// ---------- domains ----------
-const grantLabel = (k, n) => (k === "domain" ? `${n} + *.${n}` : k === "sub" ? `*.${n}` : n);
-
-function domainsPage(notice = "") {
-  const grants = readGrants();
-  let apps = [];
-  try { apps = fs.readdirSync(APPS_DIR).filter((n) => NAME_RE.test(n)).sort(); } catch {}
-  const dash = readEnvFile(DASH_ENV);
-  const ipOn = (dash.DASHBOARD_IP_ACCESS || "on") === "on";
-  const ip = CONFIG.SSH_HOST;
-  // DNS records each granted domain needs
-  const dns = new Map();
-  for (const [, k, n] of grants) {
-    if (k !== "sub") dns.set(n, `A  ${n}  →  ${ip}`);
-    if (k !== "host") dns.set(`*.${n}`, `A  *.${n}  →  ${ip}`);
-  }
-  if (dash.DASHBOARD_HOST) dns.set(dash.DASHBOARD_HOST, `A  ${dash.DASHBOARD_HOST}  →  ${ip}   (dashboard)`);
-  return page("Domains", `<div class=row><h1>Domains</h1><span style="flex:1"></span><a href="/">← apps</a></div>${notice}
-<h2>Default domain</h2>
-<p class=muted>Site folders without a dot ("blog") are subdomains of this. Changing it moves every app's "*.old" grant to the new domain.</p>
-<form method=post action="/domains"><input type=hidden name=do value=default><input name=domain value="${esc(CONFIG.BASE_DOMAIN)}" style="width:20em" required> <button>change</button></form>
-
-<h2>What each app may use</h2>
-<table><tr><th>app</th><th>allowed</th><th></th></tr>
-${grants.map(([a, k, n]) => `<tr><td>${esc(a)}</td><td>${esc(grantLabel(k, n))}</td><td>${btnTo("/domains", "rm", { app: a, kind: k, name: n }, "remove", `Remove ${grantLabel(k, n)} from ${a}? Its sites on it go offline.`)}</td></tr>`).join("") || `<tr><td colspan=3 class=muted>none</td></tr>`}
-</table>
-<form method=post action="/domains" class=row style="margin-top:8px"><input type=hidden name=do value=add>
-  <select name=app required>${apps.map((a) => `<option>${esc(a)}</option>`).join("")}</select>
-  <select name=kind><option value=domain>whole domain (root + subdomains)</option><option value=sub>subdomains only</option><option value=host>exactly this hostname</option></select>
-  <input name=name placeholder="client.com" required style="width:16em"> <button>allow</button></form>
-<p class=muted>The first app to publish a hostname keeps it. A root domain with no www folder gets www redirecting to it.</p>
-
-<h2>DNS records needed</h2><pre>${esc([...dns.values()].join("\n"))}</pre>
-
-<h2>Dashboard address</h2>
-<p class=muted>Point DNS for it at ${esc(ip)} first. No app can use this hostname. Leave empty to use only the IP address.</p>
-<form method=post action="/domains"><input type=hidden name=do value=dashhost><input name=host value="${esc(dash.DASHBOARD_HOST || "")}" placeholder="admin.${esc(CONFIG.BASE_DOMAIN)}" style="width:20em"> <button>save</button></form>
-<p>Backup: https://${esc(ip)}:${esc(dash.DASHBOARD_IP_PORT || "8443")} (self-signed certificate) is <b class=${ipOn ? "ok" : "bad"}>${ipOn ? "on" : "off"}</b>. Keep it on so you can still get in if DNS breaks.</p>
-${ipOn ? (dash.DASHBOARD_HOST ? btnTo("/domains", "ip", { to: "off" }, "turn off", "Turn off IP access? If DNS for the dashboard address breaks, you'll need SSH to get back in.") : "") : btnTo("/domains", "ip", { to: "on" }, "turn on")}`);
-}
-
-function setEnvLine(file, key, value) {
-  let text = ""; try { text = fs.readFileSync(file, "utf8"); } catch {}
-  const re = new RegExp(`^${key}=.*$`, "m");
-  text = re.test(text) ? text.replace(re, `${key}=${value}`) : `${text.replace(/\n?$/, "\n")}${key}=${value}\n`;
-  fs.writeFileSync(file, text, { mode: 0o600 });
-}
-
-async function domainsAction(f) {
-  const what = f.get("do");
-  const show = (title, cmd, r) => resultPage(title, cmd, r).replace('<a href="/">← back</a>', '<a href="/domains">← domains</a>');
-  if (what === "add" || what === "rm") {
-    const app = f.get("app") || "", kind = f.get("kind") || "", name = (f.get("name") || "").toLowerCase().replace(/^\*\./, "");
-    if (!NAME_RE.test(app) || !["domain", "sub", "host"].includes(kind) || !DOMAIN_RE.test(name)) return show("Bad input", "", { code: 1, out: "app, kind or domain is invalid" });
-    const args = [what, app, kind, name];
-    return show(`${what === "add" ? "Allowed" : "Removed"} ${grantLabel(kind, name)} for ${app}`, `app-grant ${args.join(" ")}`, await run("app-grant", args));
-  }
-  if (what === "default") {
-    const d = (f.get("domain") || "").toLowerCase();
-    if (!DOMAIN_RE.test(d)) return show("Bad domain", "", { code: 1, out: d });
-    const old = CONFIG.BASE_DOMAIN;
-    if (d === old) return domainsPage();
-    setEnvLine(CONFIG_FILE, "BASE_DOMAIN", d);
-    const grants = readGrants().map((g) => (g[1] === "sub" && g[2] === old ? [g[0], "sub", d] : g));
-    fs.writeFileSync(GRANTS_FILE, grants.map((g) => g.join(" ") + "\n").join(""), { mode: 0o600 });
-    CONFIG = readEnvFile(CONFIG_FILE);
-    const a = await run("app-admin-caddy", []), b = await run("app-sync", ["--all"]);
-    return show(`Default domain is now ${d}`, "app-admin-caddy && app-sync --all", { code: a.code || b.code, out: `${a.out}\n${b.out}` });
-  }
-  if (what === "dashhost") {
-    const h = (f.get("host") || "").toLowerCase().trim();
-    if (h && !DOMAIN_RE.test(h)) return show("Bad hostname", "", { code: 1, out: h });
-    if (h) {
-      let used = "";
-      try { for (const fn of fs.readdirSync(CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps")) if (fs.readFileSync(path.join(CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps", fn), "utf8").split("\n").some((l) => l === `${h} {` || l === `${h} { # redirect`)) used = fn.replace(/\.caddy$/, ""); } catch {}
-      if (used) return show("Hostname in use", "", { code: 1, out: `${h} is served by app ${used}. Remove that site or pick another name.` });
-    }
-    setEnvLine(DASH_ENV, "DASHBOARD_HOST", h);
-    return show(h ? `Dashboard address is now ${h}` : "Dashboard address removed", "app-admin-caddy", await run("app-admin-caddy", []));
-  }
-  if (what === "ip") {
-    if (f.get("to") === "off" && !readEnvFile(DASH_ENV).DASHBOARD_HOST) return show("Not turned off", "", { code: 1, out: "Set a dashboard address first, or you'd lock yourself out." });
-    const to = f.get("to") === "on" ? "on" : "off";
-    setEnvLine(DASH_ENV, "DASHBOARD_IP_ACCESS", to);
-    return show(`IP access ${to}`, "app-admin-caddy", await run("app-admin-caddy", []));
-  }
-  return show("Unknown action", "", { code: 1, out: String(what) });
-}
-
 // ---------- users, sessions, invites ----------
 const AUTH_DIR = process.env.DASHBOARD_DIR || "/etc/apps/dashboard";
 const USERS_FILE = path.join(AUTH_DIR, "users.json");
@@ -390,41 +182,6 @@ function sessionUser(req) {
 }
 const clearCookie = "sess=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
 
-// ---------- auth pages ----------
-const formPage = (title, inner, msg = "") => page(title, `<div style="max-width:360px;margin:10vh auto"><h1>${esc(title)}</h1>${msg ? `<p class=bad>${esc(msg)}</p>` : ""}${inner}</div>`);
-const field = (name, label, type = "text", extra = "") => `<p><label>${esc(label)}<br><input name=${name} type=${type} ${extra} style="width:100%"></label></p>`;
-
-const loginPage = (msg) => formPage("app-host", `<form method=post action="/login">
-${field("user", "Username", "text", "autocomplete=username autofocus required")}${field("password", "Password", "password", "autocomplete=current-password required")}
-<button>Log in</button></form>`, msg);
-
-const invitePage = (token, msg) => formPage("Create your login", `<form method=post action="/invite">
-<input type=hidden name=t value="${esc(token)}">
-${field("user", "Username (a-z 0-9 . _ -)", "text", 'autocomplete=username required pattern="[a-z0-9._\\-]{2,32}" autofocus')}
-${field("password", "Password (12+ characters)", "password", "autocomplete=new-password required minlength=12")}
-${field("password2", "Again", "password", "autocomplete=new-password required minlength=12")}
-<button>Create login</button></form>`, msg);
-
-function usersPage(me, notice = "") {
-  const users = readJson(USERS_FILE);
-  return page("Users", `<div class=row><h1>Users</h1><span style="flex:1"></span><a href="/">← apps</a></div>${notice}
-<table><tr><th>user</th><th>created</th><th>invited by</th><th></th></tr>
-${Object.entries(users).map(([name, u]) => `<tr><td>${esc(name)}${name === me ? " <span class=muted>(you)</span>" : ""}</td><td>${esc((u.created || "").slice(0, 10))}</td><td>${esc(u.invitedBy || "setup link")}</td>
-<td>${name === me ? "" : btnTo("/users", "deluser", { user: name }, "remove", `Remove ${name}? They are logged out immediately.`)}</td></tr>`).join("")}</table>
-<h2>Invite someone</h2><p class=muted>Makes a one-time link, valid ${INVITE_HOURS} hours. Whoever opens it picks a username and password and gets full access.</p>
-${btnTo("/users", "invite", {}, "make invite link")}
-<h2>Change your password</h2><p class=muted>Logs out your other sessions.</p>
-<form method=post action="/users"><input type=hidden name=do value=password>
-<input name=password type=password autocomplete=new-password minlength=12 required placeholder="new password" style="width:16em">
-<input name=password2 type=password autocomplete=new-password minlength=12 required placeholder="again" style="width:16em"> <button>change</button></form>`);
-}
-
-function btnTo(actionPath, what, fields, label, confirm) {
-  return btn(what, fields, label, confirm).replace('action="/action"', `action="${actionPath}"`);
-}
-
-const linkFor = (req, token) => `https://${req.headers.host}/invite?t=${token}`;
-
 // ---------- CLI: print an invite link (first admin, or locked out) ----------
 if (process.argv[2] === "invite") {
   const i = process.argv.indexOf("--base");
@@ -434,89 +191,261 @@ if (process.argv[2] === "invite") {
   process.exit(0);
 }
 
-// ---------- server ----------
+// ---------- API ----------
+class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+const fail = (status, message) => { throw new HttpError(status, message); };
+const cmdResult = (cmd, r) => ({ ok: r.code === 0, code: r.code, cmd, out: r.out });
+
+function appExists(app) {
+  if (!NAME_RE.test(app || "")) fail(400, "invalid app name");
+  if (!fs.existsSync(path.join(APPS_DIR, app))) fail(404, `no app named ${app}`);
+}
+function checkSite(site) { if (!SITE_RE.test(site || "")) fail(400, "invalid site name"); }
+
+function setEnvLine(file, key, value) {
+  let text = ""; try { text = fs.readFileSync(file, "utf8"); } catch {}
+  const re = new RegExp(`^${key}=.*$`, "m");
+  text = re.test(text) ? text.replace(re, `${key}=${value}`) : `${text.replace(/\n?$/, "\n")}${key}=${value}\n`;
+  fs.writeFileSync(file, text, { mode: 0o600 });
+}
+
+function domainsInfo() {
+  const dash = readEnvFile(DASH_ENV);
+  const grants = readGrants().map(([app, kind, name]) => ({ app, kind, name }));
+  const ip = CONFIG.SSH_HOST;
+  const dns = new Map();
+  for (const { kind, name } of grants) {
+    if (kind !== "sub") dns.set(name, { name, note: "" });
+    if (kind !== "host") dns.set(`*.${name}`, { name: `*.${name}`, note: "" });
+  }
+  if (dash.DASHBOARD_HOST) dns.set(dash.DASHBOARD_HOST, { name: dash.DASHBOARD_HOST, note: "dashboard" });
+  let apps = [];
+  try { apps = fs.readdirSync(APPS_DIR).filter((n) => NAME_RE.test(n)).sort(); } catch {}
+  return {
+    baseDomain: CONFIG.BASE_DOMAIN, ip, apps, grants,
+    dns: [...dns.values()].map((d) => ({ type: "A", ...d, value: ip })),
+    dashboardHost: dash.DASHBOARD_HOST || "",
+    ipAccess: (dash.DASHBOARD_IP_ACCESS || "on") === "on",
+    ipPort: dash.DASHBOARD_IP_PORT || "8443",
+  };
+}
+
+function hostInUse(h) {
+  const dir = CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps";
+  try {
+    for (const fn of fs.readdirSync(dir)) {
+      const lines = fs.readFileSync(path.join(dir, fn), "utf8").split("\n");
+      if (lines.includes(`${h} {`) || lines.includes(`${h} { # redirect`)) return fn.replace(/\.caddy$/, "");
+    }
+  } catch {}
+  return "";
+}
+
+// route table: [method, pattern, handler(ctx)]; patterns use :params
+const routes = [];
+const route = (method, pattern, handler, { open = false } = {}) => {
+  const keys = [];
+  const re = new RegExp("^" + pattern.replace(/:(\w+)/g, (_, k) => (keys.push(k), "([^/]+)")) + "$");
+  routes.push({ method, re, keys, handler, open });
+};
+
+// --- auth (open) ---
 let lastFail = 0;
-const slowDown = async () => {   // one failed login per second, globally
+const slowDown = async () => {   // one failed attempt per second, globally
   const wait = Math.max(0, lastFail + 1000 - Date.now()); lastFail = Date.now() + wait;
   await new Promise((r) => setTimeout(r, wait));
 };
+route("GET", "/api/session", ({ me }) => ({ user: me }), { open: true });
+route("POST", "/api/login", async ({ body, setCookie }) => {
+  const user = String(body.user || "");
+  if (!checkPassword(user, String(body.password || ""))) { await slowDown(); fail(401, "Wrong username or password."); }
+  setCookie(sessionCookie(user, readJson(USERS_FILE)[user].gen));
+  return { user };
+}, { open: true });
+route("POST", "/api/logout", ({ setCookie }) => { setCookie(clearCookie); return {}; }, { open: true });
+route("GET", "/api/invite", ({ query }) => ({ valid: !!getInvite(query.get("t")) }), { open: true });
+route("POST", "/api/invite", async ({ body, setCookie }) => {
+  const t = String(body.token || ""), user = String(body.user || ""), pw = String(body.password || "");
+  const inv = getInvite(t);
+  if (!inv) { await slowDown(); fail(410, "This invite was already used or has expired."); }
+  if (!USER_RE.test(user)) fail(400, "Username: 2-32 of a-z 0-9 . _ -");
+  if (readJson(USERS_FILE)[user]) fail(400, "That username is taken.");
+  if (pw.length < 12) fail(400, "Password needs 12+ characters.");
+  if (pw !== body.password2) fail(400, "Passwords don't match.");
+  useInvite(t);
+  setCookie(sessionCookie(user, setPassword(user, pw, inv.by).gen));
+  return { user };
+}, { open: true });
 
+// --- apps and sites ---
+route("GET", "/api/overview", async () => {
+  const [apps, system] = await Promise.all([listApps(), systemInfo()]);
+  return {
+    baseDomain: CONFIG.BASE_DOMAIN, apps, system,
+    defaults: { memory: CONFIG.APP_MEMORY_MAX, cpu: CONFIG.APP_CPU_QUOTA, tasks: CONFIG.APP_TASKS_MAX },
+  };
+});
+route("POST", "/api/apps", async ({ body }) => {
+  const { name, memory, cpu, tasks } = body;
+  if (!NAME_RE.test(name || "")) fail(400, "Name: a lowercase letter, then 1-23 of a-z 0-9 -");
+  if (!/^\d+[KMG]$/.test(memory) || !/^\d+%$/.test(cpu) || !/^\d+$/.test(String(tasks))) fail(400, "Memory like 256M, CPU like 50%, tasks a number.");
+  const args = [name, "--memory", memory, "--cpu", cpu, "--tasks", String(tasks)];
+  return cmdResult(`app create ${args.join(" ")}`, await run("app-create", args));
+});
+route("POST", "/api/apps/:app/delete", async ({ params, body }) => {
+  appExists(params.app);
+  if (body.confirm !== params.app) fail(400, "Type the app name to confirm.");
+  return cmdResult(`app delete ${params.app}`, await run("app-delete", [params.app], { input: `${params.app}\n` }));
+});
+route("POST", "/api/apps/:app/sync", async ({ params }) => { appExists(params.app); return cmdResult(`app sync ${params.app}`, await run("app-sync", [params.app])); });
+route("POST", "/api/sync-all", async () => cmdResult("app sync --all", await run("app-sync", ["--all"])));
+route("POST", "/api/caddy/reload", async () => {
+  const v = await run("caddy", ["validate", "--config", "/etc/caddy/Caddyfile"]);
+  if (v.code !== 0) return cmdResult("caddy validate", v);
+  return cmdResult("systemctl reload caddy", await run("systemctl", ["reload", "caddy"]));
+});
+route("POST", "/api/apps/:app/sites/:site/:op", async ({ params }) => {
+  const { app, site, op } = params;
+  appExists(app); checkSite(site);
+  if (["restart", "stop", "start"].includes(op)) {
+    const unit = `site-${app}--${site}.service`;
+    return cmdResult(`systemctl ${op} ${unit}`, await run("systemctl", [op, unit]));
+  }
+  if (op === "remove") {
+    const dir = path.join(APPS_DIR, app, "sites", site);
+    if (!fs.existsSync(dir)) fail(404, "no such site");
+    fs.rmSync(dir, { recursive: true, force: true });
+    return cmdResult(`rm -rf ${dir} && app sync ${app}`, await run("app-sync", [app]));
+  }
+  fail(404, "unknown operation");
+});
+route("GET", "/api/apps/:app/sites/:site/logs", async ({ params }) => {
+  const { app, site } = params;
+  appExists(app); checkSite(site);
+  const status = await run("systemctl", ["status", "--no-pager", "-n", "0", `site-${app}--${site}.service`], { timeout: 5000 });
+  return { host: hostOf(site), status: status.out, log: tail(path.join(APPS_DIR, app, "logs", `${site}.log`)) };
+});
+route("GET", "/api/apps/:app/sync-log", async ({ params }) => {
+  appExists(params.app);
+  const j = await run("journalctl", ["--no-pager", "-n", "200", "-u", `app-sync@${params.app}.service`], { timeout: 10000 });
+  return { log: j.out };
+});
+
+// --- domains ---
+route("GET", "/api/domains", () => domainsInfo());
+route("POST", "/api/grants", async ({ body }) => {
+  const op = body.op === "remove" ? "rm" : "add";
+  const app = String(body.app || ""), kind = String(body.kind || ""), name = String(body.name || "").toLowerCase().trim().replace(/^\*\./, "");
+  if (!NAME_RE.test(app) || !["domain", "sub", "host"].includes(kind) || !DOMAIN_RE.test(name)) fail(400, "App, kind or domain is invalid.");
+  const args = [op, app, kind, name];
+  return cmdResult(`app grant ${args.join(" ")}`, await run("app-grant", args));
+});
+route("POST", "/api/default-domain", async ({ body }) => {
+  const d = String(body.domain || "").toLowerCase().trim();
+  if (!DOMAIN_RE.test(d)) fail(400, "Not a valid domain.");
+  const old = CONFIG.BASE_DOMAIN;
+  if (d === old) return { ok: true, code: 0, cmd: "", out: "unchanged" };
+  setEnvLine(CONFIG_FILE, "BASE_DOMAIN", d);
+  const grants = readGrants().map((g) => (g[1] === "sub" && g[2] === old ? [g[0], "sub", d] : g));
+  fs.writeFileSync(GRANTS_FILE, grants.map((g) => g.join(" ") + "\n").join(""), { mode: 0o600 });
+  CONFIG = readEnvFile(CONFIG_FILE);
+  const a = await run("app-admin-caddy", []), b = await run("app-sync", ["--all"]);
+  return cmdResult("app-admin-caddy && app sync --all", { code: a.code || b.code, out: `${a.out}\n${b.out}` });
+});
+route("POST", "/api/dashboard-host", async ({ body }) => {
+  const h = String(body.host || "").toLowerCase().trim();
+  if (h && !DOMAIN_RE.test(h)) fail(400, "Not a valid hostname.");
+  const used = h && hostInUse(h);
+  if (used) fail(409, `${h} is served by app ${used}. Remove that site or pick another name.`);
+  setEnvLine(DASH_ENV, "DASHBOARD_HOST", h);
+  return cmdResult("app-admin-caddy", await run("app-admin-caddy", []));
+});
+route("POST", "/api/ip-access", async ({ body }) => {
+  const on = !!body.on;
+  if (!on && !readEnvFile(DASH_ENV).DASHBOARD_HOST) fail(400, "Set a dashboard address first, or you'd lock yourself out.");
+  setEnvLine(DASH_ENV, "DASHBOARD_IP_ACCESS", on ? "on" : "off");
+  return cmdResult("app-admin-caddy", await run("app-admin-caddy", []));
+});
+
+// --- users ---
+route("GET", "/api/users", ({ me }) => ({
+  users: Object.entries(readJson(USERS_FILE)).map(([name, u]) => ({ name, created: u.created || "", invitedBy: u.invitedBy || "", me: name === me })),
+  inviteHours: INVITE_HOURS,
+}));
+route("POST", "/api/users/invite", ({ me, req }) => ({ link: `https://${req.headers.host}/invite?t=${makeInvite(me)}` }));
+route("POST", "/api/users/:user/remove", ({ me, params }) => {
+  const users = readJson(USERS_FILE);
+  if (params.user === me) fail(400, "You can't remove yourself.");
+  if (!users[params.user]) fail(404, "No such user.");
+  delete users[params.user]; writeJson(USERS_FILE, users);
+  return {};
+});
+route("POST", "/api/password", ({ me, body, setCookie }) => {
+  const pw = String(body.password || "");
+  if (pw.length < 12 || pw !== body.password2) fail(400, "Passwords must match and be 12+ characters.");
+  setCookie(sessionCookie(me, setPassword(me, pw).gen));
+  return {};
+});
+
+// ---------- static UI ----------
+const UI_DIR = process.env.DASHBOARD_UI || path.join(path.dirname(new URL(import.meta.url).pathname), "public");
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".json": "application/json" };
+function serveStatic(url, res, headers) {
+  let rel = decodeURIComponent(url.pathname);
+  let file = path.join(UI_DIR, path.normalize(rel).replace(/^(\.\.[/\\])+/, ""));
+  if (!file.startsWith(UI_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(UI_DIR, "index.html");   // SPA fallback
+  let data;
+  try { data = fs.readFileSync(file); } catch { res.writeHead(500, headers); return res.end("dashboard UI not installed"); }
+  const immutable = file.includes(`${path.sep}assets${path.sep}`);
+  res.writeHead(200, { ...headers, "content-type": TYPES[path.extname(file)] || "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
+  res.end(data);
+}
+
+// ---------- server ----------
 process.on("uncaughtException", (e) => console.error("uncaught:", e));   // keep serving
+const SECURITY = {
+  "x-frame-options": "DENY", "referrer-policy": "same-origin", "x-content-type-options": "nosniff",
+  "content-security-policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+};
+
 http.createServer(async (req, res) => {
-  const send = (code, body, headers = {}) => { res.writeHead(code, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "same-origin", ...headers }); res.end(body); };
-  const redirect = (to, headers = {}) => send(303, "", { location: to, ...headers });
+  const cookies = [];
+  const json = (status, value) => {
+    res.writeHead(status, { ...SECURITY, "content-type": "application/json", "cache-control": "no-store", ...(cookies.length ? { "set-cookie": cookies } : {}) });
+    res.end(JSON.stringify(value));
+  };
   try {
     CONFIG = readEnvFile(CONFIG_FILE);
     const url = new URL(req.url, "http://x");
-    let form = new URLSearchParams();
+    if (!url.pathname.startsWith("/api/")) {
+      if (req.method !== "GET" && req.method !== "HEAD") return json(405, { error: "method not allowed" });
+      return serveStatic(url, res, SECURITY);
+    }
+    let body = {};
     if (req.method === "POST") {
-      // only accept forms posted from this site
-      const origin = req.headers.origin || "";
+      // only JSON posted from this site: a cross-site form can't send application/json without a CORS preflight
       let originHost = "";
-      try { originHost = new URL(origin).host; } catch {}
-      if (!originHost || originHost !== req.headers.host) return send(403, "bad origin");
-      let body = "";
-      for await (const c of req) { body += c; if (body.length > 10_000) return send(413, "too big"); }
-      form = new URLSearchParams(body);
+      try { originHost = new URL(req.headers.origin || "").host; } catch {}
+      if (!originHost || originHost !== req.headers.host) return json(403, { error: "bad origin" });
+      if (!/^application\/json\b/.test(req.headers["content-type"] || "")) return json(415, { error: "expected application/json" });
+      let raw = "";
+      for await (const c of req) { raw += c; if (raw.length > 20_000) return json(413, { error: "too big" }); }
+      try { body = raw ? JSON.parse(raw) : {}; } catch { return json(400, { error: "bad json" }); }
     }
-    const route = `${req.method} ${url.pathname}`;
-
-    // --- public routes ---
-    if (route === "GET /login") return send(200, loginPage());
-    if (route === "POST /login") {
-      const user = form.get("user") || "";
-      if (!checkPassword(user, form.get("password") || "")) { await slowDown(); return send(401, loginPage("Wrong username or password.")); }
-      return redirect("/", { "set-cookie": sessionCookie(user, readJson(USERS_FILE)[user].gen) });
-    }
-    if (route === "GET /invite") {
-      if (!getInvite(url.searchParams.get("t"))) return send(410, formPage("Link expired", `<p>This invite was already used or has expired. Ask an admin for a new one, or run <code>app invite</code> on the server.</p>`));
-      return send(200, invitePage(url.searchParams.get("t")));
-    }
-    if (route === "POST /invite") {
-      const t = form.get("t") || "", user = form.get("user") || "", pw = form.get("password") || "";
-      const inv = getInvite(t);
-      if (!inv) { await slowDown(); return send(410, formPage("Link expired", "<p>This invite was already used or has expired.</p>")); }
-      if (!USER_RE.test(user)) return send(400, invitePage(t, "Username: 2-32 of a-z 0-9 . _ -"));
-      if (readJson(USERS_FILE)[user]) return send(400, invitePage(t, "That username is taken."));
-      if (pw.length < 12) return send(400, invitePage(t, "Password needs 12+ characters."));
-      if (pw !== form.get("password2")) return send(400, invitePage(t, "Passwords don't match."));
-      useInvite(t);
-      const u = setPassword(user, pw, inv.by);
-      return redirect("/", { "set-cookie": sessionCookie(user, u.gen) });
-    }
-
-    // --- everything else needs a session ---
     const me = sessionUser(req);
-    if (!me) return req.method === "GET" ? redirect("/login") : send(401, loginPage("Logged out."));
-    if (route === "POST /logout") return redirect("/login", { "set-cookie": clearCookie });
-    if (route === "GET /") return send(200, await home(me));
-    if (route === "GET /logs") return send(200, await logs(url.searchParams));
-    if (route === "POST /action") return send(200, await action(form));
-    if (route === "GET /users") return send(200, usersPage(me));
-    if (route === "GET /domains") return send(200, domainsPage());
-    if (route === "POST /domains") return send(200, await domainsAction(form));
-    if (route === "POST /users") {
-      const what = form.get("do");
-      if (what === "invite") {
-        const link = linkFor(req, makeInvite(me));
-        return send(200, usersPage(me, `<p>Invite link (one use, ${INVITE_HOURS}h). Send it privately:</p><pre>${esc(link)}</pre>`));
-      }
-      if (what === "deluser") {
-        const users = readJson(USERS_FILE), target = form.get("user");
-        if (target === me || !users[target]) return send(400, usersPage(me, `<p class=bad>Can't remove that user.</p>`));
-        delete users[target]; writeJson(USERS_FILE, users);
-        return send(200, usersPage(me, `<p class=ok>Removed ${esc(target)}.</p>`));
-      }
-      if (what === "password") {
-        const pw = form.get("password") || "";
-        if (pw.length < 12 || pw !== form.get("password2")) return send(400, usersPage(me, `<p class=bad>Passwords must match and be 12+ characters.</p>`));
-        const u = setPassword(me, pw);
-        return send(200, usersPage(me, `<p class=ok>Password changed.</p>`), { "set-cookie": sessionCookie(me, u.gen) });
-      }
+    for (const r of routes) {
+      if (r.method !== req.method) continue;
+      const m = url.pathname.match(r.re);
+      if (!m) continue;
+      if (!r.open && !me) return json(401, { error: "Logged out." });
+      const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
+      const result = await r.handler({ req, me, params, body, query: url.searchParams, setCookie: (c) => cookies.push(c) });
+      return json(200, result ?? {});
     }
-    send(404, "not found");
+    json(404, { error: "not found" });
   } catch (e) {
+    if (e instanceof HttpError) return json(e.status, { error: e.message });
     console.error(e);
-    send(500, `<pre>${esc(e.stack || e)}</pre>`);
+    json(500, { error: String(e.message || e) });
   }
 }).on("clientError", (e, sock) => sock.destroy()).listen(PORT, "127.0.0.1", () => console.log(`dashboard on 127.0.0.1:${PORT}`));

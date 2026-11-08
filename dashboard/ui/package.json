@@ -1,0 +1,19 @@
+{
+  "name": "app-host-dashboard-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.15.3",
+    "@sparkstone/css": "^2.1.0",
+    "solid-js": "^1.9.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vite-plugin-solid": "^2.11.10"
+  }
+}
