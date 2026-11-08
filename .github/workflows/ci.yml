@@ -15,10 +15,11 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
-      - name: Build both binaries
+      - name: Build the binaries and the deploy action
         run: |
           CGO_ENABLED=0 go build -trimpath -o /tmp/app-host ./cmd/app-host
           CGO_ENABLED=0 go build -trimpath -o /tmp/app ./cmd/app
+          CGO_ENABLED=0 go build -trimpath -o /tmp/deploy-action ./cmd/deploy-action
       - name: Dashboard UI build is committed and current
         working-directory: dashboard/ui
         run: |

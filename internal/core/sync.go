@@ -226,7 +226,7 @@ func (h *Host) syncLocked(app string) error {
 				restartUnits = append(restartUnits, UnitName(app, s))
 				os.WriteFile(idFile, []byte(id), 0o600)
 			}
-			published = append(published, caddyfile.Site{Host: host, Port: port})
+			published = append(published, caddyfile.Site{Host: host, Port: port, Folder: s, Version: id})
 		} else {
 			if _, err := os.Stat(filepath.Join("/etc/systemd/system", UnitName(app, s))); err == nil {
 				h.stopUnit(app, s)
@@ -239,7 +239,7 @@ func (h *Host) syncLocked(app string) error {
 					continue
 				}
 			}
-			published = append(published, caddyfile.Site{Host: host, Root: root})
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10)})
 		}
 	}
 	if sites != nil {

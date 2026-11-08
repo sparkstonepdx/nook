@@ -2,7 +2,7 @@ name: app-host deploy
 description: Publish a folder to an app-host server. Pull requests get a preview site that is removed when the PR closes.
 inputs:
   app-host:
-    description: The APP_HOST secret printed by `app create`
+    description: The APP_HOST secret printed by `app-host create`
     required: true
   site:
     description: Site name. "blog" = blog.<default domain>; "client.com" = exactly that hostname (needs a grant)
@@ -22,8 +22,37 @@ inputs:
 outputs:
   url:
     description: The deployed site's URL
+    value: ${{ steps.deploy.outputs.url }}
   site:
     description: The site name that was deployed (the preview name on pull requests)
+    value: ${{ steps.deploy.outputs.site }}
 runs:
-  using: node24
-  main: index.mjs
+  using: composite
+  steps:
+    # The action is a small Go program built from this repo (standard library only). Use the runner's Go if it
+    # has one (GOTOOLCHAIN fetches the version go.mod asks for); otherwise install it.
+    - id: go
+      shell: bash
+      run: |
+        if command -v go >/dev/null 2>&1; then echo "need=false" >> "$GITHUB_OUTPUT"; else echo "need=true" >> "$GITHUB_OUTPUT"; fi
+    - if: steps.go.outputs.need == 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: ${{ github.action_path }}/../go.mod
+        cache: false
+    - shell: bash
+      working-directory: ${{ github.action_path }}/..
+      env:
+        GOTOOLCHAIN: auto
+        CGO_ENABLED: "0"
+        GOFLAGS: -mod=mod
+      run: go build -trimpath -o "$RUNNER_TEMP/app-host-deploy" ./cmd/deploy-action
+    - id: deploy
+      shell: bash
+      env:
+        INPUT_APP_HOST: ${{ inputs.app-host }}
+        INPUT_SITE: ${{ inputs.site }}
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_PREVIEWS: ${{ inputs.previews }}
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: '"$RUNNER_TEMP/app-host-deploy"'
