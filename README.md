@@ -69,6 +69,12 @@ Logins are per user (username + password, scrypt-hashed in `/etc/apps/dashboard/
 - A root domain an app owns (`domain` or `host` grant) with no `www.` folder gets `www.` redirecting to it. A real `www.` site in any app replaces the redirect.
 - The Domains page lists the DNS records each grant needs.
 
+## Catch-all page
+
+Any hostname that points here but isn't a site (or the dashboard) gets a plain 404 page on `http://`. Known sites still redirect to HTTPS, and `http://<ip>` redirects to the dashboard on `:8443`. Edit the page at `/etc/caddy/catchall/index.html`; `install.sh` never overwrites it. `install.sh` removes Debian's stock `:80` welcome-page block from `/etc/caddy/Caddyfile` (keeping a backup), because two `:80` sites can't coexist.
+
+Over `https://`, an unknown hostname fails the TLS handshake instead, because Caddy only has certificates for names it serves.
+
 ## Admin commands (root)
 
 - `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
