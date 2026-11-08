@@ -1,6 +1,9 @@
 // app-host dashboard: list apps and their sites, run the admin commands, read logs.
-// Runs as root on 127.0.0.1 behind Caddy. Auth is HTTP basic auth with one long password.
-//   DASHBOARD_PASSWORD=... DASHBOARD_PORT=19999 node server.mjs
+// Runs as root on 127.0.0.1 behind Caddy (https://admin.<domain>).
+// Users log in with a username + password; sessions are HMAC-signed cookies.
+// New users (including the first admin) join through one-time invite links.
+//   node server.mjs                        run the server (DASHBOARD_PORT, default 19999)
+//   node server.mjs invite [--base URL]    print a one-time invite link (24h)
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -11,9 +14,7 @@ const CONFIG = Object.fromEntries(
   fs.readFileSync(process.env.APPS_CONFIG || "/etc/apps/config", "utf8")
     .split("\n").map((l) => l.match(/^([A-Z_]+)=("?)(.*)\2$/)).filter(Boolean).map((m) => [m[1], m[3]]),
 );
-const PASSWORD = process.env.DASHBOARD_PASSWORD || "";
 const PORT = Number(process.env.DASHBOARD_PORT || 19999);
-if (PASSWORD.length < 32) { console.error("DASHBOARD_PASSWORD must be at least 32 characters"); process.exit(1); }
 
 const APPS_DIR = CONFIG.APPS_DIR || "/srv/apps";
 const NAME_RE = /^[a-z][a-z0-9-]{1,23}$/;
@@ -112,7 +113,7 @@ const btn = (action, fields, label, confirm) =>
   `<form method=post action="/action"${confirm ? ` onsubmit="return confirm(${esc(JSON.stringify(confirm))})"` : ""}><input type=hidden name=do value="${esc(action)}">${Object.entries(fields).map(([k, v]) => `<input type=hidden name="${esc(k)}" value="${esc(v)}">`).join("")}<button>${esc(label)}</button></form>`;
 const stateClass = (s) => (s === "active" ? "ok" : s ? "bad" : "muted");
 
-async function home() {
+async function home(me) {
   const [apps, sys] = await Promise.all([listApps(), systemInfo()]);
   const appsHtml = apps.map((a) => `
 <div class=app>
@@ -138,7 +139,8 @@ async function home() {
 
   return page("app-host", `
 <div class=row><h1>app-host</h1><span class=muted>${esc(CONFIG.BASE_DOMAIN)} · caddy <span class=${stateClass(sys.caddy)}>${esc(sys.caddy)}</span></span>
-<span style="flex:1"></span>${btn("syncall", {}, "app-sync --all")}${btn("caddy", {}, "reload caddy")}</div>
+<span style="flex:1"></span>${btn("syncall", {}, "app-sync --all")}${btn("caddy", {}, "reload caddy")}
+<a href="/users">users</a><span class=muted>${esc(me)}</span><form method=post action="/logout"><button>log out</button></form></div>
 <h2>New app</h2>
 <form method=post action="/action"><input type=hidden name=do value=create>
   <input name=app placeholder=name required pattern="[a-z][a-z0-9\\-]{1,23}" style="width:12em">
@@ -210,37 +212,193 @@ async function logs(q) {
   return page(`${app} sync log`, `<h1>${esc(app)}: app-sync log</h1><p><a href="/">← back</a> · <a href="">refresh</a></p><pre>${esc(j.out)}</pre>${auto}`);
 }
 
-// ---------- server ----------
-const expected = crypto.createHash("sha256").update(PASSWORD).digest();
-let lastFail = 0;
+// ---------- users, sessions, invites ----------
+const AUTH_DIR = process.env.DASHBOARD_DIR || "/etc/apps/dashboard";
+const USERS_FILE = path.join(AUTH_DIR, "users.json");
+const INVITES_FILE = path.join(AUTH_DIR, "invites.json");
+const SECRET_FILE = path.join(AUTH_DIR, "secret");
+const SESSION_DAYS = 30, INVITE_HOURS = 24;
+const USER_RE = /^[a-z0-9._-]{2,32}$/;
 
-function authed(req) {
-  const m = (req.headers.authorization || "").match(/^Basic (.+)$/);
-  if (!m) return false;
-  const decoded = Buffer.from(m[1], "base64").toString();
-  const given = crypto.createHash("sha256").update(decoded.slice(decoded.indexOf(":") + 1)).digest();
-  return crypto.timingSafeEqual(given, expected);
+fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 });
+const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return {}; } };
+const writeJson = (f, v) => { fs.writeFileSync(f + ".tmp", JSON.stringify(v, null, 2), { mode: 0o600 }); fs.renameSync(f + ".tmp", f); };
+if (!fs.existsSync(SECRET_FILE)) fs.writeFileSync(SECRET_FILE, crypto.randomBytes(32).toString("hex"), { mode: 0o600 });
+const SECRET = fs.readFileSync(SECRET_FILE, "utf8").trim();
+
+const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
+const hmac = (s) => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
+const safeEq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
+function hashPassword(pw, salt = crypto.randomBytes(16).toString("hex")) {
+  return { salt, hash: crypto.scryptSync(pw, salt, 64).toString("hex") };
 }
+function checkPassword(user, pw) {
+  const u = readJson(USERS_FILE)[user];
+  // hash anyway for unknown users so timing doesn't reveal which usernames exist
+  const h = hashPassword(pw, u?.salt || "0".repeat(32)).hash;
+  return !!u && safeEq(h, u.hash);
+}
+function setPassword(user, pw, invitedBy) {
+  const users = readJson(USERS_FILE);
+  const prev = users[user];
+  // bumping gen logs out every existing session of this user
+  users[user] = { ...hashPassword(pw), gen: (prev?.gen || 0) + 1, created: prev?.created || new Date().toISOString(), invitedBy: prev?.invitedBy ?? invitedBy };
+  writeJson(USERS_FILE, users);
+  return users[user];
+}
+
+function makeInvite(by) {
+  const token = crypto.randomBytes(24).toString("base64url");
+  const invites = readJson(INVITES_FILE);
+  const now = Date.now();
+  for (const [k, v] of Object.entries(invites)) if (v.expires < now) delete invites[k];
+  invites[sha(token)] = { by, expires: now + INVITE_HOURS * 3600_000 };
+  writeJson(INVITES_FILE, invites);
+  return token;
+}
+function getInvite(token) {
+  const v = readJson(INVITES_FILE)[sha(token || "")];
+  return v && v.expires > Date.now() ? v : null;
+}
+function useInvite(token) {
+  const invites = readJson(INVITES_FILE);
+  delete invites[sha(token)];
+  writeJson(INVITES_FILE, invites);
+}
+
+function sessionCookie(user, gen) {
+  const payload = `${user}.${gen}.${Date.now() + SESSION_DAYS * 86400_000}`;
+  return `sess=${payload}.${hmac(payload)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}`;
+}
+function sessionUser(req) {
+  const m = (req.headers.cookie || "").match(/(?:^|;\s*)sess=([^;]+)/);
+  if (!m) return null;
+  const parts = m[1].split(".");
+  if (parts.length !== 4) return null;
+  const [user, gen, exp, sig] = parts;
+  if (!safeEq(sig, hmac(`${user}.${gen}.${exp}`)) || Number(exp) < Date.now()) return null;
+  const u = readJson(USERS_FILE)[user];
+  return u && String(u.gen) === gen ? user : null;   // deleted users and old passwords are logged out
+}
+const clearCookie = "sess=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
+
+// ---------- auth pages ----------
+const formPage = (title, inner, msg = "") => page(title, `<div style="max-width:360px;margin:10vh auto"><h1>${esc(title)}</h1>${msg ? `<p class=bad>${esc(msg)}</p>` : ""}${inner}</div>`);
+const field = (name, label, type = "text", extra = "") => `<p><label>${esc(label)}<br><input name=${name} type=${type} ${extra} style="width:100%"></label></p>`;
+
+const loginPage = (msg) => formPage("app-host", `<form method=post action="/login">
+${field("user", "Username", "text", "autocomplete=username autofocus required")}${field("password", "Password", "password", "autocomplete=current-password required")}
+<button>Log in</button></form>`, msg);
+
+const invitePage = (token, msg) => formPage("Create your login", `<form method=post action="/invite">
+<input type=hidden name=t value="${esc(token)}">
+${field("user", "Username (a-z 0-9 . _ -)", "text", 'autocomplete=username required pattern="[a-z0-9._\\-]{2,32}" autofocus')}
+${field("password", "Password (12+ characters)", "password", "autocomplete=new-password required minlength=12")}
+${field("password2", "Again", "password", "autocomplete=new-password required minlength=12")}
+<button>Create login</button></form>`, msg);
+
+function usersPage(me, notice = "") {
+  const users = readJson(USERS_FILE);
+  return page("Users", `<div class=row><h1>Users</h1><span style="flex:1"></span><a href="/">← apps</a></div>${notice}
+<table><tr><th>user</th><th>created</th><th>invited by</th><th></th></tr>
+${Object.entries(users).map(([name, u]) => `<tr><td>${esc(name)}${name === me ? " <span class=muted>(you)</span>" : ""}</td><td>${esc((u.created || "").slice(0, 10))}</td><td>${esc(u.invitedBy || "setup link")}</td>
+<td>${name === me ? "" : btnTo("/users", "deluser", { user: name }, "remove", `Remove ${name}? They are logged out immediately.`)}</td></tr>`).join("")}</table>
+<h2>Invite someone</h2><p class=muted>Makes a one-time link, valid ${INVITE_HOURS} hours. Whoever opens it picks a username and password and gets full access.</p>
+${btnTo("/users", "invite", {}, "make invite link")}
+<h2>Change your password</h2><p class=muted>Logs out your other sessions.</p>
+<form method=post action="/users"><input type=hidden name=do value=password>
+<input name=password type=password autocomplete=new-password minlength=12 required placeholder="new password" style="width:16em">
+<input name=password2 type=password autocomplete=new-password minlength=12 required placeholder="again" style="width:16em"> <button>change</button></form>`);
+}
+
+function btnTo(actionPath, what, fields, label, confirm) {
+  return btn(what, fields, label, confirm).replace('action="/action"', `action="${actionPath}"`);
+}
+
+const linkFor = (req, token) => `https://${req.headers.host}/invite?t=${token}`;
+
+// ---------- CLI: print an invite link (first admin, or locked out) ----------
+if (process.argv[2] === "invite") {
+  const i = process.argv.indexOf("--base");
+  const base = i > 0 ? process.argv[i + 1] : `https://admin.${CONFIG.BASE_DOMAIN}`;
+  console.log(`${base}/invite?t=${makeInvite("")}`);
+  process.exit(0);
+}
+
+// ---------- server ----------
+let lastFail = 0;
+const slowDown = async () => {   // one failed login per second, globally
+  const wait = Math.max(0, lastFail + 1000 - Date.now()); lastFail = Date.now() + wait;
+  await new Promise((r) => setTimeout(r, wait));
+};
 
 http.createServer(async (req, res) => {
   const send = (code, body, headers = {}) => { res.writeHead(code, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer", ...headers }); res.end(body); };
+  const redirect = (to, headers = {}) => send(303, "", { location: to, ...headers });
   try {
-    if (!authed(req)) {
-      // slow down guessing: one failure per second, globally
-      const wait = Math.max(0, lastFail + 1000 - Date.now()); lastFail = Date.now() + wait;
-      await new Promise((r) => setTimeout(r, wait));
-      return send(401, "login required", { "www-authenticate": 'Basic realm="app-host", charset="UTF-8"' });
-    }
     const url = new URL(req.url, "http://x");
-    if (req.method === "GET" && url.pathname === "/") return send(200, await home());
-    if (req.method === "GET" && url.pathname === "/logs") return send(200, await logs(url.searchParams));
-    if (req.method === "POST" && url.pathname === "/action") {
-      // basic auth is sent on cross-site requests too, so only accept forms posted from this page
+    let form = new URLSearchParams();
+    if (req.method === "POST") {
+      // only accept forms posted from this site
       const origin = req.headers.origin || "";
       if (!origin || new URL(origin).host !== req.headers.host) return send(403, "bad origin");
       let body = "";
       for await (const c of req) { body += c; if (body.length > 10_000) return send(413, "too big"); }
-      return send(200, await action(new URLSearchParams(body)));
+      form = new URLSearchParams(body);
+    }
+    const route = `${req.method} ${url.pathname}`;
+
+    // --- public routes ---
+    if (route === "GET /login") return send(200, loginPage());
+    if (route === "POST /login") {
+      const user = form.get("user") || "";
+      if (!checkPassword(user, form.get("password") || "")) { await slowDown(); return send(401, loginPage("Wrong username or password.")); }
+      return redirect("/", { "set-cookie": sessionCookie(user, readJson(USERS_FILE)[user].gen) });
+    }
+    if (route === "GET /invite") {
+      if (!getInvite(url.searchParams.get("t"))) return send(410, formPage("Link expired", `<p>This invite was already used or has expired. Ask an admin for a new one, or run <code>app-dashboard-invite</code> on the server.</p>`));
+      return send(200, invitePage(url.searchParams.get("t")));
+    }
+    if (route === "POST /invite") {
+      const t = form.get("t") || "", user = form.get("user") || "", pw = form.get("password") || "";
+      const inv = getInvite(t);
+      if (!inv) { await slowDown(); return send(410, formPage("Link expired", "<p>This invite was already used or has expired.</p>")); }
+      if (!USER_RE.test(user)) return send(400, invitePage(t, "Username: 2-32 of a-z 0-9 . _ -"));
+      if (readJson(USERS_FILE)[user]) return send(400, invitePage(t, "That username is taken."));
+      if (pw.length < 12) return send(400, invitePage(t, "Password needs 12+ characters."));
+      if (pw !== form.get("password2")) return send(400, invitePage(t, "Passwords don't match."));
+      useInvite(t);
+      const u = setPassword(user, pw, inv.by);
+      return redirect("/", { "set-cookie": sessionCookie(user, u.gen) });
+    }
+
+    // --- everything else needs a session ---
+    const me = sessionUser(req);
+    if (!me) return req.method === "GET" ? redirect("/login") : send(401, loginPage("Logged out."));
+    if (route === "POST /logout") return redirect("/login", { "set-cookie": clearCookie });
+    if (route === "GET /") return send(200, await home(me));
+    if (route === "GET /logs") return send(200, await logs(url.searchParams));
+    if (route === "POST /action") return send(200, await action(form));
+    if (route === "GET /users") return send(200, usersPage(me));
+    if (route === "POST /users") {
+      const what = form.get("do");
+      if (what === "invite") {
+        const link = linkFor(req, makeInvite(me));
+        return send(200, usersPage(me, `<p>Invite link (one use, ${INVITE_HOURS}h). Send it privately:</p><pre>${esc(link)}</pre>`));
+      }
+      if (what === "deluser") {
+        const users = readJson(USERS_FILE), target = form.get("user");
+        if (target === me || !users[target]) return send(400, usersPage(me, `<p class=bad>Can't remove that user.</p>`));
+        delete users[target]; writeJson(USERS_FILE, users);
+        return send(200, usersPage(me, `<p class=ok>Removed ${esc(target)}.</p>`));
+      }
+      if (what === "password") {
+        const pw = form.get("password") || "";
+        if (pw.length < 12 || pw !== form.get("password2")) return send(400, usersPage(me, `<p class=bad>Passwords must match and be 12+ characters.</p>`));
+        const u = setPassword(me, pw);
+        return send(200, usersPage(me, `<p class=ok>Password changed.</p>`), { "set-cookie": sessionCookie(me, u.gen) });
+      }
     }
     send(404, "not found");
   } catch (e) {

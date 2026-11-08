@@ -30,7 +30,13 @@ Details:
 
 `https://admin.<BASE_DOMAIN>` lists every app and site (state, port, memory), and runs create, delete, app-sync, restart/stop/start, remove site, reload Caddy, and shows logs. It's a no-dependency Node server (`dashboard/server.mjs`) on 127.0.0.1:19999, running as root (unit `app-dashboard`).
 
-Login is HTTP basic auth: any username, and the password `install.sh` printed. It lives in `/etc/apps/dashboard.env`; to change it, edit that file and `systemctl restart app-dashboard`. Forms only work when posted from the dashboard itself (Origin check), and wrong passwords are slowed to one try per second.
+Logins are per user (username + password, scrypt-hashed in `/etc/apps/dashboard/users.json`), with HMAC-signed session cookies that last 30 days. Every user has full access.
+
+- First admin: `install.sh` prints a one-time setup link (24h). Open it, pick a username and password.
+- More users: Users page → "make invite link", send it privately. One use, 24h.
+- Locked out: `app-dashboard-invite` on the server prints a fresh link.
+- Removing a user or changing a password logs out their sessions immediately.
+- Forms only work when posted from the dashboard itself (Origin check + SameSite cookies). Failed logins are slowed to one per second.
 
 ## Admin commands (root)
 

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Print a one-time dashboard invite link (24h). Use it for the first admin, or if you're locked out.
+exec /usr/bin/node /usr/local/lib/app-host/dashboard/server.mjs invite "$@"
