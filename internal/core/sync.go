@@ -393,6 +393,7 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int) (bool, error) 
 	log := filepath.Join(config.LogDir, app, site+".log")
 	text := fmt.Sprintf(`[Unit]
 Description=%[3]s (app %[1]s)
+After=nook-firewall.service
 
 [Service]
 User=nook-%[1]s

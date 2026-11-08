@@ -169,7 +169,11 @@ func writePorts(ps []portEntry) error {
 	for _, p := range ps {
 		fmt.Fprintf(&b, "%s %s %d\n", p.App, p.Site, p.Port)
 	}
-	return config.WriteAtomic(config.PortsFile, []byte(b.String()), 0o600)
+	if err := config.WriteAtomic(config.PortsFile, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	applyFirewall() // ports changed: update who may connect to which
+	return nil
 }
 
 func PortOf(app, site string) int {
