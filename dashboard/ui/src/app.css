@@ -7,7 +7,9 @@ main.container { padding-top: 1.5rem; }
 .spacer { flex: 1; }
 .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 .stack { display: grid; gap: 1rem; }
-.form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: end; }
+.form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-start; }
+.form-row > .btn { margin-top: calc(1.5em + 0.25rem); }
+.field .label { white-space: nowrap; }
 .form-row .field { flex: 1 1 8rem; }
 .field { display: grid; gap: 0.25rem; }
 .auth { max-width: 24rem; margin: 12vh auto; }
@@ -28,3 +30,4 @@ main.container { padding-top: 1.5rem; }
 .mono { font-family: ui-monospace, monospace; font-size: 0.875rem; }
 .hint { font-size: 0.875rem; margin: 0.25rem 0 0; }
 details.danger summary { cursor: pointer; }
+.env-value { max-width: 32rem; overflow-wrap: anywhere; }

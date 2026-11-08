@@ -14,10 +14,11 @@ List everything live: `app sync --all` prints each site and its port. Ports are 
 
 ## app-host cheat sheet
 
-- New app: `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`. It prints the GitHub secrets, variables and a block to paste to Claude to write the deploy workflow.
+- New app: `app create NAME [--repo owner/name]` (or the dashboard). It prints one `APP_HOST` secret for the repo and a ready-to-use deploy workflow.
+- Runtime env vars/secrets: dashboard → app → Environment, or `app env set NAME KEY` (prompts for the value)
 - Delete app: `app delete NAME` (asks you to type the name)
 - Re-sync by hand: `app sync NAME` (normally runs on its own when `sites/` changes)
-- Folder layout: `/srv/apps/NAME/{sites,builds,data,logs}` plus `secrets.env` (600, loaded into running apps)
+- Folder layout: `/srv/apps/NAME/{sites,builds,data}` (700, the app's own). Root-owned: env in `/etc/apps/env/NAME.env`, logs in `/var/log/apps/NAME/`, static copies in `/var/lib/app-host/www/NAME/`
 - A site folder with an executable `run` file is a running app: it gets `$PORT`, `$SITE`, `$SITE_HOST`, and runs as unit `site-APP--SUB.service`. Any other folder is served as static files (`200.html` = SPA fallback, `404.html` = not found).
 - As the app user (`runuser -u app-NAME -- bash -l`): `app site deploy DIR SUB`, `app site list|rm|restart|logs SUB`
 - Dashboard: `https://<server ip>:8443` (self-signed, always on as the backup way in) and the address set on its Domains page. New login link: `app invite`
@@ -48,7 +49,7 @@ Caddy gets and renews TLS certs on its own. The domain's DNS must point at this 
 - Data: `/srv/apps/subduction/data/subduction` (redb + blobs)
 - Identity key: `/srv/apps/subduction/data/subduction.key`. **Back this up**: it's the server's identity, and Keyhive grants point at it.
 - Unit: `site-subduction--subduction.service` (`systemctl status|restart site-subduction--subduction`)
-- Logs: `tail -f /srv/apps/subduction/logs/subduction.log`
+- Logs: `tail -f /var/log/apps/subduction/subduction.log`
 - Binaries: `/usr/local/bin/subduction_cli`, `/usr/local/bin/automerge-subduction-ingest` (0.22.0 / 0.9.0)
 - `--service-name` is the site's hostname (`$SITE_HOST`); clients must connect with exactly that host.
 - glibc malloc tunables are set in the `run` script, so freed memory goes back to the OS.

@@ -60,4 +60,4 @@ chown "$U:$U" "$R/run"; chmod 755 "$R/run"
 runuser -u "$U" -- bash -lc "cd ~ && app site deploy $R $SUB" || true
 app-sync "$A"
 echo
-echo "Subduction is live at wss://$HOST  (logs: $H/logs/$SUB.log)"
+echo "Subduction is live at wss://$HOST  (logs: /var/log/apps/$A/$SUB.log)"

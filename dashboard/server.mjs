@@ -250,24 +250,32 @@ const route = (method, pattern, handler, { open = false } = {}) => {
 };
 
 // --- auth (open) ---
-let lastFail = 0;
-const slowDown = async () => {   // one failed attempt per second, globally
-  const wait = Math.max(0, lastFail + 1000 - Date.now()); lastFail = Date.now() + wait;
-  await new Promise((r) => setTimeout(r, wait));
+// failed attempts: per client IP (Caddy sets X-Forwarded-For; we only listen on 127.0.0.1), so one
+// attacker can't lock everyone else out. 5 free tries, then 1 per second, growing to 1 per minute.
+const fails = new Map();
+const clientIp = (req) => String(req.headers["x-forwarded-for"] || "").split(",").pop().trim() || req.socket.remoteAddress || "";
+const slowDown = async (ip) => {
+  const now = Date.now(), f = fails.get(ip) || { n: 0, until: 0 };
+  f.n += 1;
+  const wait = f.n <= 5 ? 0 : Math.min(60_000, 1000 * 2 ** Math.min(f.n - 6, 6));
+  f.until = Math.max(f.until, now) + wait; fails.set(ip, f);
+  if (fails.size > 10_000) fails.clear();
+  await new Promise((r) => setTimeout(r, Math.max(0, f.until - now)));
 };
 route("GET", "/api/session", ({ me }) => ({ user: me }), { open: true });
-route("POST", "/api/login", async ({ body, setCookie }) => {
+route("POST", "/api/login", async ({ body, ip, setCookie }) => {
   const user = String(body.user || "");
-  if (!checkPassword(user, String(body.password || ""))) { await slowDown(); fail(401, "Wrong username or password."); }
+  if (!checkPassword(user, String(body.password || ""))) { await slowDown(ip); fail(401, "Wrong username or password."); }
+  fails.delete(ip);
   setCookie(sessionCookie(user, readJson(USERS_FILE)[user].gen));
   return { user };
 }, { open: true });
 route("POST", "/api/logout", ({ setCookie }) => { setCookie(clearCookie); return {}; }, { open: true });
 route("GET", "/api/invite", ({ query }) => ({ valid: !!getInvite(query.get("t")) }), { open: true });
-route("POST", "/api/invite", async ({ body, setCookie }) => {
+route("POST", "/api/invite", async ({ body, ip, setCookie }) => {
   const t = String(body.token || ""), user = String(body.user || ""), pw = String(body.password || "");
   const inv = getInvite(t);
-  if (!inv) { await slowDown(); fail(410, "This invite was already used or has expired."); }
+  if (!inv) { await slowDown(ip); fail(410, "This invite was already used or has expired."); }
   if (!USER_RE.test(user)) fail(400, "Username: 2-32 of a-z 0-9 . _ -");
   if (readJson(USERS_FILE)[user]) fail(400, "That username is taken.");
   if (pw.length < 12) fail(400, "Password needs 12+ characters.");
@@ -286,10 +294,11 @@ route("GET", "/api/overview", async () => {
   };
 });
 route("POST", "/api/apps", async ({ body }) => {
-  const { name, memory, cpu, tasks } = body;
+  const { name, memory, cpu, tasks, repo } = body;
   if (!NAME_RE.test(name || "")) fail(400, "Name: a lowercase letter, then 1-23 of a-z 0-9 -");
   if (!/^\d+[KMG]$/.test(memory) || !/^\d+%$/.test(cpu) || !/^\d+$/.test(String(tasks))) fail(400, "Memory like 256M, CPU like 50%, tasks a number.");
-  const args = [name, "--memory", memory, "--cpu", cpu, "--tasks", String(tasks)];
+  if (repo && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) fail(400, "GitHub repo must look like owner/name.");
+  const args = [name, "--memory", memory, "--cpu", cpu, "--tasks", String(tasks), ...(repo ? ["--repo", repo] : [])];
   return cmdResult(`app create ${args.join(" ")}`, await run("app-create", args));
 });
 route("POST", "/api/apps/:app/delete", async ({ params, body }) => {
@@ -323,12 +332,28 @@ route("GET", "/api/apps/:app/sites/:site/logs", async ({ params }) => {
   const { app, site } = params;
   appExists(app); checkSite(site);
   const status = await run("systemctl", ["status", "--no-pager", "-n", "0", `site-${app}--${site}.service`], { timeout: 5000 });
-  return { host: hostOf(site), status: status.out, log: tail(path.join(APPS_DIR, app, "logs", `${site}.log`)) };
+  return { host: hostOf(site), status: status.out, log: tail(path.join("/var/log/apps", app, `${site}.log`)) };
 });
 route("GET", "/api/apps/:app/sync-log", async ({ params }) => {
   appExists(params.app);
   const j = await run("journalctl", ["--no-pager", "-n", "200", "-u", `app-sync@${params.app}.service`], { timeout: 10000 });
   return { log: j.out };
+});
+
+// --- runtime environment (secrets.env), via app env so the rules live in one place ---
+route("GET", "/api/apps/:app/env", async ({ params }) => {
+  appExists(params.app);
+  const r = await run("app-env", ["list", params.app, "--values"]);
+  if (r.code !== 0) fail(500, r.out);
+  const vars = r.out.split("\n").filter(Boolean).map((l) => ({ key: l.slice(0, l.indexOf("=")), value: l.slice(l.indexOf("=") + 1) }));
+  const running = (await listApps()).find((a) => a.name === params.app)?.sites.filter((s) => s.running).map((s) => s.host) || [];
+  return { vars, running };
+});
+route("POST", "/api/apps/:app/env", async ({ params, body }) => {
+  appExists(params.app);
+  const set = body.set && typeof body.set === "object" ? body.set : {};
+  const unset = Array.isArray(body.unset) ? body.unset : [];
+  return cmdResult(`app env apply ${params.app}`, await run("app-env", ["apply", params.app], { input: JSON.stringify({ set, unset }) }));
 });
 
 // --- domains ---
@@ -439,7 +464,7 @@ http.createServer(async (req, res) => {
       if (!m) continue;
       if (!r.open && !me) return json(401, { error: "Logged out." });
       const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
-      const result = await r.handler({ req, me, params, body, query: url.searchParams, setCookie: (c) => cookies.push(c) });
+      const result = await r.handler({ req, ip: clientIp(req), me, params, body, query: url.searchParams, setCookie: (c) => cookies.push(c) });
       return json(200, result ?? {});
     }
     json(404, { error: "not found" });

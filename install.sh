@@ -36,11 +36,12 @@ fi
 chmod 600 /etc/apps/config
 . /etc/apps/config
 
-install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite sbin/app-grant sbin/app-admin-caddy /usr/local/sbin/
+install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite sbin/app-grant sbin/app-admin-caddy sbin/app-env /usr/local/sbin/
 install -m 755 bin/app /usr/local/bin/
 install -m 644 systemd/app-sync@.path systemd/app-sync@.service /etc/systemd/system/
 install -m 644 logrotate/apps /etc/logrotate.d/apps
 install -D -m 644 dashboard/server.mjs /usr/local/lib/app-host/dashboard/server.mjs
+install -D -m 644 lib/env.mjs /usr/local/lib/app-host/env.mjs
 rm -rf /usr/local/lib/app-host/dashboard/public && cp -r dashboard/public /usr/local/lib/app-host/dashboard/public
 install -m 644 dashboard/app-dashboard.service /etc/systemd/system/
 systemctl daemon-reload
@@ -56,6 +57,27 @@ if [ ! -f /etc/apps/grants ]; then
   for h in /srv/apps/*/; do [ -d "$h" ] && echo "$(basename "$h") sub $BASE_DOMAIN" >> /etc/apps/grants; done
 fi
 chmod 600 /etc/apps/grants
+
+# --- Caddy's admin API: off the network. On localhost:2019 (the default) any app on this box could
+# rewrite Caddy's config (take over every domain, serve Caddy's TLS keys). A unix socket in a caddy-only
+# folder leaves it reachable by Caddy and root only; `systemctl reload caddy` finds it from the Caddyfile.
+mkdir -p /etc/systemd/system/caddy.service.d
+cat > /etc/systemd/system/caddy.service.d/app-host.conf <<'EOF'
+[Service]
+RuntimeDirectory=caddy
+RuntimeDirectoryMode=0750
+EOF
+if ! grep -q 'admin unix//run/caddy/admin.sock' /etc/caddy/Caddyfile; then
+  cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak.$(date +%s)"
+  if awk '!/^[[:space:]]*(#|$)/ {exit !/^[{][[:space:]]*$/}' /etc/caddy/Caddyfile; then
+    # there's already a global options block: add the line inside it
+    awk 'done!=1 && /^[{][[:space:]]*$/ {print; print "\tadmin unix//run/caddy/admin.sock"; done=1; next} {print}' /etc/caddy/Caddyfile > /etc/caddy/Caddyfile.new
+  else
+    { printf '{\n\tadmin unix//run/caddy/admin.sock\n}\n\n'; cat /etc/caddy/Caddyfile; } > /etc/caddy/Caddyfile.new
+  fi
+  mv /etc/caddy/Caddyfile.new /etc/caddy/Caddyfile
+  CADDY_RESTART=1
+fi
 
 # --- catch-all: hostnames nothing serves get a plain 404 page on port 80 ---
 # Debian's stock Caddyfile has a ":80 { root * /usr/share/caddy ... }" welcome page; it would clash, so it goes.
@@ -81,9 +103,19 @@ cat > /etc/caddy/catchall.caddy <<'EOF'
 EOF
 grep -qxF 'import /etc/caddy/catchall.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/catchall.caddy\n' >> /etc/caddy/Caddyfile
 
+# --- hardening for apps made before root-owned copies existed: lock app folders, then rebuild routes ---
+mkdir -p /etc/apps/env /var/log/apps /var/lib/app-host/www; chmod 700 /etc/apps/env
+for h in /srv/apps/*/; do [ -d "$h" ] && chmod 700 "$h" "$h/sites" 2>/dev/null; done
+
 grep -qxF 'import /etc/caddy/apps/*.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/apps/*.caddy\n' >> /etc/caddy/Caddyfile
-caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && systemctl reload caddy
+systemctl daemon-reload
+if caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1; then
+  if [ "${CADDY_RESTART:-0}" = 1 ]; then systemctl restart caddy; else systemctl reload caddy; fi
+else
+  echo "Caddy config doesn't validate; fix /etc/caddy/Caddyfile (backups are next to it)"; caddy validate --config /etc/caddy/Caddyfile
+fi
 app-admin-caddy >/dev/null
+app-sync --all >/dev/null || true
 echo "App host installed (base domain $BASE_DOMAIN, SSH host $SSH_HOST)."
 echo "Each app's subdomains need DNS: easiest is one wildcard record, *.$BASE_DOMAIN -> this server."
 echo "Create an app with: app create NAME, or in the dashboard"

@@ -49,7 +49,7 @@ function NewApp(props: { defaults: Overview["defaults"]; onDone: () => void }) {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const f = Object.fromEntries(new FormData(form));
-    const r = await runCmd(`Created ${f.name}`, "/api/apps", f, "This shows the deploy private key once. Copy the GitHub secrets now; they can't be shown again.");
+    const r = await runCmd(`Created ${f.name}`, "/api/apps", f, "The APP_HOST secret below holds the deploy key and is shown once. Add it to the repo now.");
     if (r?.ok) form.reset();
     props.onDone();
   };
@@ -61,6 +61,7 @@ function NewApp(props: { defaults: Overview["defaults"]; onDone: () => void }) {
         <Field label="Memory" hint="RAM cap for all its processes"><input class="input" name="memory" value={props.defaults.memory} required /></Field>
         <Field label="CPU" hint="100% = one core"><input class="input" name="cpu" value={props.defaults.cpu} required /></Field>
         <Field label="Tasks" hint="max processes + threads"><input class="input" name="tasks" value={props.defaults.tasks} required /></Field>
+        <Field label="GitHub repo" hint="optional, for the gh command"><input class="input" name="repo" placeholder="sparkstonepdx/myapp" pattern="[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+" /></Field>
         <button class="btn btn-primary">Create</button>
       </form>
     </details>
@@ -81,6 +82,7 @@ function AppCard(props: { app: App; after: (p?: Promise<unknown>) => void }) {
           <span>watcher <StatusBadge ok={a().watcher === "active"}>{a().watcher}</StatusBadge></span>
         </div>
         <span class="spacer" />
+        <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/env`}>Environment</A>
         <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/sync-log`}>Sync log</A>
         <button class="btn btn-secondary btn-sm" onClick={() => props.after(runCmd(`Synced ${a().name}`, `/api/apps/${a().name}/sync`))}>Sync</button>
       </header>

@@ -11,6 +11,7 @@ import Apps from "./pages/Apps";
 import Logs from "./pages/Logs";
 import Domains from "./pages/Domains";
 import Users from "./pages/Users";
+import Env from "./pages/Env";
 
 function Shell(props: ParentProps) {
   onMount(() => api<{ user: string | null }>("/api/session").then((s) => setUser(s.user)).catch(() => setUser(null)));
@@ -37,6 +38,7 @@ render(() => (
       <Route path="/" component={Apps} />
       <Route path="/apps/:app/sites/:site/logs" component={Logs} />
       <Route path="/apps/:app/sync-log" component={Logs} />
+      <Route path="/apps/:app/env" component={Env} />
       <Route path="/domains" component={Domains} />
       <Route path="/users" component={Users} />
     </Route>

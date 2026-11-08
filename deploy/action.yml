@@ -1,0 +1,29 @@
+name: app-host deploy
+description: Publish a folder to an app-host server. Pull requests get a preview site that is removed when the PR closes.
+inputs:
+  app-host:
+    description: The APP_HOST secret printed by `app create`
+    required: true
+  site:
+    description: Site name. "blog" = blog.<default domain>; "client.com" = exactly that hostname (needs a grant)
+    required: true
+  dir:
+    description: Folder to publish. An executable "run" file inside makes it a running app. Not needed when a PR closes.
+    required: false
+    default: dist
+  previews:
+    description: Deploy pull requests to a preview site instead of the real one ("true" or "false")
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to comment the preview URL on the PR (needs pull-requests write)
+    required: false
+    default: ${{ github.token }}
+outputs:
+  url:
+    description: The deployed site's URL
+  site:
+    description: The site name that was deployed (the preview name on pull requests)
+runs:
+  using: node24
+  main: index.mjs
