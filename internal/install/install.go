@@ -147,7 +147,7 @@ SITE_MAX_BYTES=1073741824
 		}
 	}
 	if !fileExists(config.DashboardEnv) {
-		write(config.DashboardEnv, "DASHBOARD_PORT=19999\n", 0o600)
+		write(config.DashboardEnv, "", 0o600)
 	}
 	if !fileExists(config.UpdateEnv) {
 		write(config.UpdateEnv, "# GITHUB_TOKEN=<read-only token for the nook repo, only needed while it's private>\n# UPDATE_NOTIFY_URL=https://ntfy.sh/<your-topic>   (or a Discord/Slack webhook)\n", 0o600)
@@ -193,13 +193,16 @@ SITE_MAX_BYTES=1073741824
 	// --- units ---
 	st.say("services")
 	units := map[string]string{
-		"nook-helper.service": helperUnit, "nook-web.service": webUnit,
+		"nook-helper.service": helperUnit, "nook-web.socket": webSocketUnit, "nook-web.service": webUnit,
 		"nook-sync@.path": syncPath, "nook-sync@.service": syncService,
 		"nook-update-check.service": updateService, "nook-update-check.timer": updateTimer,
 		"nook-logrotate.service": logrotateService, "nook-logrotate.timer": logrotateTimer,
 	}
+	webChanged := false
 	for name, text := range units {
-		write(filepath.Join("/etc/systemd/system", name), text, 0o644)
+		if write(filepath.Join("/etc/systemd/system", name), text, 0o644) && strings.HasPrefix(name, "nook-web.") {
+			webChanged = true
+		}
 	}
 	write("/etc/logrotate.d/nook", logrotateConf, 0o644)
 	write("/etc/update-motd.d/90-nook", "#!/bin/sh\n[ -f /var/lib/nook/update-available ] && cat /var/lib/nook/update-available\nexit 0\n", 0o755)
@@ -266,9 +269,12 @@ SITE_MAX_BYTES=1073741824
 	} else {
 		exec.Command("systemctl", "reload", "caddy").Run()
 	}
-	for _, u := range []string{"nook-helper.service", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer"} {
-		exec.Command("systemctl", "enable", "--now", u).Run() // starts it if it isn't running (e.g. right after a migration)
-		if !o.Upgrade || strings.HasSuffix(u, ".timer") {
+	if webChanged || !o.Upgrade { // the socket can't be replaced under a running dashboard
+		exec.Command("systemctl", "stop", "nook-web.service", "nook-web.socket").Run()
+	}
+	for _, u := range []string{"nook-helper.service", "nook-web.socket", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer"} {
+		exec.Command("systemctl", "enable", "--now", u).Run() // starts it if it isn't running (after a migration or the stop above)
+		if !o.Upgrade && !strings.HasPrefix(u, "nook-web.") || strings.HasSuffix(u, ".timer") {
 			exec.Command("systemctl", "restart", u).Run()
 		}
 	}
@@ -394,7 +400,7 @@ Heads up: SSH still allows password logins. Once your key works, turn them off:
 
 const sshdConf = `# nook: app users' keys live in /etc/ssh/nook-keys (root-owned), and every login goes through the gate,
 # which only allows an rsync upload into ~/builds/<name>/ and "nook site ..." commands.
-Match User nook-*
+Match User nook-*,app-*
 	AuthorizedKeysFile /etc/ssh/nook-keys/%u
 	ForceCommand /usr/local/bin/nook ssh-gate
 	AllowTcpForwarding no
@@ -421,10 +427,25 @@ RuntimeDirectoryMode=0750
 WantedBy=multi-user.target
 `
 
+const webSocketUnit = `[Unit]
+Description=nook dashboard socket (root and Caddy only)
+
+[Socket]
+ListenStream=/run/nook-web.sock
+SocketUser=nook-web
+SocketGroup=caddy
+SocketMode=0660
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
+`
+
 const webUnit = `[Unit]
 Description=nook dashboard (unprivileged)
-After=nook-helper.service
+After=nook-helper.service nook-web.socket
 Wants=nook-helper.service
+Requires=nook-web.socket
 
 [Service]
 User=nook-web
@@ -451,7 +472,7 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 CapabilityBoundingSet=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX
 MemoryMax=96M
 
 [Install]

@@ -22,3 +22,15 @@ func TestOldPrefix(t *testing.T) {
 		t.Fatalf("old token: %v %v", got, err)
 	}
 }
+
+func TestRejectsOptionLikeFields(t *testing.T) {
+	for _, tk := range []Token{
+		{Host: "-oProxyCommand=x", User: "nook-x", Domain: "d", KnownHosts: "k", Key: "k"},
+		{Host: "h", User: "-oProxyCommand=x", Domain: "d", KnownHosts: "k", Key: "k"},
+		{Host: "h", User: "root", Domain: "d", KnownHosts: "k", Key: "k"},
+	} {
+		if _, err := Decode(tk.Encode()); err == nil {
+			t.Fatalf("accepted %+v", tk)
+		}
+	}
+}

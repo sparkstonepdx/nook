@@ -132,7 +132,7 @@ func main() {
 	src := strings.TrimRight(dir, "/") + "/"
 	upload := "builds/" + name + "/"
 	rsh := "ssh " + strings.Join(sshOpts, " ") // temp paths have no spaces
-	if run("rsync "+src+" "+target+":"+upload, "rsync", "-a", "--delete", "-e", rsh, src, target+":"+upload) != 0 {
+	if run("rsync "+src+" "+target+":"+upload, "rsync", "-a", "--delete", "-e", rsh, "--", src, target+":"+upload) != 0 {
 		fail("upload failed")
 	}
 	switch code := ssh("nook site deploy " + upload + " " + name); code {
@@ -193,12 +193,15 @@ func comment(site string, pr int, body string) {
 	var list []struct {
 		ID   int64  `json:"id"`
 		Body string `json:"body"`
+		User struct {
+			Type string `json:"type"`
+		} `json:"user"`
 	}
 	json.NewDecoder(resp.Body).Decode(&list)
 	resp.Body.Close()
 	full := map[string]string{"body": marker + "\n" + body}
 	for _, c := range list {
-		if strings.Contains(c.Body, marker) {
+		if c.User.Type == "Bot" && strings.HasPrefix(c.Body, marker) { // only our own comment, not one quoting the marker
 			resp, err = call("PATCH", fmt.Sprintf("/issues/comments/%d", c.ID), full)
 			if err == nil && resp.StatusCode >= 300 {
 				err = fmt.Errorf("%s", resp.Status)

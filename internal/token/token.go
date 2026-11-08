@@ -5,7 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
+)
+
+var (
+	userRe = regexp.MustCompile(`^(nook|app)-[a-z0-9][a-z0-9-]*$`)
+	hostRe = regexp.MustCompile(`^[A-Za-z0-9.:\[\]-]+$`)
 )
 
 const (
@@ -55,6 +61,10 @@ func Decode(s string) (*Token, error) {
 	}
 	if t.Port == 0 {
 		t.Port = 22
+	}
+	// these end up on ssh's command line: keep them from being read as options
+	if !userRe.MatchString(t.User) || !hostRe.MatchString(t.Host) || t.Port < 1 || t.Port > 65535 {
+		return nil, errors.New("the NOOK_TOKEN secret has a bad host, user or port; copy it again from nook-admin create")
 	}
 	return &t, nil
 }

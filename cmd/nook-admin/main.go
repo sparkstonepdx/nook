@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -261,9 +262,7 @@ func serveWeb() {
 	die(err)
 	store, err := web.OpenStore(config.WebStateDir)
 	die(err)
-	d := config.LoadDashboard()
 	srv := &http.Server{
-		Addr:              "127.0.0.1:" + d.Port,
 		Handler:           &web.Server{Store: store, Socket: config.HelperSocket, UI: ui},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
@@ -271,7 +270,14 @@ func serveWeb() {
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    32 << 10,
 	}
-	log.Printf("dashboard on %s", srv.Addr)
+	// The listening socket comes from nook-web.socket (systemd socket activation): a unix socket only root and
+	// Caddy can open, so apps on this box can't reach the dashboard directly or forge X-Forwarded-For.
+	if os.Getenv("LISTEN_PID") != strconv.Itoa(os.Getpid()) || os.Getenv("LISTEN_FDS") != "1" {
+		die(fmt.Errorf("start the dashboard with systemctl start nook-web (it needs the socket from nook-web.socket)"))
+	}
+	ln, err := net.FileListener(os.NewFile(3, "nook-web.sock"))
+	die(err)
+	log.Printf("dashboard on %s", config.WebSocket)
 	syscall.Umask(0o077)
-	die(srv.ListenAndServe())
+	die(srv.Serve(ln))
 }
