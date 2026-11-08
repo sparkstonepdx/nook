@@ -1,6 +1,27 @@
 import { A, useNavigate } from "@solidjs/router";
-import { Show, createEffect, type JSX } from "solid-js";
-import { api, user, setUser, result, setResult } from "./api";
+import { Show, createEffect, createResource, type JSX } from "solid-js";
+import { api, user, setUser, result, setResult, runCmd } from "./api";
+
+type UpdateStatus = { current: string; latest: string; available: boolean; url: string; notes: string; checkedAt: string; error?: string };
+
+export function UpdateBanner() {
+  const [s] = createResource(() => api<UpdateStatus>("/api/update").catch(() => null));
+  const install = async () => {
+    if (!window.confirm(`Install app-host ${s()!.latest}? The dashboard restarts; running sites aren't affected.`)) return;
+    await runCmd(`Updating to ${s()!.latest}`, "/api/update");
+    setTimeout(() => location.reload(), 4000);
+  };
+  return (
+    <Show when={s()?.available}>
+      <div class="alert update-banner">
+        <span>app-host <strong>{s()!.latest}</strong> is available (running {s()!.current}).</span>
+        <a class="link" href={s()!.url} target="_blank" rel="noopener">What's new</a>
+        <span class="spacer" />
+        <button class="btn btn-primary btn-sm" onClick={install}>Update</button>
+      </div>
+    </Show>
+  );
+}
 
 export function Nav() {
   const navigate = useNavigate();

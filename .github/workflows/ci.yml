@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Build both binaries
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o /tmp/app-host ./cmd/app-host
+          CGO_ENABLED=0 go build -trimpath -o /tmp/app ./cmd/app
+      - name: Dashboard UI build is committed and current
+        working-directory: dashboard/ui
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code -- ../public || { echo "dashboard/public is stale: run npm run build in dashboard/ui and commit it"; exit 1; }

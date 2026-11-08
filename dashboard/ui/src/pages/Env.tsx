@@ -21,7 +21,7 @@ export default function EnvPage() {
       <p class="text-secondary hint">
         Loaded into every running site of this app. Saving restarts them
         <Show when={data()?.running.length}> ({data()!.running.join(", ")})</Show>.
-        app-host sets PORT, HOST, SITE and SITE_HOST itself.
+        app-host sets PORT, HOST, SITE and SITE_HOST itself. Values the app's own deploys write to secrets.env also load; these override them.
       </p>
       <Show when={data.error}><div class="alert alert-error">{String(data.error.message)}</div></Show>
 
