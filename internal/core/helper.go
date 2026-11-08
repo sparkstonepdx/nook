@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/grants"
-	"github.com/sparkstonepdx/app-host/internal/rpc"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/rpc"
 )
 
 // UpdateHooks lets the updater plug into the helper without an import cycle.
@@ -29,7 +29,7 @@ var UpdateHooks struct {
 func ServeHelper() error {
 	web, err := user.Lookup(config.WebUser)
 	if err != nil {
-		return fmt.Errorf("user %s missing; run app-host install", config.WebUser)
+		return fmt.Errorf("user %s missing; run nook-admin install", config.WebUser)
 	}
 	webUID, _ := strconv.Atoi(web.Uid)
 	webGID, _ := strconv.Atoi(web.Gid)
@@ -128,7 +128,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(h.Domains(), nil)
 	case "createApp":
 		var created string
-		r := command("app-host create "+p["name"], func(h *Host) error {
+		r := command("nook-admin create "+p["name"], func(h *Host) error {
 			out, err := h.Create(CreateOpts{Name: p["name"], Memory: p["memory"], CPU: p["cpu"], Tasks: p["tasks"], Repo: p["repo"]})
 			created = out
 			return err
@@ -136,11 +136,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		r.Out += created
 		return r
 	case "deleteApp":
-		return command("app-host delete "+p["app"], func(h *Host) error { return h.Delete(p["app"], p["confirm"]) })
+		return command("nook-admin delete "+p["app"], func(h *Host) error { return h.Delete(p["app"], p["confirm"]) })
 	case "syncApp":
-		return command("app-host sync "+p["app"], func(h *Host) error { return h.Sync(p["app"]) })
+		return command("nook-admin sync "+p["app"], func(h *Host) error { return h.Sync(p["app"]) })
 	case "syncAll":
-		return command("app-host sync --all", func(h *Host) error { return h.SyncAll() })
+		return command("nook-admin sync --all", func(h *Host) error { return h.SyncAll() })
 	case "reloadCaddy":
 		return command("systemctl reload caddy", func(h *Host) error { return h.ReloadCaddy() })
 	case "siteOp":
@@ -166,20 +166,20 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		}
 		return data(map[string]any{"vars": vars, "running": running}, nil)
 	case "envApply":
-		return command("app-host env apply "+p["app"], func(h *Host) error { return h.EnvApply(p["app"], req.Set, req.Unset, true) })
+		return command("nook-admin env apply "+p["app"], func(h *Host) error { return h.EnvApply(p["app"], req.Set, req.Unset, true) })
 	case "grant":
 		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"]}
 		verb := "add"
 		if p["op"] == "remove" {
 			verb = "rm"
 		}
-		return command("app-host grant "+verb+" "+g.String(), func(h *Host) error { return h.Grant(verb == "add", g) })
+		return command("nook-admin grant "+verb+" "+g.String(), func(h *Host) error { return h.Grant(verb == "add", g) })
 	case "setDefaultDomain":
-		return command("app-host default-domain "+p["domain"], func(h *Host) error { return h.SetDefaultDomain(p["domain"]) })
+		return command("nook-admin default-domain "+p["domain"], func(h *Host) error { return h.SetDefaultDomain(p["domain"]) })
 	case "setDashboardHost":
-		return command("app-host dashboard-host "+p["host"], func(h *Host) error { return h.SetDashboardHost(p["host"]) })
+		return command("nook-admin dashboard-host "+p["host"], func(h *Host) error { return h.SetDashboardHost(p["host"]) })
 	case "setIPAccess":
-		return command("app-host ip-access "+p["on"], func(h *Host) error { return h.SetIPAccess(p["on"] == "true") })
+		return command("nook-admin ip-access "+p["on"], func(h *Host) error { return h.SetIPAccess(p["on"] == "true") })
 	case "updateStatus":
 		if UpdateHooks.Status == nil {
 			return data(nil, errors.New("updates aren't available"))
@@ -191,7 +191,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		}
 		var out bytes.Buffer
 		err := UpdateHooks.Now(&out)
-		r := rpc.Response{OK: err == nil, Cmd: "app-host update", Out: out.String()}
+		r := rpc.Response{OK: err == nil, Cmd: "nook-admin update", Out: out.String()}
 		if err != nil {
 			r.Code, r.Out = 1, r.Out+err.Error()
 		}

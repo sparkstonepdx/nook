@@ -1,4 +1,4 @@
-// Package web is the dashboard's HTTP side. It runs as the unprivileged app-host-web user: it handles
+// Package web is the dashboard's HTTP side. It runs as the unprivileged nook-web user: it handles
 // logins, sessions, invites and the UI, and asks the root helper for everything else.
 package web
 
@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/names"
-	"github.com/sparkstonepdx/app-host/internal/rpc"
+	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/rpc"
 )
 
 type Server struct {

@@ -1,5 +1,5 @@
-// Package gate decides what an app's deploy key may run over SSH. sshd forces every app-* login through
-// `app ssh-gate`, which allows only an rsync upload into ~/builds/<name>/ and `app site ...` commands.
+// Package gate decides what an app's deploy key may run over SSH. sshd forces every nook-* login through
+// `nook ssh-gate`, which allows only an rsync upload into ~/builds/<name>/ and `nook site ...` commands.
 package gate
 
 import (
@@ -18,7 +18,7 @@ var (
 // Kind of an allowed command.
 const (
 	Rsync = "rsync"
-	App   = "app"
+	App   = "nook"
 )
 
 // Split breaks an SSH_ORIGINAL_COMMAND into words. Quotes and shell syntax aren't supported on purpose.
@@ -35,15 +35,15 @@ func Check(args []string) (string, error) {
 		return "", errors.New("interactive logins aren't allowed; this key can only deploy")
 	}
 	switch args[0] {
-	case "app":
+	case "nook", "app": // "app" is the pre-rename name, still sent by old actions
 		if len(args) < 2 || args[1] != "site" {
-			return "", errors.New("only `app site ...` is allowed")
+			return "", errors.New("only `nook site ...` is allowed")
 		}
 		return App, nil
 	case "rsync":
 		return Rsync, checkRsync(args[1:])
 	}
-	return "", errors.New("only rsync uploads into builds/ and `app site ...` are allowed")
+	return "", errors.New("only rsync uploads into builds/ and `nook site ...` are allowed")
 }
 
 func checkRsync(args []string) error {

@@ -1,5 +1,5 @@
 // Package install sets up (or upgrades) a Debian box: binaries, users, units, Caddy, sshd, migrations.
-// Everything here is idempotent; `app-host update` runs it again after installing a new version.
+// Everything here is idempotent; `nook-admin update` runs it again after installing a new version.
 package install
 
 import (
@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/core"
-	"github.com/sparkstonepdx/app-host/internal/grants"
-	"github.com/sparkstonepdx/app-host/internal/web"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/core"
+	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/web"
 )
 
 //go:embed catchall.html
@@ -91,7 +91,7 @@ func Run(o Opts) error {
 		}
 	}
 
-	// --- binaries: install this one and its `app` sibling ---
+	// --- binaries: install this one and its `nook` sibling ---
 	self, _ := os.Executable()
 	self, _ = filepath.EvalSymlinks(self)
 	if self != config.HostBin {
@@ -99,18 +99,22 @@ func Run(o Opts) error {
 		if err := copyFile(self, config.HostBin, 0o700); err != nil {
 			return err
 		}
-		sibling := filepath.Join(filepath.Dir(self), "app")
+		sibling := filepath.Join(filepath.Dir(self), "nook")
 		if err := copyFile(sibling, config.AppBin, 0o755); err != nil {
-			return fmt.Errorf("the `app` binary must sit next to app-host: %v", err)
+			return fmt.Errorf("the `nook` binary must sit next to nook-admin: %v", err)
 		}
+	}
+	// --- the pre-rename layout (app-host: app-* users, /srv/apps, /etc/apps, ...) ---
+	if err := migrateFromAppHost(st, o.Out); err != nil {
+		return err
 	}
 	// --- config ---
 	st.say("config")
-	for _, d := range []string{"/etc/apps", config.StateDir, config.EnvDir} {
+	for _, d := range []string{"/etc/nook", config.StateDir, config.EnvDir} {
 		os.MkdirAll(d, 0o700)
 		os.Chmod(d, 0o700)
 	}
-	for _, d := range []string{config.SSHKeysDir, config.CaddyAppsDir, config.AppsDir, config.LogDir, config.WWWDir, "/var/lib/app-host"} {
+	for _, d := range []string{config.SSHKeysDir, config.CaddyAppsDir, config.AppsDir, config.LogDir, config.WWWDir, "/var/lib/nook"} {
 		os.MkdirAll(d, 0o755)
 	}
 	if !fileExists(config.ConfigFile) {
@@ -146,7 +150,7 @@ SITE_MAX_BYTES=1073741824
 		write(config.DashboardEnv, "DASHBOARD_PORT=19999\n", 0o600)
 	}
 	if !fileExists(config.UpdateEnv) {
-		write(config.UpdateEnv, "# GITHUB_TOKEN=<read-only token for the app-host repo, only needed while it's private>\n# UPDATE_NOTIFY_URL=https://ntfy.sh/<your-topic>   (or a Discord/Slack webhook)\n", 0o600)
+		write(config.UpdateEnv, "# GITHUB_TOKEN=<read-only token for the nook repo, only needed while it's private>\n# UPDATE_NOTIFY_URL=https://ntfy.sh/<your-topic>   (or a Discord/Slack webhook)\n", 0o600)
 	}
 	s := config.Load()
 
@@ -159,7 +163,7 @@ SITE_MAX_BYTES=1073741824
 		config.WriteAtomic(config.GrantsFile, []byte(gl.Text()), 0o600)
 	}
 
-	// --- dashboard's own user, and its data moved out of /etc/apps ---
+	// --- dashboard's own user, and its data moved out of /etc/nook ---
 	st.say("dashboard user")
 	if _, err := user.Lookup(config.WebUser); err != nil {
 		if err := run("useradd", "--system", "--no-create-home", "--home-dir", config.WebStateDir, "--shell", "/usr/sbin/nologin", config.WebUser); err != nil {
@@ -172,7 +176,7 @@ SITE_MAX_BYTES=1073741824
 	os.MkdirAll(config.WebStateDir, 0o700)
 	os.Chown(config.WebStateDir, wuid, wgid)
 	for _, f := range []string{"users.json", "secret"} {
-		oldPath, newPath := filepath.Join("/etc/apps/dashboard", f), filepath.Join(config.WebStateDir, f)
+		oldPath, newPath := filepath.Join("/etc/nook/dashboard", f), filepath.Join(config.WebStateDir, f)
 		if fileExists(oldPath) && !fileExists(newPath) {
 			copyFile(oldPath, newPath, 0o600)
 			fmt.Fprintf(o.Out, "    moved dashboard %s to %s\n", f, config.WebStateDir)
@@ -182,23 +186,23 @@ SITE_MAX_BYTES=1073741824
 		return err
 	}
 	chownTree(config.WebStateDir, wuid, wgid)
-	// app-host: root and the dashboard user may run it; app users can't
+	// nook-admin: root and the dashboard user may run it; app users can't
 	os.Chown(config.HostBin, 0, wgid)
 	os.Chmod(config.HostBin, 0o750)
 
 	// --- units ---
 	st.say("services")
 	units := map[string]string{
-		"app-host-helper.service": helperUnit, "app-host-web.service": webUnit,
-		"app-sync@.path": syncPath, "app-sync@.service": syncService,
-		"app-host-update-check.service": updateService, "app-host-update-check.timer": updateTimer,
-		"app-host-logrotate.service": logrotateService, "app-host-logrotate.timer": logrotateTimer,
+		"nook-helper.service": helperUnit, "nook-web.service": webUnit,
+		"nook-sync@.path": syncPath, "nook-sync@.service": syncService,
+		"nook-update-check.service": updateService, "nook-update-check.timer": updateTimer,
+		"nook-logrotate.service": logrotateService, "nook-logrotate.timer": logrotateTimer,
 	}
 	for name, text := range units {
 		write(filepath.Join("/etc/systemd/system", name), text, 0o644)
 	}
-	write("/etc/logrotate.d/apps", logrotateConf, 0o644)
-	write("/etc/update-motd.d/90-app-host", "#!/bin/sh\n[ -f /var/lib/app-host/update-available ] && cat /var/lib/app-host/update-available\nexit 0\n", 0o755)
+	write("/etc/logrotate.d/nook", logrotateConf, 0o644)
+	write("/etc/update-motd.d/90-nook", "#!/bin/sh\n[ -f /var/lib/nook/update-available ] && cat /var/lib/nook/update-available\nexit 0\n", 0o755)
 	// the old bash/Node version
 	exec.Command("systemctl", "disable", "--now", "app-dashboard.service").Run()
 	os.Remove("/etc/systemd/system/app-dashboard.service")
@@ -208,13 +212,13 @@ SITE_MAX_BYTES=1073741824
 	os.RemoveAll("/usr/local/lib/app-host")
 
 	// --- sshd: app users can only deploy ---
-	st.say("ssh: deploy keys can only upload and run `app site`")
+	st.say("ssh: deploy keys can only upload and run `nook site`")
 	for _, a := range core.Apps() {
-		keyFile := filepath.Join(config.SSHKeysDir, "app-"+a)
+		keyFile := filepath.Join(config.SSHKeysDir, "nook-"+a)
 		if fileExists(keyFile) {
 			continue
 		}
-		if old := filepath.Join("/etc/apps/ssh", "app-"+a); fileExists(old) { // an earlier pre-release spot
+		if old := filepath.Join("/etc/nook/ssh", "app-"+a); fileExists(old) { // an earlier pre-release spot
 			copyFile(old, keyFile, 0o644)
 			continue
 		}
@@ -227,11 +231,11 @@ SITE_MAX_BYTES=1073741824
 			write(keyFile, string(b), 0o644)
 		}
 	}
-	sshdChanged := write("/etc/ssh/sshd_config.d/50-app-host.conf", sshdConf, 0o644)
+	sshdChanged := write("/etc/ssh/sshd_config.d/50-nook.conf", sshdConf, 0o644)
 	if sshdChanged {
 		if err := run("sshd", "-t"); err != nil {
-			os.Remove("/etc/ssh/sshd_config.d/50-app-host.conf")
-			fmt.Fprintf(o.Out, "    sshd rejected the app-host settings, left them out: %v\n", err)
+			os.Remove("/etc/ssh/sshd_config.d/50-nook.conf")
+			fmt.Fprintf(o.Out, "    sshd rejected the nook settings, left them out: %v\n", err)
 		} else {
 			exec.Command("systemctl", "reload", "ssh").Run()
 		}
@@ -262,14 +266,14 @@ SITE_MAX_BYTES=1073741824
 	} else {
 		exec.Command("systemctl", "reload", "caddy").Run()
 	}
-	for _, u := range []string{"app-host-helper.service", "app-host-web.service", "app-host-update-check.timer", "app-host-logrotate.timer"} {
-		exec.Command("systemctl", "enable", u).Run()
+	for _, u := range []string{"nook-helper.service", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer"} {
+		exec.Command("systemctl", "enable", "--now", u).Run() // starts it if it isn't running (e.g. right after a migration)
 		if !o.Upgrade || strings.HasSuffix(u, ".timer") {
 			exec.Command("systemctl", "restart", u).Run()
 		}
 	}
 	for _, a := range core.Apps() {
-		exec.Command("systemctl", "enable", "--now", "app-sync@"+a+".path").Run()
+		exec.Command("systemctl", "enable", "--now", "nook-sync@"+a+".path").Run()
 	}
 	h := core.New(o.Out)
 	if err := h.AdminCaddy(); err != nil {
@@ -281,12 +285,12 @@ SITE_MAX_BYTES=1073741824
 	if o.Upgrade {
 		return nil
 	}
-	fmt.Fprintf(o.Out, "\napp-host is installed (default domain %s, server address %s).\n", s.BaseDomain, s.SSHHost)
+	fmt.Fprintf(o.Out, "\nnook is installed (default domain %s, server address %s).\n", s.BaseDomain, s.SSHHost)
 	store, _ := web.OpenStore(config.WebStateDir)
 	chownTree(config.WebStateDir, wuid, wgid)
 	if !store.HasUsers() {
 		d := config.LoadDashboard()
-		fmt.Fprintf(o.Out, "\nOpen this to create your admin login (one use, 24 hours). The certificate is self-signed, so accept the warning:\n  https://%s:%s/invite?t=%s\nThen set the dashboard's address on its Domains page. Lost it? Run: app-host invite\n", s.SSHHost, d.IPPort, store.MakeInvite(""))
+		fmt.Fprintf(o.Out, "\nOpen this to create your admin login (one use, 24 hours). The certificate is self-signed, so accept the warning:\n  https://%s:%s/invite?t=%s\nThen set the dashboard's address on its Domains page. Lost it? Run: nook-admin invite\n", s.SSHHost, d.IPPort, store.MakeInvite(""))
 	}
 	sshdAdvice(o.Out)
 	return nil
@@ -332,7 +336,7 @@ var debianDefault = regexp.MustCompile(`(?ms)^:80\s*\{.*?^\}\n?`)
 // hardenCaddy moves the admin API to a unix socket and drops Debian's :80 welcome page. Returns true when
 // Caddy must restart (a reload can't move the admin endpoint).
 func hardenCaddy(out io.Writer) bool {
-	write("/etc/systemd/system/caddy.service.d/app-host.conf", "[Service]\nRuntimeDirectory=caddy\nRuntimeDirectoryMode=0750\n", 0o644)
+	write("/etc/systemd/system/caddy.service.d/nook.conf", "[Service]\nRuntimeDirectory=caddy\nRuntimeDirectoryMode=0750\n", 0o644)
 	b, err := os.ReadFile(config.Caddyfile)
 	if err != nil {
 		b = []byte{}
@@ -388,11 +392,11 @@ Heads up: SSH still allows password logins. Once your key works, turn them off:
 	}
 }
 
-const sshdConf = `# app-host: app users' keys live in /etc/ssh/app-host-keys (root-owned), and every login goes through the gate,
-# which only allows an rsync upload into ~/builds/<name>/ and "app site ..." commands.
-Match User app-*
-	AuthorizedKeysFile /etc/ssh/app-host-keys/%u
-	ForceCommand /usr/local/bin/app ssh-gate
+const sshdConf = `# nook: app users' keys live in /etc/ssh/nook-keys (root-owned), and every login goes through the gate,
+# which only allows an rsync upload into ~/builds/<name>/ and "nook site ..." commands.
+Match User nook-*
+	AuthorizedKeysFile /etc/ssh/nook-keys/%u
+	ForceCommand /usr/local/bin/nook ssh-gate
 	AllowTcpForwarding no
 	AllowStreamLocalForwarding no
 	AllowAgentForwarding no
@@ -404,13 +408,13 @@ Match User app-*
 `
 
 const helperUnit = `[Unit]
-Description=app-host root helper (the dashboard's fixed set of admin operations)
+Description=nook root helper (the dashboard's fixed set of admin operations)
 After=network.target
 
 [Service]
-ExecStart=/usr/local/sbin/app-host helper
+ExecStart=/usr/local/sbin/nook-admin helper
 Restart=always
-RuntimeDirectory=app-host
+RuntimeDirectory=nook
 RuntimeDirectoryMode=0750
 
 [Install]
@@ -418,16 +422,16 @@ WantedBy=multi-user.target
 `
 
 const webUnit = `[Unit]
-Description=app-host dashboard (unprivileged)
-After=app-host-helper.service
-Wants=app-host-helper.service
+Description=nook dashboard (unprivileged)
+After=nook-helper.service
+Wants=nook-helper.service
 
 [Service]
-User=app-host-web
-Group=app-host-web
-ExecStart=/usr/local/sbin/app-host web
+User=nook-web
+Group=nook-web
+ExecStart=/usr/local/sbin/nook-admin web
 Restart=always
-ReadWritePaths=/var/lib/app-host-web
+ReadWritePaths=/var/lib/nook-web
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -455,11 +459,11 @@ WantedBy=multi-user.target
 `
 
 const syncPath = `[Unit]
-Description=Watch /srv/apps/%i/sites for deploys
+Description=Watch /srv/nook/%i/sites for deploys
 
 [Path]
-PathModified=/srv/apps/%i/sites
-Unit=app-sync@%i.service
+PathModified=/srv/nook/%i/sites
+Unit=nook-sync@%i.service
 
 [Install]
 WantedBy=multi-user.target
@@ -470,19 +474,19 @@ Description=Sync app %i
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/app-host sync %i
+ExecStart=/usr/local/sbin/nook-admin sync %i
 `
 
 const updateService = `[Unit]
-Description=Check for app-host updates
+Description=Check for nook-admin updates
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/app-host update --check --notify
+ExecStart=/usr/local/sbin/nook-admin update --check --notify
 `
 
 const updateTimer = `[Unit]
-Description=Check for app-host updates daily
+Description=Check for nook-admin updates daily
 
 [Timer]
 OnCalendar=daily
@@ -498,7 +502,7 @@ Description=Rotate app logs
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/logrotate /etc/logrotate.d/apps
+ExecStart=/usr/sbin/logrotate /etc/logrotate.d/nook
 `
 
 const logrotateTimer = `[Unit]
@@ -512,7 +516,7 @@ Persistent=true
 WantedBy=timers.target
 `
 
-const logrotateConf = `/var/log/apps/*/*.log {
+const logrotateConf = `/var/log/nook/*/*.log {
 	size 10M
 	rotate 3
 	compress
@@ -522,7 +526,7 @@ const logrotateConf = `/var/log/apps/*/*.log {
 }
 `
 
-const catchallCaddy = `# generated by app-host: unknown hostnames on port 80 get /etc/caddy/catchall/index.html (404).
+const catchallCaddy = `# generated by nook: unknown hostnames on port 80 get /etc/caddy/catchall/index.html (404).
 # Known sites still redirect to HTTPS; edit the page, not this file.
 :80 {
 	error 404

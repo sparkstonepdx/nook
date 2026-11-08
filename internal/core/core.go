@@ -1,7 +1,7 @@
-// Package core is everything app-host does as root: creating and syncing apps, grants, env, Caddy.
+// Package core is everything nook-admin does as root: creating and syncing apps, grants, env, Caddy.
 // Rule: root never opens a path inside an app's folder by name. Directory reads go through a file
 // descriptor opened with O_NOFOLLOW and the *at() calls; anything that must read an app's files
-// runs as the app user (the `app` binary's hidden pack / read-env commands).
+// runs as the app user (the `nook` binary's hidden pack / read-env commands).
 package core
 
 import (
@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/names"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/names"
 )
 
 // Host carries settings and where progress goes.
@@ -75,7 +75,7 @@ func LookupApp(app string) (*AppUser, error) {
 	if !names.App(app) {
 		return nil, fmt.Errorf("invalid app name %q", app)
 	}
-	u, err := user.Lookup("app-" + app)
+	u, err := user.Lookup("nook-" + app)
 	if err != nil {
 		return nil, fmt.Errorf("no app named %s", app)
 	}
@@ -84,12 +84,12 @@ func LookupApp(app string) (*AppUser, error) {
 	return &AppUser{Name: app, Home: filepath.Join(config.AppsDir, app), UID: uid, GID: gid}, nil
 }
 
-// AsApp runs the user-level `app` binary as the app user (never root), returning stdout capped at max bytes.
+// AsApp runs the user-level `nook` binary as the app user (never root), returning stdout capped at max bytes.
 func (u *AppUser) AsApp(max int64, args ...string) ([]byte, error) {
 	cmd := exec.Command(config.AppBin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(u.UID), Gid: uint32(u.GID), Groups: []uint32{}}}
 	cmd.Dir = "/"
-	cmd.Env = []string{"HOME=" + u.Home, "USER=app-" + u.Name, "PATH=/usr/local/bin:/usr/bin:/bin"}
+	cmd.Env = []string{"HOME=" + u.Home, "USER=nook-" + u.Name, "PATH=/usr/local/bin:/usr/bin:/bin"}
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	out, err := cmd.StdoutPipe()
@@ -128,13 +128,13 @@ func Lock() (func(), error) {
 	return func() { syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }, nil
 }
 
-// Apps lists app names (folders in /srv/apps with a matching user).
+// Apps lists app names (folders in /srv/nook with a matching user).
 func Apps() []string {
 	entries, _ := os.ReadDir(config.AppsDir)
 	var out []string
 	for _, e := range entries {
 		if names.App(e.Name()) {
-			if _, err := user.Lookup("app-" + e.Name()); err == nil {
+			if _, err := user.Lookup("nook-" + e.Name()); err == nil {
 				out = append(out, e.Name())
 			}
 		}
@@ -143,7 +143,7 @@ func Apps() []string {
 	return out
 }
 
-// ---- ports registry: "app site port" lines ----
+// ---- ports registry: "nook site port" lines ----
 
 type portEntry struct {
 	App, Site string
@@ -225,7 +225,7 @@ func dropPort(app, site string) {
 	writePorts(keep)
 }
 
-func UnitName(app, site string) string { return "site-" + app + "--" + site + ".service" }
+func UnitName(app, site string) string { return "nook-site-" + app + "--" + site + ".service" }
 
 // Tail returns the last lines of a root-owned log file.
 func Tail(path string, lines int) string {

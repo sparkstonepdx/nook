@@ -3,7 +3,7 @@
 # RELEASE_SIGNING_KEY secret (never written to disk); the public half is written for you to commit.
 # Run from the repo root on your own machine, with gh logged in.
 set -eu
-[ -f go.mod ] || { echo "run from the app-host repo root"; exit 1; }
+[ -f go.mod ] || { echo "run from the nook repo root"; exit 1; }
 if [ -s internal/update/signing.pub ]; then
   echo "internal/update/signing.pub already has a key. Delete it first if you really want a new one"
   echo "(servers on older releases will then refuse updates signed with the new key)."

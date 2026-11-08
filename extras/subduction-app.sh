@@ -1,24 +1,24 @@
 #!/bin/bash
-# Run Subduction as an app-host app (/srv/apps/subduction), served at https://subduction.<BASE_DOMAIN>.
-# Run as root after app-host install. Re-run any time to upgrade: it redeploys whatever binary is at $SUBDUCTION_BIN.
+# Run Subduction as a nook app (/srv/nook/subduction), served at https://subduction.<BASE_DOMAIN>.
+# Run as root after nook-admin install. Re-run any time to upgrade: it redeploys whatever binary is at $SUBDUCTION_BIN.
 #   SUBDUCTION_BIN=/usr/local/bin/subduction_cli ./extras/subduction-app.sh
 # If the old standalone service from the old setup-subduction.sh exists, its key and data are moved in and it is retired.
 set -euo pipefail
-. /etc/apps/config
-APPS_DIR="${APPS_DIR:-/srv/apps}"
+. /etc/nook/config
+APPS_DIR="${APPS_DIR:-/srv/nook}"
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 # every write inside the app's folder happens as the app user, so a symlink there can't point root anywhere
 asu() { runuser -u "$U" -- "$@"; }
 BIN="${SUBDUCTION_BIN:-/usr/local/bin/subduction_cli}"
 SUB="${SUB:-subduction}"
-A=subduction; U="app-$A"; H="$APPS_DIR/$A"; HOST="$SUB.$BASE_DOMAIN"
+A=subduction; U="nook-$A"; H="$APPS_DIR/$A"; HOST="$SUB.$BASE_DOMAIN"
 [ -x "$BIN" ] || { echo "no Subduction binary at $BIN"; exit 1; }
 
 echo "==> app"
 if ! id "$U" >/dev/null 2>&1; then
-  app-host create "$A" --memory 700M --cpu 100% --tasks 512 > "/root/app-$A-github.txt"
-  chmod 600 "/root/app-$A-github.txt"
-  echo "created (GitHub deploy details saved to /root/app-$A-github.txt)"
+  nook-admin create "$A" --memory 700M --cpu 100% --tasks 512 > "/root/nook-$A-github.txt"
+  chmod 600 "/root/nook-$A-github.txt"
+  echo "created (GitHub deploy details saved to /root/nook-$A-github.txt)"
 fi
 asu mkdir -p -m 700 "$H/data/subduction"
 
@@ -62,7 +62,7 @@ RUN
 chmod 755 "$T/run"
 tar -C "$T" -cf - . | asu sh -c 'rm -rf "$1" && mkdir -p "$1" && tar -C "$1" -xf -' sh "$R"
 # the deploy's own live check can finish before the sites/ watcher fires; sync here either way
-runuser -u "$U" -- bash -lc "cd ~ && app site deploy $R $SUB" || true
-app-host sync "$A"
+runuser -u "$U" -- bash -lc "cd ~ && nook site deploy $R $SUB" || true
+nook-admin sync "$A"
 echo
-echo "Subduction is live at wss://$HOST  (logs: /var/log/apps/$A/$SUB.log)"
+echo "Subduction is live at wss://$HOST  (logs: /var/log/nook/$A/$SUB.log)"

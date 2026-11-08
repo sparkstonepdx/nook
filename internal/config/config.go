@@ -1,4 +1,4 @@
-// Package config reads and edits the KEY=value files in /etc/apps.
+// Package config reads and edits the KEY=value files in /etc/nook.
 package config
 
 import (
@@ -9,26 +9,26 @@ import (
 )
 
 const (
-	ConfigFile   = "/etc/apps/config"
-	DashboardEnv = "/etc/apps/dashboard.env"
-	UpdateEnv    = "/etc/apps/update.env"
-	GrantsFile   = "/etc/apps/grants"
-	PortsFile    = "/etc/apps/ports"
-	StateDir     = "/etc/apps/state"
-	EnvDir       = "/etc/apps/env"
-	SSHKeysDir   = "/etc/ssh/app-host-keys" // public keys: readable (sshd reads them as the user), root-writable only
-	LogDir       = "/var/log/apps"
-	WWWDir       = "/var/lib/app-host/www"
-	CaddyAppsDir = "/etc/caddy/apps"
-	AdminCaddy   = "/etc/caddy/admin.caddy"
+	ConfigFile   = "/etc/nook/config"
+	DashboardEnv = "/etc/nook/dashboard.env"
+	UpdateEnv    = "/etc/nook/update.env"
+	GrantsFile   = "/etc/nook/grants"
+	PortsFile    = "/etc/nook/ports"
+	StateDir     = "/etc/nook/state"
+	EnvDir       = "/etc/nook/env"
+	SSHKeysDir   = "/etc/ssh/nook-keys" // public keys: readable (sshd reads them as the user), root-writable only
+	LogDir       = "/var/log/nook"
+	WWWDir       = "/var/lib/nook/www"
+	CaddyAppsDir = "/etc/caddy/nook"
+	AdminCaddy   = "/etc/caddy/nook-dashboard.caddy"
 	Caddyfile    = "/etc/caddy/Caddyfile"
-	WebStateDir  = "/var/lib/app-host-web"
-	HelperSocket = "/run/app-host/helper.sock"
-	LockFile     = "/run/app-sync.lock"
-	AppsDir      = "/srv/apps"
-	AppBin       = "/usr/local/bin/app"
-	HostBin      = "/usr/local/sbin/app-host"
-	WebUser      = "app-host-web"
+	WebStateDir  = "/var/lib/nook-web"
+	HelperSocket = "/run/nook/helper.sock"
+	LockFile     = "/run/nook-sync.lock"
+	AppsDir      = "/srv/nook"
+	AppBin       = "/usr/local/bin/nook"
+	HostBin      = "/usr/local/sbin/nook-admin"
+	WebUser      = "nook-web"
 )
 
 var line = regexp.MustCompile(`^([A-Z_][A-Z0-9_]*)=("?)(.*)$`)
@@ -91,7 +91,7 @@ func WriteAtomic(path string, data []byte, mode os.FileMode) error {
 	return os.Rename(tmp, path)
 }
 
-// Settings is /etc/apps/config with defaults.
+// Settings is /etc/nook/config with defaults.
 type Settings struct {
 	BaseDomain, SSHHost, MemoryMax, CPUQuota, TasksMax string
 	PortMin, PortMax                                   int
@@ -126,7 +126,7 @@ func Load() Settings {
 	}
 }
 
-// Dashboard is /etc/apps/dashboard.env with defaults.
+// Dashboard is /etc/nook/dashboard.env with defaults.
 type Dashboard struct {
 	Host, Port, IPPort string
 	IPAccess           bool

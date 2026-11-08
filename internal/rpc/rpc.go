@@ -42,7 +42,7 @@ const maxMessage = 4 << 20
 func Call(socket string, req Request, timeout time.Duration) (*Response, error) {
 	c, err := net.DialTimeout("unix", socket, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("the app-host helper isn't running (%v)", err)
+		return nil, fmt.Errorf("the nook-admin helper isn't running (%v)", err)
 	}
 	defer c.Close()
 	c.SetDeadline(time.Now().Add(timeout))

@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/envfile"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/envfile"
 )
 
 func envPath(app string) string { return filepath.Join(config.EnvDir, app+".env") }
 
-// EnvList returns the values set with app-host env (root-owned /etc/apps/env/<app>.env).
+// EnvList returns the values set with nook-admin env (root-owned /etc/nook/env/<app>.env).
 func EnvList(app string) (*envfile.Vars, error) {
 	if _, err := LookupApp(app); err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (h *Host) EnvApply(app string, set map[string]string, unset []string, resta
 		v.Unset(k)
 	}
 	os.MkdirAll(config.EnvDir, 0o700)
-	if err := config.WriteAtomic(envPath(app), []byte(envfile.Format(v, "managed by app-host env; loaded into every running site of this app after its own secrets.env")), 0o600); err != nil {
+	if err := config.WriteAtomic(envPath(app), []byte(envfile.Format(v, "managed by nook-admin env; loaded into every running site of this app after its own secrets.env")), 0o600); err != nil {
 		return err
 	}
 	var changed []string

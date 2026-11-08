@@ -1,4 +1,4 @@
-// Package token is the APP_HOST secret: everything a deploy needs, as "apphost1:" + base64url(JSON).
+// Package token is the NOOK_TOKEN secret: everything a deploy needs, as "nook1:" + base64url(JSON).
 package token
 
 import (
@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const prefix = "apphost1:"
+const (
+	prefix    = "nook1:"
+	oldPrefix = "apphost1:" // tokens printed before the rename still work
+)
 
 type Token struct {
 	V          int    `json:"v"`
@@ -29,22 +32,25 @@ func (t Token) Encode() string {
 func Decode(s string) (*Token, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil, errors.New("the APP_HOST secret is empty: add it to this repo (app-host create prints it)")
+		return nil, errors.New("the NOOK_TOKEN secret is empty: add it to this repo (nook-admin create prints it)")
 	}
-	if !strings.HasPrefix(s, prefix) {
-		return nil, errors.New("that doesn't look like an APP_HOST secret (it should start with apphost1:)")
+	body, ok := strings.CutPrefix(s, prefix)
+	if !ok {
+		if body, ok = strings.CutPrefix(s, oldPrefix); !ok {
+			return nil, errors.New("that doesn't look like a NOOK_TOKEN secret (it should start with nook1:)")
+		}
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(s[len(prefix):], "="))
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(body, "="))
 	if err != nil {
-		return nil, errors.New("the APP_HOST secret is damaged; copy it again from app-host create")
+		return nil, errors.New("the NOOK_TOKEN secret is damaged; copy it again from nook-admin create")
 	}
 	var t Token
 	if err := json.Unmarshal(raw, &t); err != nil {
-		return nil, errors.New("the APP_HOST secret is damaged; copy it again from app-host create")
+		return nil, errors.New("the NOOK_TOKEN secret is damaged; copy it again from nook-admin create")
 	}
 	for name, v := range map[string]string{"host": t.Host, "user": t.User, "domain": t.Domain, "knownHosts": t.KnownHosts, "key": t.Key} {
 		if v == "" {
-			return nil, errors.New("the APP_HOST secret is missing " + name)
+			return nil, errors.New("the NOOK_TOKEN secret is missing " + name)
 		}
 	}
 	if t.Port == 0 {

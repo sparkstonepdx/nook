@@ -1,5 +1,5 @@
-// deploy-action is the GitHub Action behind sparkstonepdx/app-host/deploy: it uploads a folder over SSH
-// (rsync into builds/<site>/), publishes it with `app site deploy`, and handles PR previews.
+// deploy-action is the GitHub Action behind sparkstonepdx/nook/deploy: it uploads a folder over SSH
+// (rsync into builds/<site>/), publishes it with `nook site deploy`, and handles PR previews.
 // It needs only the runner's ssh and rsync. The deploy key is written to a private temp file and never printed.
 package main
 
@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/names"
-	"github.com/sparkstonepdx/app-host/internal/token"
+	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 func in(name string) string { return strings.TrimSpace(os.Getenv("INPUT_" + name)) }
@@ -44,7 +44,7 @@ type event struct {
 }
 
 func main() {
-	tok, err := token.Decode(in("APP_HOST"))
+	tok, err := token.Decode(in("TOKEN"))
 	if err != nil {
 		fail("%v", err)
 	}
@@ -75,7 +75,7 @@ func main() {
 	url := "https://" + host
 
 	// --- ssh setup: host key pinned, key in a private temp dir ---
-	tmp, err := os.MkdirTemp("", "app-host-")
+	tmp, err := os.MkdirTemp("", "nook-")
 	if err != nil {
 		fail("%v", err)
 	}
@@ -114,7 +114,7 @@ func main() {
 	}
 
 	if closing {
-		if ssh("app site rm "+name) != 0 {
+		if ssh("nook site rm "+name) != 0 {
 			fail("couldn't remove %s", host)
 		}
 		comment(site, pr, fmt.Sprintf("Preview removed: ~~%s~~", url))
@@ -135,7 +135,7 @@ func main() {
 	if run("rsync "+src+" "+target+":"+upload, "rsync", "-a", "--delete", "-e", rsh, src, target+":"+upload) != 0 {
 		fail("upload failed")
 	}
-	switch code := ssh("app site deploy " + upload + " " + name); code {
+	switch code := ssh("nook site deploy " + upload + " " + name); code {
 	case 0:
 	case 2:
 		fail("%s didn't go live: this app isn't allowed that hostname, it's reserved, or another app has it. Grant it on the dashboard's Domains page.", host)
@@ -168,7 +168,7 @@ func comment(site string, pr int, body string) {
 	if apiBase == "" {
 		apiBase = "https://api.github.com"
 	}
-	marker := "<!-- app-host:" + site + " -->"
+	marker := "<!-- nook:" + site + " -->"
 	client := &http.Client{Timeout: 20 * time.Second}
 	call := func(method, path string, payload any) (*http.Response, error) {
 		var b []byte
@@ -179,7 +179,7 @@ func comment(site string, pr int, body string) {
 		req.Header.Set("Authorization", "Bearer "+tokenStr)
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "app-host-deploy")
+		req.Header.Set("User-Agent", "nook-deploy")
 		return client.Do(req)
 	}
 	warn := func(msg string) {

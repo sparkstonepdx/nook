@@ -18,7 +18,7 @@ export default function Login() {
   };
   return (
     <main class="auth card">
-      <h1>app-host</h1>
+      <h1>nook</h1>
       <form onSubmit={submit}>
         <ErrorAlert error={error()} />
         <Field label="Username"><input class="input" name="user" autocomplete="username" required autofocus /></Field>

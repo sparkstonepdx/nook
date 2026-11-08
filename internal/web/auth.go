@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/scrypt"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/scrypt"
 )
 
 const (
@@ -178,7 +178,7 @@ func (s *Store) SessionUser(cookie string) string {
 	return f[0]
 }
 
-// Invites are signed, so `app-host invite` (root) can mint one without writing to this folder.
+// Invites are signed, so `nook-admin invite` (root) can mint one without writing to this folder.
 // Format: base64url(expiresUnix|by|nonce).mac; used nonces are remembered until they expire.
 func (s *Store) MakeInvite(by string) string {
 	nonce := make([]byte, 12)

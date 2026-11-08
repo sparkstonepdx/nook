@@ -6,11 +6,12 @@ func TestGate(t *testing.T) {
 	ok := []string{
 		"rsync --server -logDtpre.iLsfxCIvu --delete . builds/myapp/",
 		"rsync --server -logDtpre.iLsfxCIvu --delete . builds/pr-12.client.com/",
-		"app site deploy builds/myapp/ myapp",
-		"app site rm myapp-pr-3",
+		"nook site deploy builds/myapp/ myapp",
+		"nook site rm myapp-pr-3",
+		"app site list", // pre-rename name
 	}
 	bad := []string{
-		"", "bash", "sh -c id", "app create x", "app site deploy x; id",
+		"", "bash", "sh -c id", "app create x", "nook site deploy x; id",
 		"rsync --server --sender -logDtpre.iLsfxCIvu . builds/x/",
 		"rsync --server -logDtpre.iLsfxCIvu . /etc/",
 		"rsync --server -logDtpre.iLsfxCIvu . builds/../.ssh/",

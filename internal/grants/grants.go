@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sparkstonepdx/app-host/internal/names"
+	"github.com/sparkstonepdx/nook/internal/names"
 )
 
 type Grant struct{ App, Kind, Name string }

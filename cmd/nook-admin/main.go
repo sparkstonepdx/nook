@@ -1,4 +1,4 @@
-// app-host: the root-only side of app-host. App users can't run it.
+// nook-admin: the root-only side of nook. App users can't run it.
 package main
 
 import (
@@ -17,34 +17,34 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/dashboard"
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/core"
-	"github.com/sparkstonepdx/app-host/internal/grants"
-	"github.com/sparkstonepdx/app-host/internal/install"
-	"github.com/sparkstonepdx/app-host/internal/update"
-	"github.com/sparkstonepdx/app-host/internal/web"
+	"github.com/sparkstonepdx/nook/dashboard"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/core"
+	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/install"
+	"github.com/sparkstonepdx/nook/internal/update"
+	"github.com/sparkstonepdx/nook/internal/web"
 )
 
 var version = "dev"
 
-const usage = `app-host: run apps and static sites on this server.  (root)
+const usage = `nook-admin: run apps and static sites on this server.  (root)
 
-  app-host install [--domain D] [--ip IP]     set up or upgrade this box
-  app-host create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
-  app-host delete NAME                         asks you to type the name
-  app-host sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
-  app-host grant list [APP]
-  app-host grant add|rm APP domain|sub|host NAME
-  app-host env list NAME [--values]
-  app-host env set NAME KEY [KEY ...]          prompts for each value (stays out of shell history)
-  app-host env set NAME KEY=value ...
-  app-host env unset NAME KEY ...
-  app-host invite                              one-time dashboard login link
-  app-host update [--check]                    install the latest signed release
-  app-host version
+  nook-admin install [--domain D] [--ip IP]     set up or upgrade this box
+  nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
+  nook-admin delete NAME                         asks you to type the name
+  nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
+  nook-admin grant list [APP]
+  nook-admin grant add|rm APP domain|sub|host NAME
+  nook-admin env list NAME [--values]
+  nook-admin env set NAME KEY [KEY ...]          prompts for each value (stays out of shell history)
+  nook-admin env set NAME KEY=value ...
+  nook-admin env unset NAME KEY ...
+  nook-admin invite                              one-time dashboard login link
+  nook-admin update [--check]                    install the latest signed release
+  nook-admin version
 
-Internal: helper (root API for the dashboard), web (the dashboard; runs as app-host-web)
+Internal: helper (root API for the dashboard), web (the dashboard; runs as nook-web)
 `
 
 func die(err error) {
@@ -85,7 +85,7 @@ func main() {
 	case "create":
 		needRoot()
 		if len(args) < 1 {
-			die(fmt.Errorf("usage: app-host create NAME [--memory 256M] [--cpu 50%%] [--tasks 256] [--repo owner/name]"))
+			die(fmt.Errorf("usage: nook-admin create NAME [--memory 256M] [--cpu 50%%] [--tasks 256] [--repo owner/name]"))
 		}
 		fs := flag.NewFlagSet("create", flag.ExitOnError)
 		mem := fs.String("memory", "", "")
@@ -99,9 +99,9 @@ func main() {
 	case "delete":
 		needRoot()
 		if len(args) != 1 {
-			die(fmt.Errorf("usage: app-host delete NAME"))
+			die(fmt.Errorf("usage: nook-admin delete NAME"))
 		}
-		fmt.Printf("This deletes /srv/apps/%s and everything in it. Type the app name to confirm: ", args[0])
+		fmt.Printf("This deletes /srv/nook/%s and everything in it. Type the app name to confirm: ", args[0])
 		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
 		die(h.Delete(args[0], strings.TrimSpace(line)))
 	case "sync":
@@ -111,7 +111,7 @@ func main() {
 		} else if len(args) == 1 {
 			die(h.Sync(args[0]))
 		} else {
-			die(fmt.Errorf("usage: app-host sync NAME | --all"))
+			die(fmt.Errorf("usage: nook-admin sync NAME | --all"))
 		}
 	case "grant":
 		needRoot()
@@ -176,7 +176,7 @@ func grantCmd(h *core.Host, args []string) {
 		return
 	}
 	if len(args) != 4 || (args[0] != "add" && args[0] != "rm") {
-		die(fmt.Errorf("usage: app-host grant list [APP] | app-host grant add|rm APP domain|sub|host NAME"))
+		die(fmt.Errorf("usage: nook-admin grant list [APP] | nook-admin grant add|rm APP domain|sub|host NAME"))
 	}
 	die(h.Grant(args[0] == "add", grants.Grant{App: args[1], Kind: args[2], Name: args[3]}))
 }
@@ -200,7 +200,7 @@ func envCmd(h *core.Host, args []string) {
 		return false
 	}
 	if len(pos) < 2 {
-		die(fmt.Errorf("usage: app-host env list|set|unset|apply NAME ..."))
+		die(fmt.Errorf("usage: nook-admin env list|set|unset|apply NAME ..."))
 	}
 	verb, app, rest := pos[0], pos[1], pos[2:]
 	switch verb {
@@ -244,7 +244,7 @@ func envCmd(h *core.Host, args []string) {
 		die(json.NewDecoder(os.Stdin).Decode(&j))
 		die(h.EnvApply(app, j.Set, j.Unset, !has("--no-restart")))
 	default:
-		die(fmt.Errorf("usage: app-host env list|set|unset|apply NAME ..."))
+		die(fmt.Errorf("usage: nook-admin env list|set|unset|apply NAME ..."))
 	}
 }
 
@@ -255,7 +255,7 @@ func isTTY() bool {
 
 func serveWeb() {
 	if os.Geteuid() == 0 {
-		die(fmt.Errorf("the dashboard runs as %s, not root (systemctl start app-host-web)", config.WebUser))
+		die(fmt.Errorf("the dashboard runs as %s, not root (systemctl start nook-web)", config.WebUser))
 	}
 	ui, err := fs.Sub(dashboard.Public, "public")
 	die(err)
