@@ -52,13 +52,26 @@ func migrateFromAppHost(st *step, out io.Writer) error {
 	}
 	exec.Command("pkill", "-KILL", "-u", oldWebUser).Run()
 
-	// folders: move whole trees; a destination that already exists means a half-done run, so merge into it
-	for _, m := range [][2]string{
-		{oldEtc, "/etc/nook"}, {oldSrv, config.AppsDir}, {oldLog, config.LogDir},
-		{oldLib, "/var/lib/nook"}, {oldWebState, config.WebStateDir}, {oldKeys, config.SSHKeysDir},
+	// sshd: lock both old and new user names to the gate before any user is renamed
+	if write("/etc/ssh/sshd_config.d/50-nook.conf", sshdConf, 0o644) {
+		exec.Command("systemctl", "reload", "ssh").Run()
+	}
+	os.Remove("/etc/ssh/sshd_config.d/50-app-host.conf")
+
+	// folders: move whole trees; a destination that already exists means a half-done run, so merge into it.
+	// App folders are app-owned, so they're only ever renamed as a whole, never walked into as root.
+	for _, m := range []struct {
+		from, to string
+		deep     bool
+	}{
+		{oldEtc, "/etc/nook", true}, {oldSrv, config.AppsDir, false}, {oldLog, config.LogDir, false},
+		{oldLib, "/var/lib/nook", true}, {oldWebState, config.WebStateDir, false}, {oldKeys, config.SSHKeysDir, false},
 	} {
-		if err := moveTree(m[0], m[1]); err != nil {
-			return fmt.Errorf("moving %s to %s: %v", m[0], m[1], err)
+		if err := moveTree(m.from, m.to, m.deep); err != nil {
+			return fmt.Errorf("moving %s to %s: %v", m.from, m.to, err)
+		}
+		if fileExists(m.from) {
+			fmt.Fprintf(out, "    left %s in place: parts of it already exist under %s (compare them by hand)\n", m.from, m.to)
 		}
 	}
 
@@ -94,7 +107,7 @@ func migrateFromAppHost(st *step, out io.Writer) error {
 		}
 	}
 	for _, f := range []string{
-		"/etc/ssh/sshd_config.d/50-app-host.conf", "/etc/logrotate.d/apps", "/etc/update-motd.d/90-app-host",
+		"/etc/logrotate.d/apps", "/etc/update-motd.d/90-app-host",
 		"/etc/systemd/system/caddy.service.d/app-host.conf", "/etc/caddy/admin.caddy",
 		"/usr/local/sbin/app-host", "/usr/local/bin/app",
 	} {
@@ -139,8 +152,9 @@ func renameUser(from, to, home string) error {
 	return nil
 }
 
-// moveTree renames src to dst, or moves src's entries into dst when dst already exists.
-func moveTree(src, dst string) error {
+// moveTree renames src to dst, or, when dst already exists, moves src's entries that dst lacks (recursing into
+// directories both have only when deep). src is removed only once it's empty; nothing is ever deleted.
+func moveTree(src, dst string, deep bool) error {
 	fi, err := os.Lstat(src)
 	if err != nil || !fi.IsDir() {
 		return nil
@@ -155,19 +169,20 @@ func moveTree(src, dst string) error {
 	}
 	for _, e := range entries {
 		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
-		if _, err := os.Lstat(d); err == nil {
-			if e.IsDir() {
-				if err := moveTree(s, d); err != nil {
+		if di, err := os.Lstat(d); err == nil {
+			if deep && e.Type().IsDir() && di.IsDir() {
+				if err := moveTree(s, d, true); err != nil {
 					return err
 				}
 			}
-			continue // the nook copy wins
+			continue
 		}
 		if err := os.Rename(s, d); err != nil {
 			return err
 		}
 	}
-	return os.RemoveAll(src)
+	os.Remove(src) // only succeeds when everything moved
+	return nil
 }
 
 func dropImports(paths ...string) {

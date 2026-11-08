@@ -24,6 +24,7 @@ const (
 	Caddyfile    = "/etc/caddy/Caddyfile"
 	WebStateDir  = "/var/lib/nook-web"
 	HelperSocket = "/run/nook/helper.sock"
+	WebSocket    = "/run/nook-web.sock" // dashboard; from nook-web.socket, mode 0660 nook-web:caddy
 	LockFile     = "/run/nook-sync.lock"
 	AppsDir      = "/srv/nook"
 	AppBin       = "/usr/local/bin/nook"
@@ -128,16 +129,13 @@ func Load() Settings {
 
 // Dashboard is /etc/nook/dashboard.env with defaults.
 type Dashboard struct {
-	Host, Port, IPPort string
-	IPAccess           bool
+	Host, IPPort string
+	IPAccess     bool
 }
 
 func LoadDashboard() Dashboard {
 	m := Read(DashboardEnv)
-	d := Dashboard{Host: m["DASHBOARD_HOST"], Port: m["DASHBOARD_PORT"], IPPort: m["DASHBOARD_IP_PORT"], IPAccess: m["DASHBOARD_IP_ACCESS"] != "off"}
-	if d.Port == "" {
-		d.Port = "19999"
-	}
+	d := Dashboard{Host: m["DASHBOARD_HOST"], IPPort: m["DASHBOARD_IP_PORT"], IPAccess: m["DASHBOARD_IP_ACCESS"] != "off"}
 	if d.IPPort == "" {
 		d.IPPort = "8443"
 	}

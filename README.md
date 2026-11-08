@@ -49,7 +49,7 @@ Apps and sites (state, port, memory, live or not), create/delete, sync, restart/
 - **Logins:** per user, scrypt-hashed; HMAC-signed session cookies (30 days). Invites are signed one-time links (24 h). Removing a user or changing a password logs their sessions out.
 - **Requests:** JSON only, from the dashboard's own origin; strict CSP; failed logins throttled per client IP (5 free, then up to 60 s).
 - **Reaching it:** always at `https://<ip>:8443` (self-signed), plus the address set on the Domains page.
-- **UI source:** `dashboard/ui` (Solid + `@sparkstone/css`), built into `dashboard/public` and embedded in the binary. Change it with `cd dashboard/ui && npm install && npm run dev` (proxies `/api` to a dashboard on :19999), then `npm run build` and commit `dashboard/public`. CI fails if it's stale.
+- **UI source:** `dashboard/ui` (Solid + `@sparkstone/css`), built into `dashboard/public` and embedded in the binary. Change it with `cd dashboard/ui && npm install && npm run dev` (proxies `/api` to `/tmp/nook-web.sock`; serve one there with `systemd-socket-activate -l /tmp/nook-web.sock nook-admin web` as the `nook-web` user), then `npm run build` and commit `dashboard/public`. CI fails if it's stale.
 
 ## Deploying from GitHub
 

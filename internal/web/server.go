@@ -4,6 +4,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -26,14 +27,22 @@ type Server struct {
 	Socket string
 	UI     fs.FS
 
-	mu    sync.Mutex
-	fails map[string]*failState
+	mu     sync.Mutex
+	fails  map[string]*failState
+	recent []time.Time     // every failed attempt in the last globalWindow
+	good   map[string]bool // client keys that have logged in since start; not paused by the global limit
 }
 
 type failState struct {
 	n     int
-	until time.Time
+	last  time.Time // latest failure
+	until time.Time // no tries before this
 }
+
+const (
+	globalWindow = 15 * time.Minute
+	globalMax    = 50 // failures in globalWindow (from any number of addresses) before new addresses are paused
+)
 
 var security = map[string]string{
 	"X-Frame-Options": "DENY", "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
@@ -88,11 +97,14 @@ func (s *Server) routes() []route {
 	})
 	add("POST", "/api/login", true, func(c *ctx) (any, error) {
 		user := c.str("user")
+		if err := s.throttled(c.ip); err != nil {
+			return nil, err
+		}
 		if !s.Store.CheckPassword(user, c.str("password")) {
-			s.slowDown(c.ip)
+			s.failed(c.ip)
 			return nil, fail(401, "Wrong username or password.")
 		}
-		s.clearFails(c.ip)
+		s.succeeded(c.ip)
 		c.w.Header().Add("Set-Cookie", s.Store.SessionCookie(user, s.Store.Users()[user].Gen))
 		return map[string]any{"user": user}, nil
 	})
@@ -105,8 +117,11 @@ func (s *Server) routes() []route {
 	})
 	add("POST", "/api/invite", true, func(c *ctx) (any, error) {
 		user, pw := c.str("user"), c.str("password")
+		if err := s.throttled(c.ip); err != nil {
+			return nil, err
+		}
 		if !s.Store.InviteValid(c.str("token")) {
-			s.slowDown(c.ip)
+			s.failed(c.ip)
 			return nil, fail(410, "This invite was already used or has expired.")
 		}
 		switch {
@@ -250,35 +265,83 @@ func fmtFloat(f float64) string {
 
 func jsonNum(f float64) string { b, _ := json.Marshal(f); return string(b) }
 
-// --- login throttle: per client IP; 5 free tries, then backoff up to a minute ---
-func (s *Server) slowDown(ip string) {
-	s.mu.Lock()
-	if s.fails == nil || len(s.fails) > 10000 {
-		s.fails = map[string]*failState{}
+// --- login throttle ---
+// Each client (IPv4 address or IPv6 /64) gets 5 free tries, then waits 1s, 2s, 4s ... up to a minute between
+// tries. The wait is enforced before the password is checked, so parallel guesses don't get around it. Across
+// all clients, more than globalMax failures in globalWindow pauses logins from clients that haven't logged in
+// successfully since the dashboard started (open sessions keep working).
+
+func clientKey(ip string) string {
+	if a := net.ParseIP(ip); a != nil && a.To4() == nil {
+		return a.Mask(net.CIDRMask(64, 128)).String() + "/64"
 	}
-	f := s.fails[ip]
-	if f == nil {
-		f = &failState{}
-		s.fails[ip] = f
-	}
-	f.n++
-	wait := time.Duration(0)
-	if f.n > 5 {
-		wait = time.Duration(math.Min(60, math.Pow(2, math.Min(float64(f.n-6), 6)))) * time.Second
-	}
-	if f.until.Before(time.Now()) {
-		f.until = time.Now()
-	}
-	f.until = f.until.Add(wait)
-	sleep := time.Until(f.until)
-	s.mu.Unlock()
-	time.Sleep(sleep)
+	return ip
 }
 
-func (s *Server) clearFails(ip string) { s.mu.Lock(); delete(s.fails, ip); s.mu.Unlock() }
+func (s *Server) throttled(ip string) error {
+	k, now := clientKey(ip), time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f := s.fails[k]; f != nil && now.Before(f.until) {
+		return fail(429, fmt.Sprintf("Too many tries. Wait %d seconds.", int(f.until.Sub(now).Seconds())+1))
+	}
+	s.prune(now)
+	if len(s.recent) >= globalMax && !s.good[k] {
+		return fail(429, "Logins are paused for a few minutes after many failed attempts. Try again later.")
+	}
+	return nil
+}
+
+func (s *Server) failed(ip string) {
+	k, now := clientKey(ip), time.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fails == nil {
+		s.fails = map[string]*failState{}
+	}
+	f := s.fails[k]
+	if f == nil {
+		f = &failState{}
+		s.fails[k] = f
+	}
+	f.n++
+	f.last = now
+	if f.n > 5 {
+		f.until = now.Add(time.Duration(math.Min(60, math.Pow(2, math.Min(float64(f.n-6), 6)))) * time.Second)
+	}
+	s.recent = append(s.recent, now)
+}
+
+func (s *Server) succeeded(ip string) {
+	k := clientKey(ip)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.fails, k)
+	if s.good == nil {
+		s.good = map[string]bool{}
+	}
+	if len(s.good) < 1000 {
+		s.good[k] = true
+	}
+}
+
+// prune drops failures older than globalWindow and clients that have been quiet that long. Caller holds s.mu.
+func (s *Server) prune(now time.Time) {
+	i := 0
+	for i < len(s.recent) && now.Sub(s.recent[i]) > globalWindow {
+		i++
+	}
+	s.recent = s.recent[i:]
+	for k, f := range s.fails {
+		if now.Sub(f.last) > globalWindow && now.After(f.until) {
+			delete(s.fails, k)
+		}
+	}
+}
 
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" { // set by Caddy; we only listen on 127.0.0.1
+	// Only Caddy can connect (the socket is caddy-group only), and Caddy replaces any X-Forwarded-For a client sends.
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		parts := strings.Split(xff, ",")
 		return strings.TrimSpace(parts[len(parts)-1])
 	}
