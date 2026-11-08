@@ -1,4 +1,4 @@
-/srv/apps/*/logs/*.log {
+/var/log/apps/*/*.log {
 	size 10M
 	rotate 3
 	compress

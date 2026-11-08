@@ -110,7 +110,7 @@ gh secret set APP_HOST -R sparkstonepdx/myapp     # paste the apphost1:... value
 
 ![Environment](docs/dashboard-env.png)
 
-Env vars and secrets for running apps live on the server in `/srv/apps/NAME/secrets.env` (600, owned by the app user), not in GitHub. Set them on the dashboard (app → Environment, including pasting a .env block) or with `app env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by app-host and can't be overridden.
+Env vars and secrets for running apps live on the server in `/etc/apps/env/NAME.env` (root-only), not in GitHub. A `secrets.env` the app's own deploys write into its folder still works: `app sync` copies it, reading it as the app user, and `app env` values override it. Set them on the dashboard (app → Environment, including pasting a .env block) or with `app env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by app-host and can't be overridden.
 
 ## App commands (as the app user, e.g. from GitHub Actions over SSH)
 
@@ -129,15 +129,18 @@ app site logs SITE [N]
 | `sites/` | one folder per hostname (world-readable so Caddy can serve it) |
 | `builds/` | private upload area for rsync |
 | `data/` | private persistent data for running apps (survives redeploys) |
-| `logs/<sub>.log` | stdout/stderr of running apps (rotated at 10 MB, 3 kept) |
-| `secrets.env` | runtime env vars, managed with `app env` or the dashboard; loaded into every running site |
+| `/var/log/apps/<app>/<site>.log` | stdout/stderr of running apps, root-owned, readable by the app (rotated at 10 MB, 3 kept) |
+| `secrets.env` | optional env vars written by your own deploys; `app env` / the dashboard values (in `/etc/apps/env/`) override them |
 
 Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are set too. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice, capped at 256M memory / 50% CPU / 256 tasks by default (set per app with `app create` options, or edit `/etc/systemd/system/app-NAME.slice`).
 
 ## Rules and isolation
 
 - Folder name = hostname, and it must be covered by one of the app's grants. The first app to claim a hostname keeps it; other apps' attempts are skipped and reported. `RESERVED_SUBDOMAINS` (of the default domain) and the dashboard address can't be claimed by anyone.
-- App folders are `711`: an app user can't list or read another app's private files (`secrets.env`, `data/`, `builds/`, `.ssh/`). Files inside `sites/` are readable by path, because Caddy has to serve them, so treat sites as public.
+- App folders are `700`. Caddy serves static sites from a root-owned copy in `/var/lib/app-host/www/`, made by running `tar` as the app user (so symlinks can only reach what that app could already read) and dropping any links. Static sites are public once deployed.
+- Root never opens a path inside an app's folder: env files and logs live in root-owned folders, and the app's own `secrets.env` is read as the app user.
+- Caddy's admin API is on a unix socket in `/run/caddy` (caddy and root only), not `localhost:2019`, so apps can't rewrite Caddy's config. `install.sh` sets this up.
+- Running apps may only listen on their own `$PORT` (`SocketBindAllow`), with ordinary socket families only.
 - The deploy key is limited with `restrict` (no port forwarding, no pty).
 - Running apps are systemd services with `ProtectSystem=strict`, `NoNewPrivileges`, private /tmp, and only their own app folder visible.
 - Each new subdomain gets its own Let's Encrypt certificate, and Let's Encrypt allows 50 new certificates per registered domain per 7 days. Lots of short-lived PR previews can hit that.

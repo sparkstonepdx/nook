@@ -51,6 +51,6 @@ case "${2:-}" in
   list)
     for d in "$S"/*/; do [ -d "$d" ] || continue; n=$(basename "$d")
       if [ -x "$d/run" ]; then echo "$n  (running app)"; else echo "$n  (static)"; fi; done;;
-  logs) sub "${3:-}"; tail -n "${4:-100}" "$HOME/logs/$3.log" 2>/dev/null || echo "no log for $3 yet";;
+  logs) sub "${3:-}"; tail -n "${4:-100}" "/var/log/apps/$(basename "$HOME")/$3.log" 2>/dev/null || echo "no log for $3 yet";;
   *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1;;
 esac

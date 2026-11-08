@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do case "$1" in
 U="app-$NAME"; DIR="$APPS_DIR/$NAME"
 id "$U" >/dev/null 2>&1 && { echo "$U already exists"; exit 1; }
 
-# --- user + folder. Home is 711: others can't list it, but Caddy can reach the static files in sites/ ---
+# --- user + folder. Home is 700: Caddy serves a root-owned copy of static sites, so nothing else needs in ---
 useradd --system --home-dir "$DIR" --create-home --shell /bin/bash --user-group "$U"
 mkdir -p "$DIR/.ssh" "$DIR/sites" "$DIR/logs" "$DIR/builds" "$DIR/data"
 # shellcheck disable=SC2016  # literal, expanded at login
@@ -30,7 +30,7 @@ ssh-keygen -q -t ed25519 -N "" -C "github-actions-$NAME" -f "$KEYTMP/key"
 echo "restrict $(cat "$KEYTMP/key.pub")" > "$DIR/.ssh/authorized_keys"
 
 chown -R "$U:$U" "$DIR"
-chmod 711 "$DIR"; chmod 755 "$DIR/sites" "$DIR/logs"; chmod 700 "$DIR/.ssh" "$DIR/builds" "$DIR/data"
+chmod 700 "$DIR"; chmod 700 "$DIR/sites" "$DIR/logs"; chmod 700 "$DIR/.ssh" "$DIR/builds" "$DIR/data"
 chmod 600 "$DIR/.ssh/authorized_keys" "$DIR/secrets.env"
 
 # --- resource limits shared by everything this app runs ---
