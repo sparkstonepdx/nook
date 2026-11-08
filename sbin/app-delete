@@ -15,6 +15,7 @@ awk -v a="$NAME" '$1==a {print $2}' "$PORTS_FILE" | while read -r s; do
 done
 sed -i "/^$NAME /d" "$PORTS_FILE"
 rm -f "/etc/systemd/system/app-$NAME.slice"
+[ -f /etc/apps/grants ] && sed -i "/^$NAME /d" /etc/apps/grants
 systemctl daemon-reload
 pkill -u "$U" 2>/dev/null || true
 rm -f "$CADDY_APPS_DIR/$NAME.caddy"; systemctl reload caddy || true

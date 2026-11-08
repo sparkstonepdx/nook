@@ -10,15 +10,24 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 
-const CONFIG = Object.fromEntries(
-  fs.readFileSync(process.env.APPS_CONFIG || "/etc/apps/config", "utf8")
-    .split("\n").map((l) => l.match(/^([A-Z_]+)=("?)(.*)\2$/)).filter(Boolean).map((m) => [m[1], m[3]]),
-);
+const CONFIG_FILE = process.env.APPS_CONFIG || "/etc/apps/config";
+const DASH_ENV = process.env.DASHBOARD_ENV || "/etc/apps/dashboard.env";
+const GRANTS_FILE = process.env.GRANTS_FILE || "/etc/apps/grants";
+const readEnvFile = (f) => {
+  try {
+    return Object.fromEntries(fs.readFileSync(f, "utf8").split("\n").map((l) => l.match(/^([A-Z_]+)=("?)(.*)\2$/)).filter(Boolean).map((m) => [m[1], m[3]]));
+  } catch { return {}; }
+};
+let CONFIG = readEnvFile(CONFIG_FILE);   // re-read on every request so CLI changes show up
 const PORT = Number(process.env.DASHBOARD_PORT || 19999);
 
 const APPS_DIR = CONFIG.APPS_DIR || "/srv/apps";
 const NAME_RE = /^[a-z][a-z0-9-]{1,23}$/;
-const SITE_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+const LABEL = "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?";
+const SITE_RE = new RegExp(`^(${LABEL}\\.)*${LABEL}$`);
+const DOMAIN_RE = new RegExp(`^(${LABEL}\\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$`);
+const hostOf = (site) => (site.includes(".") ? site : `${site}.${CONFIG.BASE_DOMAIN}`);
+const readGrants = () => { try { return fs.readFileSync(GRANTS_FILE, "utf8").split("\n").filter(Boolean).map((l) => l.split(" ")); } catch { return []; } };
 
 // ---------- helpers ----------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -32,7 +41,8 @@ function run(cmd, args, { input, timeout = 120_000 } = {}) {
     p.stderr.on("data", (d) => (out += d));
     p.on("error", (e) => { clearTimeout(t); resolve({ code: -1, out: out + String(e) }); });
     p.on("close", (code) => { clearTimeout(t); resolve({ code, out }); });
-    p.stdin.end(input ?? "");
+    p.stdin.on("error", () => {});   // the command may exit without reading stdin
+    if (input) p.stdin.end(input); else p.stdin.end();
   });
 }
 
@@ -55,6 +65,10 @@ async function listApps() {
   const portList = ports();
   return Promise.all(names.map(async (name) => {
     const sitesDir = path.join(APPS_DIR, name, "sites");
+    let caddy = "";
+    try { caddy = fs.readFileSync(path.join(CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps", `${name}.caddy`), "utf8"); } catch {}
+    const live = new Set(caddy.split("\n").filter((l) => / \{$/.test(l)).map((l) => l.slice(0, -2)));
+    const redirects = caddy.split("\n").filter((l) => / \{ # redirect$/.test(l)).map((l) => l.replace(/ \{ # redirect$/, ""));
     let sites = [];
     try { sites = fs.readdirSync(sitesDir).filter((s) => !s.startsWith(".")).sort(); } catch {}
     const slice = await unitProps(`app-${name}.slice`, ["MemoryCurrent", "MemoryMax", "CPUQuotaPerSecUSec"]);
@@ -69,8 +83,10 @@ async function listApps() {
         try { const st = fs.lstatSync(runFile); running = st.isFile() && (st.mode & 0o111) !== 0; } catch {}
         const port = portList.find((p) => p[0] === name && p[1] === s)?.[2] || "";
         const u = running ? await unitProps(`site-${name}--${s}.service`, ["ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts"]) : {};
-        return { name: s, running, port, host: `${s}.${CONFIG.BASE_DOMAIN}`, ...u };
+        return { name: s, running, port, host: hostOf(s), live: live.has(hostOf(s)), ...u };
       })),
+      redirects,
+      grants: readGrants().filter((g) => g[0] === name),
     };
   }));
 }
@@ -124,13 +140,15 @@ async function home(me) {
   </div>
   ${a.sites.length ? `<table><tr><th>site</th><th>type</th><th>state</th><th>port</th><th>memory</th><th></th></tr>
   ${a.sites.map((s) => `<tr>
-    <td><a href="https://${esc(s.host)}" target=_blank rel=noopener>${esc(s.host)}</a></td>
+    <td><a href="https://${esc(s.host)}" target=_blank rel=noopener>${esc(s.host)}</a>${s.live ? "" : ` <span class=bad title="skipped by app-sync: not granted, reserved, or claimed by another app. Run sync to see why.">not live</span>`}</td>
     <td>${s.running ? "app" : "static"}</td>
     <td>${s.running ? `<span class=${stateClass(s.ActiveState)}>${esc(s.ActiveState || "?")}</span> <span class=muted>${esc(s.SubState || "")}${s.MainPID && s.MainPID !== "0" ? ` pid ${esc(s.MainPID)}` : ""}${Number(s.NRestarts) ? ` · ${esc(s.NRestarts)} restarts` : ""}</span>` : ""}</td>
     <td>${esc(s.port)}</td><td>${esc(mb(s.MemoryCurrent))}</td>
     <td class=row>${s.running ? `${btn("restart", { app: a.name, site: s.name }, "restart")}${btn("stop", { app: a.name, site: s.name }, "stop")}${btn("start", { app: a.name, site: s.name }, "start")}<a href="/logs?app=${encodeURIComponent(a.name)}&site=${encodeURIComponent(s.name)}">logs</a>` : ""}
       ${btn("rmsite", { app: a.name, site: s.name }, "remove", `Remove ${s.host}? This deletes sites/${s.name}.`)}</td>
   </tr>`).join("")}</table>` : `<p class=muted>No sites yet.</p>`}
+  ${a.redirects.length ? `<p class=muted>Redirects: ${a.redirects.map((r) => esc(r)).join(", ")} → root domain</p>` : ""}
+  <p class=muted>Allowed: ${a.grants.length ? a.grants.map(([, k, n]) => esc(grantLabel(k, n))).join(", ") : "nothing"} · <a href="/domains">edit</a></p>
   <details><summary class=muted>delete app</summary>
     <form method=post action="/action"><input type=hidden name=do value=delete><input type=hidden name=app value="${esc(a.name)}">
     Type <b>${esc(a.name)}</b> to delete its folder, user and everything in it: <input name=confirm autocomplete=off> <button>delete</button></form>
@@ -140,7 +158,7 @@ async function home(me) {
   return page("app-host", `
 <div class=row><h1>app-host</h1><span class=muted>${esc(CONFIG.BASE_DOMAIN)} · caddy <span class=${stateClass(sys.caddy)}>${esc(sys.caddy)}</span></span>
 <span style="flex:1"></span>${btn("syncall", {}, "sync all")}${btn("caddy", {}, "reload caddy")}
-<a href="/users">users</a><span class=muted>${esc(me)}</span><form method=post action="/logout"><button>log out</button></form></div>
+<a href="/domains">domains</a><a href="/users">users</a><span class=muted>${esc(me)}</span><form method=post action="/logout"><button>log out</button></form></div>
 <h2>New app</h2>
 <form method=post action="/action"><input type=hidden name=do value=create>
   <input name=app placeholder=name required pattern="[a-z][a-z0-9\\-]{1,23}" style="width:12em">
@@ -186,13 +204,13 @@ async function action(f) {
     }
     case "restart": case "stop": case "start":
       if (needApp()) return needApp();
-      return resultPage(`${what} ${site}.${CONFIG.BASE_DOMAIN}`, `systemctl ${what} ${unit}`, await run("systemctl", [what, unit]));
+      return resultPage(`${what} ${hostOf(site)}`, `systemctl ${what} ${unit}`, await run("systemctl", [what, unit]));
     case "rmsite": {
       if (needApp()) return needApp();
       const dir = path.join(APPS_DIR, app, "sites", site);
       if (!site || !fs.existsSync(dir)) return resultPage("No such site", "", { code: 1, out: dir });
       fs.rmSync(dir, { recursive: true, force: true });
-      return resultPage(`Removed ${site}.${CONFIG.BASE_DOMAIN}`, `rm -rf ${dir} && app-sync ${app}`, await run("app-sync", [app]));
+      return resultPage(`Removed ${hostOf(site)}`, `rm -rf ${dir} && app-sync ${app}`, await run("app-sync", [app]));
     }
   }
   return resultPage("Unknown action", "", { code: 1, out: String(what) });
@@ -205,11 +223,100 @@ async function logs(q) {
   if (site) {
     const file = path.join(APPS_DIR, app, "logs", `${site}.log`);
     const unit = await run("systemctl", ["status", "--no-pager", "-n", "0", `site-${app}--${site}.service`], { timeout: 5000 });
-    return page(`${site} logs`, `<h1>${esc(site)}.${esc(CONFIG.BASE_DOMAIN)}</h1><p><a href="/">← back</a> · <a href="">refresh</a></p>
+    return page(`${site} logs`, `<h1>${esc(hostOf(site))}</h1><p><a href="/">← back</a> · <a href="">refresh</a></p>
 <pre>${esc(unit.out)}</pre><h2>${esc(file)}</h2><pre>${esc(tail(file))}</pre>${auto}`);
   }
   const j = await run("journalctl", ["--no-pager", "-n", "200", "-u", `app-sync@${app}.service`], { timeout: 10000 });
   return page(`${app} sync log`, `<h1>${esc(app)}: app-sync log</h1><p><a href="/">← back</a> · <a href="">refresh</a></p><pre>${esc(j.out)}</pre>${auto}`);
+}
+
+// ---------- domains ----------
+const grantLabel = (k, n) => (k === "domain" ? `${n} + *.${n}` : k === "sub" ? `*.${n}` : n);
+
+function domainsPage(notice = "") {
+  const grants = readGrants();
+  let apps = [];
+  try { apps = fs.readdirSync(APPS_DIR).filter((n) => NAME_RE.test(n)).sort(); } catch {}
+  const dash = readEnvFile(DASH_ENV);
+  const ipOn = (dash.DASHBOARD_IP_ACCESS || "on") === "on";
+  const ip = CONFIG.SSH_HOST;
+  // DNS records each granted domain needs
+  const dns = new Map();
+  for (const [, k, n] of grants) {
+    if (k !== "sub") dns.set(n, `A  ${n}  →  ${ip}`);
+    if (k !== "host") dns.set(`*.${n}`, `A  *.${n}  →  ${ip}`);
+  }
+  if (dash.DASHBOARD_HOST) dns.set(dash.DASHBOARD_HOST, `A  ${dash.DASHBOARD_HOST}  →  ${ip}   (dashboard)`);
+  return page("Domains", `<div class=row><h1>Domains</h1><span style="flex:1"></span><a href="/">← apps</a></div>${notice}
+<h2>Default domain</h2>
+<p class=muted>Site folders without a dot ("blog") are subdomains of this. Changing it moves every app's "*.old" grant to the new domain.</p>
+<form method=post action="/domains"><input type=hidden name=do value=default><input name=domain value="${esc(CONFIG.BASE_DOMAIN)}" style="width:20em" required> <button>change</button></form>
+
+<h2>What each app may use</h2>
+<table><tr><th>app</th><th>allowed</th><th></th></tr>
+${grants.map(([a, k, n]) => `<tr><td>${esc(a)}</td><td>${esc(grantLabel(k, n))}</td><td>${btnTo("/domains", "rm", { app: a, kind: k, name: n }, "remove", `Remove ${grantLabel(k, n)} from ${a}? Its sites on it go offline.`)}</td></tr>`).join("") || `<tr><td colspan=3 class=muted>none</td></tr>`}
+</table>
+<form method=post action="/domains" class=row style="margin-top:8px"><input type=hidden name=do value=add>
+  <select name=app required>${apps.map((a) => `<option>${esc(a)}</option>`).join("")}</select>
+  <select name=kind><option value=domain>whole domain (root + subdomains)</option><option value=sub>subdomains only</option><option value=host>exactly this hostname</option></select>
+  <input name=name placeholder="client.com" required style="width:16em"> <button>allow</button></form>
+<p class=muted>The first app to publish a hostname keeps it. A root domain with no www folder gets www redirecting to it.</p>
+
+<h2>DNS records needed</h2><pre>${esc([...dns.values()].join("\n"))}</pre>
+
+<h2>Dashboard address</h2>
+<p class=muted>Point DNS for it at ${esc(ip)} first. No app can use this hostname. Leave empty to use only the IP address.</p>
+<form method=post action="/domains"><input type=hidden name=do value=dashhost><input name=host value="${esc(dash.DASHBOARD_HOST || "")}" placeholder="admin.${esc(CONFIG.BASE_DOMAIN)}" style="width:20em"> <button>save</button></form>
+<p>Backup: https://${esc(ip)}:${esc(dash.DASHBOARD_IP_PORT || "8443")} (self-signed certificate) is <b class=${ipOn ? "ok" : "bad"}>${ipOn ? "on" : "off"}</b>. Keep it on so you can still get in if DNS breaks.</p>
+${ipOn ? (dash.DASHBOARD_HOST ? btnTo("/domains", "ip", { to: "off" }, "turn off", "Turn off IP access? If DNS for the dashboard address breaks, you'll need SSH to get back in.") : "") : btnTo("/domains", "ip", { to: "on" }, "turn on")}`);
+}
+
+function setEnvLine(file, key, value) {
+  let text = ""; try { text = fs.readFileSync(file, "utf8"); } catch {}
+  const re = new RegExp(`^${key}=.*$`, "m");
+  text = re.test(text) ? text.replace(re, `${key}=${value}`) : `${text.replace(/\n?$/, "\n")}${key}=${value}\n`;
+  fs.writeFileSync(file, text, { mode: 0o600 });
+}
+
+async function domainsAction(f) {
+  const what = f.get("do");
+  const show = (title, cmd, r) => resultPage(title, cmd, r).replace('<a href="/">← back</a>', '<a href="/domains">← domains</a>');
+  if (what === "add" || what === "rm") {
+    const app = f.get("app") || "", kind = f.get("kind") || "", name = (f.get("name") || "").toLowerCase().replace(/^\*\./, "");
+    if (!NAME_RE.test(app) || !["domain", "sub", "host"].includes(kind) || !DOMAIN_RE.test(name)) return show("Bad input", "", { code: 1, out: "app, kind or domain is invalid" });
+    const args = [what, app, kind, name];
+    return show(`${what === "add" ? "Allowed" : "Removed"} ${grantLabel(kind, name)} for ${app}`, `app-grant ${args.join(" ")}`, await run("app-grant", args));
+  }
+  if (what === "default") {
+    const d = (f.get("domain") || "").toLowerCase();
+    if (!DOMAIN_RE.test(d)) return show("Bad domain", "", { code: 1, out: d });
+    const old = CONFIG.BASE_DOMAIN;
+    if (d === old) return domainsPage();
+    setEnvLine(CONFIG_FILE, "BASE_DOMAIN", d);
+    const grants = readGrants().map((g) => (g[1] === "sub" && g[2] === old ? [g[0], "sub", d] : g));
+    fs.writeFileSync(GRANTS_FILE, grants.map((g) => g.join(" ") + "\n").join(""), { mode: 0o600 });
+    CONFIG = readEnvFile(CONFIG_FILE);
+    const a = await run("app-admin-caddy", []), b = await run("app-sync", ["--all"]);
+    return show(`Default domain is now ${d}`, "app-admin-caddy && app-sync --all", { code: a.code || b.code, out: `${a.out}\n${b.out}` });
+  }
+  if (what === "dashhost") {
+    const h = (f.get("host") || "").toLowerCase().trim();
+    if (h && !DOMAIN_RE.test(h)) return show("Bad hostname", "", { code: 1, out: h });
+    if (h) {
+      let used = "";
+      try { for (const fn of fs.readdirSync(CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps")) if (fs.readFileSync(path.join(CONFIG.CADDY_APPS_DIR || "/etc/caddy/apps", fn), "utf8").split("\n").some((l) => l === `${h} {` || l === `${h} { # redirect`)) used = fn.replace(/\.caddy$/, ""); } catch {}
+      if (used) return show("Hostname in use", "", { code: 1, out: `${h} is served by app ${used}. Remove that site or pick another name.` });
+    }
+    setEnvLine(DASH_ENV, "DASHBOARD_HOST", h);
+    return show(h ? `Dashboard address is now ${h}` : "Dashboard address removed", "app-admin-caddy", await run("app-admin-caddy", []));
+  }
+  if (what === "ip") {
+    if (f.get("to") === "off" && !readEnvFile(DASH_ENV).DASHBOARD_HOST) return show("Not turned off", "", { code: 1, out: "Set a dashboard address first, or you'd lock yourself out." });
+    const to = f.get("to") === "on" ? "on" : "off";
+    setEnvLine(DASH_ENV, "DASHBOARD_IP_ACCESS", to);
+    return show(`IP access ${to}`, "app-admin-caddy", await run("app-admin-caddy", []));
+  }
+  return show("Unknown action", "", { code: 1, out: String(what) });
 }
 
 // ---------- users, sessions, invites ----------
@@ -321,7 +428,8 @@ const linkFor = (req, token) => `https://${req.headers.host}/invite?t=${token}`;
 // ---------- CLI: print an invite link (first admin, or locked out) ----------
 if (process.argv[2] === "invite") {
   const i = process.argv.indexOf("--base");
-  const base = i > 0 ? process.argv[i + 1] : `https://admin.${CONFIG.BASE_DOMAIN}`;
+  const d = readEnvFile(DASH_ENV);
+  const base = i > 0 ? process.argv[i + 1] : d.DASHBOARD_HOST ? `https://${d.DASHBOARD_HOST}` : `https://${CONFIG.SSH_HOST}:${d.DASHBOARD_IP_PORT || 8443}`;
   console.log(`${base}/invite?t=${makeInvite("")}`);
   process.exit(0);
 }
@@ -333,16 +441,20 @@ const slowDown = async () => {   // one failed login per second, globally
   await new Promise((r) => setTimeout(r, wait));
 };
 
+process.on("uncaughtException", (e) => console.error("uncaught:", e));   // keep serving
 http.createServer(async (req, res) => {
-  const send = (code, body, headers = {}) => { res.writeHead(code, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "no-referrer", ...headers }); res.end(body); };
+  const send = (code, body, headers = {}) => { res.writeHead(code, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "referrer-policy": "same-origin", ...headers }); res.end(body); };
   const redirect = (to, headers = {}) => send(303, "", { location: to, ...headers });
   try {
+    CONFIG = readEnvFile(CONFIG_FILE);
     const url = new URL(req.url, "http://x");
     let form = new URLSearchParams();
     if (req.method === "POST") {
       // only accept forms posted from this site
       const origin = req.headers.origin || "";
-      if (!origin || new URL(origin).host !== req.headers.host) return send(403, "bad origin");
+      let originHost = "";
+      try { originHost = new URL(origin).host; } catch {}
+      if (!originHost || originHost !== req.headers.host) return send(403, "bad origin");
       let body = "";
       for await (const c of req) { body += c; if (body.length > 10_000) return send(413, "too big"); }
       form = new URLSearchParams(body);
@@ -381,6 +493,8 @@ http.createServer(async (req, res) => {
     if (route === "GET /logs") return send(200, await logs(url.searchParams));
     if (route === "POST /action") return send(200, await action(form));
     if (route === "GET /users") return send(200, usersPage(me));
+    if (route === "GET /domains") return send(200, domainsPage());
+    if (route === "POST /domains") return send(200, await domainsAction(form));
     if (route === "POST /users") {
       const what = form.get("do");
       if (what === "invite") {
@@ -405,4 +519,4 @@ http.createServer(async (req, res) => {
     console.error(e);
     send(500, `<pre>${esc(e.stack || e)}</pre>`);
   }
-}).listen(PORT, "127.0.0.1", () => console.log(`dashboard on 127.0.0.1:${PORT}`));
+}).on("clientError", (e, sock) => sock.destroy()).listen(PORT, "127.0.0.1", () => console.log(`dashboard on 127.0.0.1:${PORT}`));
