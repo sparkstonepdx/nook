@@ -45,7 +45,7 @@ type httpError struct {
 	msg    string
 }
 
-func (e httpError) Error() string { return e.msg }
+func (e httpError) Error() string       { return e.msg }
 func fail(status int, msg string) error { return httpError{status, msg} }
 
 type ctx struct {

@@ -9,26 +9,26 @@ import (
 )
 
 const (
-	ConfigFile    = "/etc/apps/config"
-	DashboardEnv  = "/etc/apps/dashboard.env"
-	UpdateEnv     = "/etc/apps/update.env"
-	GrantsFile    = "/etc/apps/grants"
-	PortsFile     = "/etc/apps/ports"
-	StateDir      = "/etc/apps/state"
-	EnvDir        = "/etc/apps/env"
-	SSHKeysDir    = "/etc/ssh/app-host-keys" // public keys: readable (sshd reads them as the user), root-writable only
-	LogDir        = "/var/log/apps"
-	WWWDir        = "/var/lib/app-host/www"
-	CaddyAppsDir  = "/etc/caddy/apps"
-	AdminCaddy    = "/etc/caddy/admin.caddy"
-	Caddyfile     = "/etc/caddy/Caddyfile"
-	WebStateDir   = "/var/lib/app-host-web"
-	HelperSocket  = "/run/app-host/helper.sock"
-	LockFile      = "/run/app-sync.lock"
-	AppsDir       = "/srv/apps"
-	AppBin        = "/usr/local/bin/app"
-	HostBin       = "/usr/local/sbin/app-host"
-	WebUser       = "app-host-web"
+	ConfigFile   = "/etc/apps/config"
+	DashboardEnv = "/etc/apps/dashboard.env"
+	UpdateEnv    = "/etc/apps/update.env"
+	GrantsFile   = "/etc/apps/grants"
+	PortsFile    = "/etc/apps/ports"
+	StateDir     = "/etc/apps/state"
+	EnvDir       = "/etc/apps/env"
+	SSHKeysDir   = "/etc/ssh/app-host-keys" // public keys: readable (sshd reads them as the user), root-writable only
+	LogDir       = "/var/log/apps"
+	WWWDir       = "/var/lib/app-host/www"
+	CaddyAppsDir = "/etc/caddy/apps"
+	AdminCaddy   = "/etc/caddy/admin.caddy"
+	Caddyfile    = "/etc/caddy/Caddyfile"
+	WebStateDir  = "/var/lib/app-host-web"
+	HelperSocket = "/run/app-host/helper.sock"
+	LockFile     = "/run/app-sync.lock"
+	AppsDir      = "/srv/apps"
+	AppBin       = "/usr/local/bin/app"
+	HostBin      = "/usr/local/sbin/app-host"
+	WebUser      = "app-host-web"
 )
 
 var line = regexp.MustCompile(`^([A-Z_][A-Z0-9_]*)=("?)(.*)$`)

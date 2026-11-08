@@ -61,7 +61,9 @@ func peerUID(c *net.UnixConn) (int, error) {
 	}
 	var cred *syscall.Ucred
 	var cerr error
-	raw.Control(func(fd uintptr) { cred, cerr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED) })
+	raw.Control(func(fd uintptr) {
+		cred, cerr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+	})
 	if cerr != nil {
 		return -1, cerr
 	}

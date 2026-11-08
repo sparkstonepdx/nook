@@ -90,7 +90,7 @@ func (s *Store) saveUsers(m map[string]User) error {
 }
 
 func (s *Store) Users() map[string]User { s.mu.Lock(); defer s.mu.Unlock(); return s.users() }
-func (s *Store) HasUsers() bool          { return len(s.Users()) > 0 }
+func (s *Store) HasUsers() bool         { return len(s.Users()) > 0 }
 
 func hashPassword(pw, salt string) string {
 	k, _ := scrypt.Key([]byte(pw), []byte(salt), 16384, 8, 1, 64) // Node scryptSync defaults
