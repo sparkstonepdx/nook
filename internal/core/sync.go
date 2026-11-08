@@ -10,12 +10,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sparkstonepdx/app-host/internal/caddyfile"
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/envfile"
-	"github.com/sparkstonepdx/app-host/internal/grants"
-	"github.com/sparkstonepdx/app-host/internal/names"
-	"github.com/sparkstonepdx/app-host/internal/tarx"
+	"github.com/sparkstonepdx/nook/internal/caddyfile"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/envfile"
+	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
 // dirFD opens a directory without following a symlink at its last component.
@@ -326,7 +326,7 @@ func (h *Host) refuse(app, host, dashHost string, gl grants.List, others map[str
 		}
 	}
 	if !gl.Allowed(app, host) {
-		return "not allowed to use " + host + " (add a grant on the dashboard or with app-host grant)"
+		return "not allowed to use " + host + " (add a grant on the dashboard or with nook-admin grant)"
 	}
 	if other := claimedByOther(others, host); other != "" {
 		return host + " is already used by another app"
@@ -348,7 +348,7 @@ func (h *Host) importUserEnv(u *AppUser) bool {
 		}
 		return false
 	}
-	text := envfile.Format(v, "copied by app-host from "+u.Home+"/secrets.env; edit that file (or use app-host env), not this one")
+	text := envfile.Format(v, "copied by nook-admin from "+u.Home+"/secrets.env; edit that file (or use nook-admin env), not this one")
 	if oldErr == nil && string(old) == text {
 		return false
 	}
@@ -356,7 +356,7 @@ func (h *Host) importUserEnv(u *AppUser) bool {
 	return true
 }
 
-// snapshot makes the root-owned copy Caddy serves. `app pack` runs as the app user and resolves
+// snapshot makes the root-owned copy Caddy serves. `nook internal-pack` runs as the app user and resolves
 // symlinks with the app's own permissions; root only unpacks plain files and folders.
 func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	app := u.Name
@@ -395,9 +395,9 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int) (bool, error) 
 Description=%[3]s (app %[1]s)
 
 [Service]
-User=app-%[1]s
-Group=app-%[1]s
-Slice=app-%[1]s.slice
+User=nook-%[1]s
+Group=nook-%[1]s
+Slice=nook-%[1]s.slice
 WorkingDirectory=%[4]s/sites/%[2]s
 ExecStart=%[4]s/sites/%[2]s/run
 Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s SITE_HOST=%[3]s

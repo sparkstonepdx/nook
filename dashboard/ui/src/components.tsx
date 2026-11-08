@@ -7,14 +7,14 @@ type UpdateStatus = { current: string; latest: string; available: boolean; url: 
 export function UpdateBanner() {
   const [s] = createResource(() => api<UpdateStatus>("/api/update").catch(() => null));
   const install = async () => {
-    if (!window.confirm(`Install app-host ${s()!.latest}? The dashboard restarts; running sites aren't affected.`)) return;
+    if (!window.confirm(`Install nook ${s()!.latest}? The dashboard restarts; running sites aren't affected.`)) return;
     await runCmd(`Updating to ${s()!.latest}`, "/api/update");
     setTimeout(() => location.reload(), 4000);
   };
   return (
     <Show when={s()?.available}>
       <div class="alert update-banner">
-        <span>app-host <strong>{s()!.latest}</strong> is available (running {s()!.current}).</span>
+        <span>nook <strong>{s()!.latest}</strong> is available (running {s()!.current}).</span>
         <a class="link" href={s()!.url} target="_blank" rel="noopener">What's new</a>
         <span class="spacer" />
         <button class="btn btn-primary btn-sm" onClick={install}>Update</button>
@@ -29,7 +29,7 @@ export function Nav() {
   return (
     <nav class="navbar">
       <div class="navbar-start">
-        <A href="/" class="semantic brand">app-host</A>
+        <A href="/" class="semantic brand">nook</A>
         <div class="menubar">
           <A href="/" end class="btn btn-ghost" activeClass="nav-active">Apps</A>
           <A href="/domains" class="btn btn-ghost" activeClass="nav-active">Domains</A>

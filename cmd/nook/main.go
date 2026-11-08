@@ -1,5 +1,5 @@
-// app: the user-level side of app-host. It only ever acts as whoever runs it; no root code lives here.
-// App users (and their deploy keys, through ssh-gate) use `app site ...`.
+// nook: the user-level side of nook. It only ever acts as whoever runs it; no root code lives here.
+// App users (and their deploy keys, through ssh-gate) use `nook site ...`.
 package main
 
 import (
@@ -14,27 +14,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/caddyfile"
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/gate"
-	"github.com/sparkstonepdx/app-host/internal/names"
-	"github.com/sparkstonepdx/app-host/internal/tarx"
+	"github.com/sparkstonepdx/nook/internal/caddyfile"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/gate"
+	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
 var version = "dev"
 
-const usage = `app: deploy and manage this app's sites.
+const usage = `nook: deploy and manage this app's sites.
 
-  app site deploy DIR SITE     publish DIR (atomic swap). SITE: "blog" = blog.<default domain>,
+  nook site deploy DIR SITE     publish DIR (atomic swap). SITE: "blog" = blog.<default domain>,
                                "client.com" / "www.client.com" = exactly that (needs a grant)
-  app site rm SITE             take it down
-  app site restart SITE        restart a running app
-  app site list                what's in sites/
-  app site logs SITE [N]       last N lines (default 100) of a running app's log
-  app version
+  nook site rm SITE             take it down
+  nook site restart SITE        restart a running app
+  nook site list                what's in sites/
+  nook site logs SITE [N]       last N lines (default 100) of a running app's log
+  nook version
 
 A folder with an executable "run" is started as a service on $PORT; anything else is served as static files.
-Admin commands (create, delete, sync, grant, env, invite, update) are in app-host, as root.
+Admin commands (create, delete, sync, grant, env, invite, update) are in nook-admin, as root.
 `
 
 func die(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...); os.Exit(1) }
@@ -51,7 +51,7 @@ func main() {
 		os.Exit(site(os.Args[2:]))
 	case "ssh-gate":
 		sshGate()
-	case "internal-pack": // run by app-host as this app's user
+	case "internal-pack": // run by nook-admin as this app's user
 		if len(os.Args) != 4 {
 			os.Exit(2)
 		}
@@ -59,7 +59,7 @@ func main() {
 		if err := tarx.Pack(os.Args[2], os.Stdout, max); err != nil {
 			die("%v", err)
 		}
-	case "internal-read-env": // run by app-host as this app's user
+	case "internal-read-env": // run by nook-admin as this app's user
 		readCapped(filepath.Join(home(), "secrets.env"), 64<<10)
 	case "internal-read-keys": // migration from the old layout, run as this app's user
 		readCapped(filepath.Join(home(), ".ssh", "authorized_keys"), 64<<10)
@@ -67,7 +67,7 @@ func main() {
 		if os.Geteuid() == 0 {
 			syscall.Exec(config.HostBin, append([]string{config.HostBin}, os.Args[1:]...), os.Environ())
 		}
-		die("app %s is an admin command: run app-host %s as root", os.Args[1], os.Args[1])
+		die("%s is an admin command: run nook-admin %s as root", os.Args[1], os.Args[1])
 	default:
 		fmt.Print(usage)
 		os.Exit(2)
@@ -93,11 +93,11 @@ func home() string {
 	return u.HomeDir
 }
 
-// appName is this user's app (user app-<name>, home /srv/apps/<name>).
+// appName is this user's app (user nook-<name>, home /srv/nook/<name>).
 func appName() string {
 	u, err := user.Current()
-	if err == nil && strings.HasPrefix(u.Username, "app-") {
-		return strings.TrimPrefix(u.Username, "app-")
+	if err == nil && strings.HasPrefix(u.Username, "nook-") {
+		return strings.TrimPrefix(u.Username, "nook-")
 	}
 	return filepath.Base(home())
 }
@@ -109,7 +109,7 @@ func site(args []string) int {
 	}
 	sites := filepath.Join(home(), "sites")
 	if fi, err := os.Stat(sites); err != nil || !fi.IsDir() {
-		die("app: run this as an app user")
+		die("nook: run this as an app user")
 	}
 	check := func(s string) {
 		if !names.Site(s) {
@@ -119,7 +119,7 @@ func site(args []string) int {
 	switch args[0] {
 	case "deploy":
 		if len(args) != 3 {
-			die("usage: app site deploy DIR SITE")
+			die("usage: nook site deploy DIR SITE")
 		}
 		src, s := args[1], args[2]
 		check(s)
@@ -159,7 +159,7 @@ func site(args []string) int {
 		return 2
 	case "rm":
 		if len(args) != 2 {
-			die("usage: app site rm SITE")
+			die("usage: nook site rm SITE")
 		}
 		check(args[1])
 		os.RemoveAll(filepath.Join(sites, args[1]))
@@ -167,7 +167,7 @@ func site(args []string) int {
 		fmt.Printf("removed %s\n", args[1])
 	case "restart":
 		if len(args) != 2 {
-			die("usage: app site restart SITE")
+			die("usage: nook site restart SITE")
 		}
 		check(args[1])
 		if fi, err := os.Stat(filepath.Join(sites, args[1], "run")); err != nil || fi.Mode()&0o111 == 0 {
@@ -195,7 +195,7 @@ func site(args []string) int {
 		}
 	case "logs":
 		if len(args) < 2 {
-			die("usage: app site logs SITE [N]")
+			die("usage: nook site logs SITE [N]")
 		}
 		check(args[1])
 		n := "100"
@@ -231,7 +231,7 @@ func waitLive(s string, ino uint64) bool {
 	return false
 }
 
-// sshGate is every app user's SSH session (sshd ForceCommand): rsync uploads into builds/ and `app site`.
+// sshGate is every app user's SSH session (sshd ForceCommand): rsync uploads into builds/ and `nook site`.
 func sshGate() {
 	os.Chdir(home())
 	words, err := gate.Split(os.Getenv("SSH_ORIGINAL_COMMAND"))
@@ -252,5 +252,5 @@ func sshGate() {
 			}
 		}
 	}
-	die("app-host: %v", err)
+	die("nook: %v", err)
 }

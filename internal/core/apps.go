@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
-	"github.com/sparkstonepdx/app-host/internal/grants"
-	"github.com/sparkstonepdx/app-host/internal/names"
-	"github.com/sparkstonepdx/app-host/internal/token"
+	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 var (
@@ -45,7 +45,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 		return "", fmt.Errorf("repo must look like owner/name")
 	}
 	if _, err := LookupApp(o.Name); err == nil {
-		return "", fmt.Errorf("app-%s already exists", o.Name)
+		return "", fmt.Errorf("nook-%s already exists", o.Name)
 	}
 	unlock, err := Lock()
 	if err != nil {
@@ -54,7 +54,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	defer unlock()
 
 	home := filepath.Join(config.AppsDir, o.Name)
-	if out, err := Run("useradd", "--system", "--home-dir", home, "--create-home", "--shell", "/bin/bash", "--user-group", "app-"+o.Name); err != nil {
+	if out, err := Run("useradd", "--system", "--home-dir", home, "--create-home", "--shell", "/bin/bash", "--user-group", "nook-"+o.Name); err != nil {
 		return "", fmt.Errorf("useradd: %s", out)
 	}
 	u, err := LookupApp(o.Name)
@@ -71,7 +71,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	}
 
 	// deploy key: GitHub gets the private half; sshd reads the public half from a root-owned file
-	tmp, err := os.MkdirTemp("", "app-host-key-")
+	tmp, err := os.MkdirTemp("", "nook-key-")
 	if err != nil {
 		return "", err
 	}
@@ -82,14 +82,14 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	pub, _ := os.ReadFile(filepath.Join(tmp, "key.pub"))
 	priv, _ := os.ReadFile(filepath.Join(tmp, "key"))
 	os.MkdirAll(config.SSHKeysDir, 0o755)
-	if err := config.WriteAtomic(filepath.Join(config.SSHKeysDir, "app-"+o.Name), []byte("restrict "+strings.TrimSpace(string(pub))+"\n"), 0o644); err != nil {
+	if err := config.WriteAtomic(filepath.Join(config.SSHKeysDir, "nook-"+o.Name), []byte("restrict "+strings.TrimSpace(string(pub))+"\n"), 0o644); err != nil {
 		return "", err
 	}
 
 	slice := fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=%s\n", o.Name, o.Memory, o.CPU, o.Tasks)
-	config.WriteAtomic(filepath.Join("/etc/systemd/system", "app-"+o.Name+".slice"), []byte(slice), 0o644)
+	config.WriteAtomic(filepath.Join("/etc/systemd/system", "nook-"+o.Name+".slice"), []byte(slice), 0o644)
 	systemctl("daemon-reload")
-	if err := systemctl("enable", "--now", "app-sync@"+o.Name+".path"); err != nil {
+	if err := systemctl("enable", "--now", "nook-sync@"+o.Name+".path"); err != nil {
 		h.say("warning: could not start the sites/ watcher")
 	}
 
@@ -105,7 +105,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	if len(f) >= 2 {
 		known += " " + f[0] + " " + f[1]
 	}
-	tok := token.Token{V: 1, Host: h.S.SSHHost, Port: 22, User: "app-" + o.Name, Dir: home, Domain: h.S.BaseDomain, KnownHosts: known, Key: string(priv)}
+	tok := token.Token{V: 1, Host: h.S.SSHHost, Port: 22, User: "nook-" + o.Name, Dir: home, Domain: h.S.BaseDomain, KnownHosts: known, Key: string(priv)}
 	return createdText(o, tok.Encode()), nil
 }
 
@@ -115,7 +115,7 @@ func createdText(o CreateOpts, token string) string {
 
 On your laptop, run this and paste the value below when it asks:
 
-  gh secret set APP_HOST -R %[1]s
+  gh secret set NOOK_TOKEN -R %[1]s
 
 %[2]s
 
@@ -142,9 +142,9 @@ jobs:
         if: github.event.action != 'closed'
       - run: npm ci && npm run build      # your build; skip for plain files
         if: github.event.action != 'closed'
-      - uses: sparkstonepdx/app-host/deploy@v1
+      - uses: sparkstonepdx/nook/deploy@v1
         with:
-          app-host: ${{ secrets.APP_HOST }}
+          token: ${{ secrets.NOOK_TOKEN }}
           dir: dist                       # folder to publish; add an executable "run" for a running app
           site: %[3]s                     # or a hostname like client.com (needs a grant)
 
@@ -154,7 +154,7 @@ and are removed when the PR closes.
 ================ 3. Runtime environment ================
 
 Set env vars and secrets for running apps on the server, not in GitHub:
-  dashboard → %[3]s → Environment,  or  app-host env set %[3]s KEY
+  dashboard → %[3]s → Environment,  or  nook-admin env set %[3]s KEY
 Running sites restart with the new values. Running apps also get $PORT, $SITE, $SITE_HOST.
 `, o.Repo, token, o.Name)
 }
@@ -172,13 +172,13 @@ func (h *Host) Delete(app, confirm string) error {
 		return err
 	}
 	defer unlock()
-	systemctl("disable", "--now", "app-sync@"+app+".path")
+	systemctl("disable", "--now", "nook-sync@"+app+".path")
 	for _, s := range RunningSites(app) {
 		h.stopUnit(app, s)
 	}
-	os.Remove(filepath.Join("/etc/systemd/system", "app-"+app+".slice"))
+	os.Remove(filepath.Join("/etc/systemd/system", "nook-"+app+".slice"))
 	systemctl("daemon-reload")
-	Run("pkill", "-KILL", "-u", "app-"+app)
+	Run("pkill", "-KILL", "-u", "nook-"+app)
 	gl, _ := grants.Load(config.GrantsFile)
 	var keep grants.List
 	for _, g := range gl {
@@ -189,7 +189,7 @@ func (h *Host) Delete(app, confirm string) error {
 	config.WriteAtomic(config.GrantsFile, []byte(keep.Text()), 0o600)
 	for _, p := range []string{
 		filepath.Join(config.CaddyAppsDir, app+".caddy"), filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app+".user.env"),
-		filepath.Join(config.SSHKeysDir, "app-"+app),
+		filepath.Join(config.SSHKeysDir, "nook-"+app),
 	} {
 		os.Remove(p)
 	}
@@ -202,11 +202,11 @@ func (h *Host) Delete(app, confirm string) error {
 		}
 	}
 	systemctl("reload", "caddy")
-	if out, err := Run("userdel", "app-"+app); err != nil {
+	if out, err := Run("userdel", "nook-"+app); err != nil {
 		h.say("userdel: %s", strings.TrimSpace(out))
 	}
 	os.RemoveAll(filepath.Join(config.AppsDir, app)) // RemoveAll never follows symlinks
-	h.say("deleted %s. Remove its APP_HOST secret from the GitHub repo too.", app)
+	h.say("deleted %s. Remove its NOOK_TOKEN secret from the GitHub repo too.", app)
 	return nil
 }
 

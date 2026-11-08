@@ -1,4 +1,4 @@
-# Push a tag like v1.2.3 to publish signed binaries. Servers pick them up with `app-host update`.
+# Push a tag like v1.2.3 to publish signed binaries. Servers pick them up with `nook-admin update`.
 # One-time setup: scripts/setup-release-key.sh (makes the signing key, stores the private half as a repo secret).
 name: release
 on:
@@ -24,10 +24,10 @@ jobs:
           mkdir -p dist
           for arch in amd64 arm64; do
             out="build/$arch"; mkdir -p "$out"
-            for cmd in app-host app; do
+            for cmd in nook-admin nook; do
               CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$tag" -o "$out/$cmd" "./cmd/$cmd"
             done
-            tar -C "$out" -czf "dist/app-host_${tag}_linux_${arch}.tar.gz" app-host app
+            tar -C "$out" -czf "dist/nook_${tag}_linux_${arch}.tar.gz" nook-admin nook
           done
           (cd dist && sha256sum *.tar.gz > checksums.txt)
       - name: Sign checksums

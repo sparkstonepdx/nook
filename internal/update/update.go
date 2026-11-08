@@ -1,4 +1,4 @@
-// Package update checks GitHub releases for new app-host binaries, verifies their ed25519 signature,
+// Package update checks GitHub releases for new nook binaries, verifies their ed25519 signature,
 // installs them, and notifies when one is available.
 package update
 
@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sparkstonepdx/app-host/internal/config"
+	"github.com/sparkstonepdx/nook/internal/config"
 )
 
 //go:embed signing.pub
@@ -35,8 +35,8 @@ var signingPub string
 // Version is set by main (from -ldflags at build time).
 var Version = "dev"
 
-const stateFile = "/var/lib/app-host/update.json"
-const motdFile = "/var/lib/app-host/update-available"
+const stateFile = "/var/lib/nook/update.json"
+const motdFile = "/var/lib/nook/update-available"
 
 type Status struct {
 	Current   string `json:"current"`
@@ -74,7 +74,7 @@ func settings() (repo, token, notify string) {
 	m := config.Read(config.UpdateEnv)
 	repo = m["UPDATE_REPO"]
 	if repo == "" {
-		repo = "sparkstonepdx/app-host"
+		repo = "sparkstonepdx/nook"
 	}
 	return repo, m["GITHUB_TOKEN"], m["UPDATE_NOTIFY_URL"]
 }
@@ -84,7 +84,7 @@ var client = &http.Client{Timeout: 5 * time.Minute}
 func get(url, token, accept string) ([]byte, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "app-host-updater")
+	req.Header.Set("User-Agent", "nook-updater")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token) // Go drops it on the redirect to the asset host
 	}
@@ -148,7 +148,7 @@ func writeState(s Status) {
 	b, _ := json.MarshalIndent(s, "", "  ")
 	config.WriteAtomic(stateFile, b, 0o644)
 	if s.Available {
-		config.WriteAtomic(motdFile, []byte(fmt.Sprintf("\napp-host %s is available (running %s). Install it with: app-host update\n%s\n\n", s.Latest, s.Current, s.URL)), 0o644)
+		config.WriteAtomic(motdFile, []byte(fmt.Sprintf("\nnook-admin %s is available (running %s). Install it with: nook-admin update\n%s\n\n", s.Latest, s.Current, s.URL)), 0o644)
 	} else {
 		os.Remove(motdFile)
 	}
@@ -175,7 +175,7 @@ func Check(out io.Writer, notify bool) (Status, error) {
 	s.Latest, s.URL, s.Notes = r.Tag, r.HTMLURL, firstLines(r.Body, 12)
 	s.Available = Newer(r.Tag, Version)
 	if s.Available {
-		fmt.Fprintf(out, "app-host %s is available (running %s): %s\n", r.Tag, Version, r.HTMLURL)
+		fmt.Fprintf(out, "nook %s is available (running %s): %s\n", r.Tag, Version, r.HTMLURL)
 		if notify && s.Notified != r.Tag {
 			if err := sendNotification(s); err != nil {
 				fmt.Fprintf(out, "notification failed: %v\n", err)
@@ -184,7 +184,7 @@ func Check(out io.Writer, notify bool) (Status, error) {
 			}
 		}
 	} else {
-		fmt.Fprintf(out, "app-host %s is the latest\n", Version)
+		fmt.Fprintf(out, "nook %s is the latest\n", Version)
 	}
 	writeState(s)
 	return s, nil
@@ -195,7 +195,7 @@ func sendNotification(s Status) error {
 	if url == "" {
 		return nil
 	}
-	msg := fmt.Sprintf("app-host %s is available (running %s). Update from the dashboard or run `app-host update`. %s", s.Latest, s.Current, s.URL)
+	msg := fmt.Sprintf("nook %s is available (running %s). Update from the dashboard or run `nook-admin update`. %s", s.Latest, s.Current, s.URL)
 	var body []byte
 	ctype := "text/plain"
 	switch {
@@ -210,7 +210,7 @@ func sendNotification(s Status) error {
 	}
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", ctype)
-	req.Header.Set("Title", "app-host update")
+	req.Header.Set("Title", "nook-admin update")
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -268,7 +268,7 @@ func Apply(out io.Writer, force bool) error {
 		fmt.Fprintf(out, "already on the latest (%s)\n", Version)
 		return nil
 	}
-	want := fmt.Sprintf("app-host_%s_linux_%s.tar.gz", r.Tag, runtime.GOARCH)
+	want := fmt.Sprintf("nook_%s_linux_%s.tar.gz", r.Tag, runtime.GOARCH)
 	assets := map[string]string{}
 	for _, a := range r.Assets {
 		assets[a.Name] = a.URL
@@ -300,24 +300,24 @@ func Apply(out io.Writer, force bool) error {
 		return errors.New("download doesn't match its signed checksum: refusing to install")
 	}
 	fmt.Fprintf(out, "verified %s (signature and checksum)\n", want)
-	bins, err := untar(tgz, "app-host", "app")
+	bins, err := untar(tgz, "nook-admin", "nook")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp("/usr/local/sbin", ".app-host-update-")
+	tmp, err := os.MkdirTemp("/usr/local/sbin", ".nook-update-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	newHost := filepath.Join(tmp, "app-host")
-	os.WriteFile(newHost, bins["app-host"], 0o700)
+	newHost := filepath.Join(tmp, "nook-admin")
+	os.WriteFile(newHost, bins["nook-admin"], 0o700)
 	if v, err := exec.Command(newHost, "version").Output(); err != nil || strings.TrimSpace(string(v)) != r.Tag {
 		return fmt.Errorf("the new binary doesn't run or reports the wrong version (%q)", strings.TrimSpace(string(v)))
 	}
-	if err := replace(config.HostBin, bins["app-host"], 0o750); err != nil {
+	if err := replace(config.HostBin, bins["nook-admin"], 0o750); err != nil {
 		return err
 	}
-	if err := replace(config.AppBin, bins["app"], 0o755); err != nil {
+	if err := replace(config.AppBin, bins["nook"], 0o755); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "installed %s\n", r.Tag)
@@ -326,7 +326,7 @@ func Apply(out io.Writer, force bool) error {
 		fmt.Fprintf(out, "post-update install step failed: %v\n%s\n", err, o)
 	}
 	writeState(Status{Current: r.Tag, Latest: r.Tag, URL: r.HTMLURL, CheckedAt: time.Now().UTC().Format(time.RFC3339)})
-	exec.Command("systemctl", "--no-block", "restart", "app-host-helper.service", "app-host-web.service").Run()
+	exec.Command("systemctl", "--no-block", "restart", "nook-helper.service", "nook-web.service").Run()
 	fmt.Fprintln(out, "restarting the dashboard; running sites are not affected")
 	return nil
 }
@@ -338,7 +338,7 @@ func replace(path string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	os.Chmod(tmp, mode)
-	if st, err := os.Stat(path); err == nil { // keep the group (root:app-host-web for app-host)
+	if st, err := os.Stat(path); err == nil { // keep the group (root:nook-web for nook)
 		if sys, ok := st.Sys().(interface{ Gid() uint32 }); ok {
 			os.Chown(tmp, 0, int(sys.Gid()))
 		} else if fi, ok := st.Sys().(*syscallStat); ok {

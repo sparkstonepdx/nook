@@ -1,39 +1,43 @@
-# app-host
+# nook
 
 Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. Each repo gets an isolated app (its own Linux user and folder); every folder in its `sites/` is a live site, named by its hostname.
 
 ```
-/srv/apps/<app>/sites/blog/              ->  https://blog.<default domain>
-/srv/apps/<app>/sites/client.com/        ->  https://client.com   (+ www.client.com redirecting to it)
-/srv/apps/<app>/sites/pr-12.client.com/  ->  https://pr-12.client.com
+/srv/nook/<app>/sites/blog/              ->  https://blog.<default domain>
+/srv/nook/<app>/sites/client.com/        ->  https://client.com   (+ www.client.com redirecting to it)
+/srv/nook/<app>/sites/pr-12.client.com/  ->  https://pr-12.client.com
     index.html, 200.html, 404.html       static site (200.html = SPA fallback, 404.html = not found)
     run (executable)                     running app: a sandboxed service on $PORT, Caddy proxies to it
 ```
 
 Two static Go binaries, no runtime dependencies:
 
-- **`app-host`** (root, and the dashboard's own user): install, create/delete apps, sync, grants, env, invites, updates, the dashboard.
-- **`app`** (everyone): `app site deploy|rm|restart|list|logs`. It only ever acts as whoever runs it.
+- **`nook-admin`** (root, and the dashboard's own user): install, create/delete apps, sync, grants, env, invites, updates, the dashboard.
+- **`nook`** (everyone): `nook site deploy|rm|restart|list|logs`. It only ever acts as whoever runs it.
 
 ## Install
 
 On a fresh Debian 13 VPS, as root:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/app-host/main/setup-server.sh | sh   # public repo
+curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-server.sh | sh   # public repo
 # or, while private: git clone the repo, cd into it, sh setup-server.sh  (builds from source)
 ```
 
-That installs Caddy, swap, both binaries, and runs `app-host install`, which prints a one-time setup link: `https://<server ip>:8443/invite?...` (self-signed; accept the warning). Create your login, then on the Domains page set the dashboard's address and grant domains to apps. Open ports 22, 80, 443 (tcp + udp) and 8443.
+That installs Caddy, swap, both binaries, and runs `nook-admin install`, which prints a one-time setup link: `https://<server ip>:8443/invite?...` (self-signed; accept the warning). Create your login, then on the Domains page set the dashboard's address and grant domains to apps. Open ports 22, 80, 443 (tcp + udp) and 8443.
 
-Copying the two binaries onto a box and running `./app-host install` does the same, minus swap.
+Copying the two binaries onto a box and running `./nook-admin install` does the same, minus swap.
+
+### Coming from app-host
+
+This project used to be called app-host. Running `nook-admin install` (or `--upgrade`) on an app-host box moves it over in place: `app-NAME` users become `nook-NAME` (same uid, files untouched), `/srv/apps`, `/etc/apps`, `/var/log/apps`, `/var/lib/app-host*` and `/etc/ssh/app-host-keys` move to their nook names, the old units, sshd and Caddy config are removed, and every app is re-synced. Existing `APP_HOST` tokens and `ssh ... app site ...` still work, so repos keep deploying; rename the secret to `NOOK_TOKEN` and switch to `sparkstonepdx/nook/deploy@v1` with `token:` when convenient. Re-run `extras/subduction-app.sh` afterwards if you use it.
 
 ## Updating
 
 - Releases: push a tag like `v1.2.3`; the release workflow builds both binaries for amd64 and arm64, signs `checksums.txt` with ed25519, and publishes a GitHub release. One-time setup: `scripts/setup-release-key.sh`.
-- Servers: `app-host update` verifies the signature against the key built into the running binary, swaps both binaries, runs the install step again, and restarts the dashboard. Running sites are not touched.
-- Notifications: a daily check shows "update available" on the dashboard (with an Update button) and in the SSH login message, and posts to `UPDATE_NOTIFY_URL` (ntfy, Discord or Slack) if set in `/etc/apps/update.env`.
-- While the repo is private the server needs a read-only `GITHUB_TOKEN` in `/etc/apps/update.env`.
+- Servers: `nook-admin update` verifies the signature against the key built into the running binary, swaps both binaries, runs the install step again, and restarts the dashboard. Running sites are not touched.
+- Notifications: a daily check shows "update available" on the dashboard (with an Update button) and in the SSH login message, and posts to `UPDATE_NOTIFY_URL` (ntfy, Discord or Slack) if set in `/etc/nook/update.env`.
+- While the repo is private the server needs a read-only `GITHUB_TOKEN` in `/etc/nook/update.env`.
 
 ## Dashboard
 
@@ -41,7 +45,7 @@ Copying the two binaries onto a box and running `./app-host install` does the sa
 
 Apps and sites (state, port, memory, live or not), create/delete, sync, restart/stop/start, remove sites, logs, environment, domains, users, updates.
 
-- **Split in two:** `app-host web` serves the UI and handles logins as the unprivileged `app-host-web` user, in a tight systemd sandbox. Everything else goes over a unix socket to `app-host helper` (root), which accepts a fixed list of operations and checks the caller with `SO_PEERCRED`. A bug in the web side doesn't hand out a root shell.
+- **Split in two:** `nook-admin web` serves the UI and handles logins as the unprivileged `nook-web` user, in a tight systemd sandbox. Everything else goes over a unix socket to `nook-admin helper` (root), which accepts a fixed list of operations and checks the caller with `SO_PEERCRED`. A bug in the web side doesn't hand out a root shell.
 - **Logins:** per user, scrypt-hashed; HMAC-signed session cookies (30 days). Invites are signed one-time links (24 h). Removing a user or changing a password logs their sessions out.
 - **Requests:** JSON only, from the dashboard's own origin; strict CSP; failed logins throttled per client IP (5 free, then up to 60 s).
 - **Reaching it:** always at `https://<ip>:8443` (self-signed), plus the address set on the Domains page.
@@ -52,13 +56,13 @@ Apps and sites (state, port, memory, live or not), create/delete, sync, restart/
 `app create` prints everything a repo needs: one secret and one workflow step.
 
 ```sh
-gh secret set APP_HOST -R sparkstonepdx/myapp     # paste the apphost1:... value when it asks
+gh secret set NOOK_TOKEN -R sparkstonepdx/myapp     # paste the nook1:... value when it asks
 ```
 
 ```yaml
-- uses: sparkstonepdx/app-host/deploy@v1
+- uses: sparkstonepdx/nook/deploy@v1
   with:
-    app-host: ${{ secrets.APP_HOST }}
+    nook: ${{ secrets.NOOK_TOKEN }}
     dir: dist          # an executable "run" inside makes it a running app
     site: myapp        # or a hostname like client.com (needs a grant)
 ```
@@ -69,20 +73,20 @@ gh secret set APP_HOST -R sparkstonepdx/myapp     # paste the apphost1:... value
 - Outputs: `url`, `site`. The workflow needs `permissions: pull-requests: write` for the PR comment.
 - Pin `@v1` (moved on each release) or a commit SHA, never `@main`.
 - While this repo is private, turn on **Settings → Actions → General → Access → "Accessible from repositories in the sparkstonepdx organization"** once.
-- `APP_HOST` is `apphost1:` + base64url JSON (host, port, user, app folder, default domain, known_hosts, deploy key). The action pins the server's host key; it never disables host key checking.
+- `NOOK_TOKEN` is `nook1:` + base64url JSON (host, port, user, app folder, default domain, known_hosts, deploy key). The action pins the server's host key; it never disables host key checking.
 
 ## Runtime environment
 
 ![Environment](docs/dashboard-env.png)
 
-Env vars and secrets for running apps live on the server in `/etc/apps/env/NAME.env` (root-only), not in GitHub. A `secrets.env` the app's own deploys write into its folder still works: `app sync` copies it, reading it as the app user, and `app-host env` values override it. Set them on the dashboard (app → Environment, including pasting a .env block) or with `app-host env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by app-host and can't be overridden.
+Env vars and secrets for running apps live on the server in `/etc/nook/env/NAME.env` (root-only), not in GitHub. A `secrets.env` the app's own deploys write into its folder still works: `app sync` copies it, reading it as the app user, and `nook-admin env` values override it. Set them on the dashboard (app → Environment, including pasting a .env block) or with `nook-admin env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by nook-admin and can't be overridden.
 
 ## Domains
 
 ![Domains](docs/dashboard-domains.png)
 
 - **Default domain** (`BASE_DOMAIN`): site folders without a dot are subdomains of it.
-- **Grants**, per app, in `/etc/apps/grants`:
+- **Grants**, per app, in `/etc/nook/grants`:
   - `domain client.com`: `client.com` and every `*.client.com`
   - `sub client.com`: `*.client.com` only (use this for a shared domain)
   - `host blog.client.com`: exactly that hostname
@@ -93,52 +97,52 @@ Env vars and secrets for running apps live on the server in `/etc/apps/env/NAME.
 
 ## Catch-all page
 
-Any hostname that points here but isn't a site (or the dashboard) gets a plain 404 page on `http://`. Known sites still redirect to HTTPS, and `http://<ip>` redirects to the dashboard on `:8443`. Edit the page at `/etc/caddy/catchall/index.html`; `app-host install` never overwrites it, and removes Debian's stock `:80` welcome-page block from `/etc/caddy/Caddyfile` (keeping a backup), because two `:80` sites can't coexist.
+Any hostname that points here but isn't a site (or the dashboard) gets a plain 404 page on `http://`. Known sites still redirect to HTTPS, and `http://<ip>` redirects to the dashboard on `:8443`. Edit the page at `/etc/caddy/catchall/index.html`; `nook-admin install` never overwrites it, and removes Debian's stock `:80` welcome-page block from `/etc/caddy/Caddyfile` (keeping a backup), because two `:80` sites can't coexist.
 
 Over `https://`, an unknown hostname fails the TLS handshake instead, because Caddy only has certificates for names it serves.
 
 ## Commands
 
-Root (`app-host`):
+Root (`nook-admin`):
 
 ```
-app-host install [--domain D] [--ip IP]
-app-host create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
-app-host delete NAME
-app-host sync NAME | --all
-app-host grant list [APP] | grant add|rm APP domain|sub|host NAME
-app-host env list|set|unset NAME ...
-app-host invite
-app-host update [--check]
+nook-admin install [--domain D] [--ip IP]
+nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
+nook-admin delete NAME
+nook-admin sync NAME | --all
+nook-admin grant list [APP] | grant add|rm APP domain|sub|host NAME
+nook-admin env list|set|unset NAME ...
+nook-admin invite
+nook-admin update [--check]
 ```
 
-App users, and deploy keys through the SSH gate (`app`):
+App users, and deploy keys through the SSH gate (`nook`):
 
 ```
-app site deploy DIR SITE    # atomic swap into sites/SITE; exits 2 if SITE didn't go live
-app site rm SITE            # SITE: "blog" (subdomain of the default domain) or "client.com" (exact)
-app site restart SITE
-app site list
-app site logs SITE [N]
+nook site deploy DIR SITE    # atomic swap into sites/SITE; exits 2 if SITE didn't go live
+nook site rm SITE            # SITE: "blog" (subdomain of the default domain) or "client.com" (exact)
+nook site restart SITE
+nook site list
+nook site logs SITE [N]
 ```
 
 ## What each app gets
 
 | Path | Purpose |
 |---|---|
-| `/srv/apps/<app>/sites/` | one folder per hostname |
-| `/srv/apps/<app>/builds/` | upload area for rsync |
-| `/srv/apps/<app>/data/` | persistent data for running apps (survives redeploys) |
-| `/srv/apps/<app>/secrets.env` | optional env vars written by the app's own deploys; `app-host env` values override them |
-| `/var/log/apps/<app>/<site>.log` | output of running sites (root-owned, app-readable, rotated hourly at 10 MB) |
+| `/srv/nook/<app>/sites/` | one folder per hostname |
+| `/srv/nook/<app>/builds/` | upload area for rsync |
+| `/srv/nook/<app>/data/` | persistent data for running apps (survives redeploys) |
+| `/srv/nook/<app>/secrets.env` | optional env vars written by the app's own deploys; `nook-admin env` values override them |
+| `/var/log/nook/<app>/<site>.log` | output of running sites (root-owned, app-readable, rotated hourly at 10 MB) |
 
 Running sites listen on `127.0.0.1:$PORT` and also get `$SITE`, `$SITE_HOST`, `$HOME`. Ports come from 20000–29999. Everything one app runs shares a systemd slice (default 256M memory, 50% CPU, 256 tasks; set per app at creation).
 
 ## Security model
 
-- **App folders are `700`.** Static sites are served from a root-owned copy in `/var/lib/app-host/www/`, made by `app` running as the app user (so symlinks only reach what that app could already read); only plain files and folders are unpacked.
+- **App folders are `700`.** Static sites are served from a root-owned copy in `/var/lib/nook/www/`, made by `nook` running as the app user (so symlinks only reach what that app could already read); only plain files and folders are unpacked.
 - **Root never opens a path inside an app's folder by name.** Directory reads use `O_NOFOLLOW` file descriptors and `*at()` calls; reading an app's own files happens as the app user. Env files, logs and deploy keys live in root-owned places.
-- **Deploy keys can only deploy.** sshd forces every `app-*` login through `app ssh-gate`, which allows an rsync upload into `builds/<name>/` and `app site …`: no shell, no port forwarding, no downloads. Keys live in `/etc/ssh/app-host-keys/`, which apps can't write.
+- **Deploy keys can only deploy.** sshd forces every `nook-*` login through `nook ssh-gate`, which allows an rsync upload into `builds/<name>/` and `nook site …`: no shell, no port forwarding, no downloads. Keys live in `/etc/ssh/nook-keys/`, which apps can't write.
 - **Running sites are sandboxed.** `ProtectSystem=strict`, only their own folder visible, no new privileges, no capabilities, may only listen on their own `$PORT`, single files capped at 2 GB.
 - **Caddy's admin API is on a root-only unix socket**, not `localhost:2019`, so apps can't rewrite Caddy's config.
 - **Updates are signed:** the binary refuses releases whose signature doesn't match its built-in key.

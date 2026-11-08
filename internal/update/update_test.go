@@ -23,7 +23,7 @@ func TestVerify(t *testing.T) {
 	old := signingPub
 	defer func() { signingPub = old }()
 	signingPub = base64.StdEncoding.EncodeToString(pub)
-	sums := []byte("abc  app-host_v1.0.0_linux_amd64.tar.gz\n")
+	sums := []byte("abc  nook_v1.0.0_linux_amd64.tar.gz\n")
 	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, sums))
 	if err := VerifyChecksums(sums, []byte(sig)); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestVerify(t *testing.T) {
 	if VerifyChecksums(sums, []byte(sig)) == nil {
 		t.Fatal("no key should refuse")
 	}
-	if h, ok := sha256For(sums, "app-host_v1.0.0_linux_amd64.tar.gz"); !ok || h != "abc" {
+	if h, ok := sha256For(sums, "nook_v1.0.0_linux_amd64.tar.gz"); !ok || h != "abc" {
 		t.Fatal("sha256For")
 	}
 }

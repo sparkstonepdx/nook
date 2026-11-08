@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sparkstonepdx/app-host/internal/names"
+	"github.com/sparkstonepdx/nook/internal/names"
 )
 
 // Vars keeps insertion order so files stay stable across edits.
@@ -83,7 +83,7 @@ func Check(k, val string) error {
 		return fmt.Errorf("%q isn't a valid name (letters, digits, _; not starting with a digit)", k)
 	}
 	if names.ReservedEnv[k] {
-		return fmt.Errorf("%s is set by app-host itself", k)
+		return fmt.Errorf("%s is set by nook itself", k)
 	}
 	if strings.ContainsAny(val, "\r\n\x00") {
 		return fmt.Errorf("%s: values can't contain newlines", k)

@@ -1,5 +1,5 @@
 // Package tarx moves a static site from an app's folder into a root-owned copy without root ever opening
-// a path the app controls. Pack runs as the app user (inside `app pack`) and follows symlinks with the
+// a path the app controls. Pack runs as the app user (inside `nook internal-pack`) and follows symlinks with the
 // app's own permissions; Extract runs as root and writes only plain files and folders.
 package tarx
 

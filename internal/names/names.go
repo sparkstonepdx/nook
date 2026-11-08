@@ -1,4 +1,4 @@
-// Package names holds the naming rules shared by app-host and app: app names, site folder names and hostnames.
+// Package names holds the naming rules shared by nook-admin and nook: app names, site folder names and hostnames.
 package names
 
 import (
@@ -15,7 +15,7 @@ var (
 	userRE  = regexp.MustCompile(`^[a-z0-9._-]{2,32}$`)
 )
 
-// App reports whether s is a valid app name (also the Linux user app-<name>).
+// App reports whether s is a valid app name (also the Linux user nook-<name>).
 func App(s string) bool { return appRE.MatchString(s) }
 
 // Site reports whether s is a valid site folder name: a subdomain label ("blog") or a hostname ("client.com").
@@ -38,7 +38,7 @@ func HostOf(site, baseDomain string) string {
 	return site + "." + baseDomain
 }
 
-// ReservedEnv are set by app-host for every running site and can't be overridden.
+// ReservedEnv are set by nook for every running site and can't be overridden.
 var ReservedEnv = map[string]bool{"PORT": true, "HOST": true, "SITE": true, "SITE_HOST": true, "HOME": true, "USER": true, "PATH": true, "SHELL": true, "LOGNAME": true}
 
 // Preview turns a site and PR number into the preview site name: "myapp" -> "myapp-pr-12", "client.com" -> "pr-12.client.com".

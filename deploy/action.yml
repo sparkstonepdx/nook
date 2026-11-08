@@ -1,8 +1,8 @@
-name: app-host deploy
-description: Publish a folder to an app-host server. Pull requests get a preview site that is removed when the PR closes.
+name: nook deploy
+description: Publish a folder to a nook server. Pull requests get a preview site that is removed when the PR closes.
 inputs:
-  app-host:
-    description: The APP_HOST secret printed by `app-host create`
+  token:
+    description: The NOOK_TOKEN secret printed by `nook-admin create`
     required: true
   site:
     description: Site name. "blog" = blog.<default domain>; "client.com" = exactly that hostname (needs a grant)
@@ -46,13 +46,13 @@ runs:
         GOTOOLCHAIN: auto
         CGO_ENABLED: "0"
         GOFLAGS: -mod=mod
-      run: go build -trimpath -o "$RUNNER_TEMP/app-host-deploy" ./cmd/deploy-action
+      run: go build -trimpath -o "$RUNNER_TEMP/nook-deploy" ./cmd/deploy-action
     - id: deploy
       shell: bash
       env:
-        INPUT_APP_HOST: ${{ inputs.app-host }}
+        INPUT_TOKEN: ${{ inputs.token }}
         INPUT_SITE: ${{ inputs.site }}
         INPUT_DIR: ${{ inputs.dir }}
         INPUT_PREVIEWS: ${{ inputs.previews }}
         INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: '"$RUNNER_TEMP/app-host-deploy"'
+      run: '"$RUNNER_TEMP/nook-deploy"'
