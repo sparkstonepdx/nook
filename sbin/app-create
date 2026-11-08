@@ -1,83 +1,45 @@
 #!/bin/bash
-# app-create NAME [SUBDOMAIN]
-# Creates an isolated app folder + user, assigns 4 free ports, a deploy key for GitHub Actions,
-# and prints the secrets/variables to paste into the repo plus instructions to hand to Claude.
+# app-create NAME
+# Creates an isolated app user + folder (/srv/apps/NAME) and a deploy key for GitHub Actions,
+# then prints the secrets/variables to paste into the repo and instructions to hand to Claude.
 set -euo pipefail
 . /etc/apps/config
 
-NAME="${1:-}"; SUB="${2:-$NAME}"
-[[ "$NAME" =~ ^[a-z][a-z0-9-]{1,23}$ ]] || { echo "usage: app-create NAME [SUBDOMAIN]  (NAME: lowercase letters, digits, dashes)"; exit 1; }
+NAME="${1:-}"
+[[ "$NAME" =~ ^[a-z][a-z0-9-]{1,23}$ ]] || { echo "usage: app-create NAME  (lowercase letters, digits, dashes)"; exit 1; }
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
-USER_NAME="app-$NAME"; DIR="$APPS_DIR/$NAME"
-id "$USER_NAME" >/dev/null 2>&1 && { echo "$USER_NAME already exists"; exit 1; }
+U="app-$NAME"; DIR="$APPS_DIR/$NAME"
+id "$U" >/dev/null 2>&1 && { echo "$U already exists"; exit 1; }
 
-# --- 4 ports that nothing else uses (registry + anything currently listening) ---
-taken() { grep -qw "$1" "$PORTS_FILE" 2>/dev/null || ss -Htln "sport = :$1" | grep -q .; }
-PORTS=()
-while [ "${#PORTS[@]}" -lt 4 ]; do
-  p=$(shuf -i "$PORT_MIN-$PORT_MAX" -n 1)
-  taken "$p" && continue
-  [[ " ${PORTS[*]-} " == *" $p "* ]] && continue
-  PORTS+=("$p")
-done
-echo "$NAME ${PORTS[*]}" >> "$PORTS_FILE"
-
-# --- user + isolated folder ---
-useradd --system --home-dir "$DIR" --create-home --shell /bin/bash --user-group "$USER_NAME"
-chmod 711 "$DIR"   # others can't list it; static files under it stay readable by Caddy
-mkdir -p "$DIR/.ssh" "$DIR/.config/systemd/user" "$DIR/releases"
-cat > "$DIR/ports.env" <<EOF
-# assigned by app-create, owned by root: do not edit
-APP_NAME=$NAME
-APP_DIR=$DIR
-APP_PORT_1=${PORTS[0]}
-APP_PORT_2=${PORTS[1]}
-APP_PORT_3=${PORTS[2]}
-APP_PORT_4=${PORTS[3]}
-EOF
-cat > "$DIR/app.env" <<EOF
-# Edit me. Saving this file regenerates the Caddy config.
-#
-# Static site (Surge-style): serves files from STATIC_ROOT (relative to this folder).
-#   200.html is the SPA fallback, 404.html the not-found page, same as Surge.
-STATIC_SUBDOMAIN=$SUB
-STATIC_ROOT=current
-#
-# Running apps: APP_SUBDOMAIN_N routes https://<value>.$BASE_DOMAIN to APP_PORT_N.
-APP_SUBDOMAIN_1=
-APP_SUBDOMAIN_2=
-APP_SUBDOMAIN_3=
-APP_SUBDOMAIN_4=
-EOF
-cat > "$DIR/.profile" <<'EOF'
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-set -a; . "$HOME/ports.env"; set +a
-EOF
+# --- user + folder. Home is 711: others can't list it, but Caddy can reach the static files in sites/ ---
+useradd --system --home-dir "$DIR" --create-home --shell /bin/bash --user-group "$U"
+mkdir -p "$DIR/.ssh" "$DIR/sites" "$DIR/logs" "$DIR/builds" "$DIR/data"
+# shellcheck disable=SC2016  # literal, expanded at login
+echo 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"' > "$DIR/.profile"
 cp "$DIR/.profile" "$DIR/.bashrc"
+: > "$DIR/secrets.env"
 
 # --- deploy key: GitHub Actions gets the private half, the server keeps the public half ---
-KEYTMP=$(mktemp -d)
+KEYTMP=$(mktemp -d); trap 'rm -rf "$KEYTMP"' EXIT
 ssh-keygen -q -t ed25519 -N "" -C "github-actions-$NAME" -f "$KEYTMP/key"
 echo "restrict $(cat "$KEYTMP/key.pub")" > "$DIR/.ssh/authorized_keys"
-chown -R "$USER_NAME:$USER_NAME" "$DIR"
-chown root:"$USER_NAME" "$DIR/ports.env"; chmod 640 "$DIR/ports.env"
-chmod 700 "$DIR/releases"   # releases are private until linked as the static root
-chmod 700 "$DIR/.ssh"; chmod 600 "$DIR/.ssh/authorized_keys"
 
-# --- resource limits for everything this user runs ---
-UID_NUM=$(id -u "$USER_NAME")
-mkdir -p "/etc/systemd/system/user-$UID_NUM.slice.d"
-cat > "/etc/systemd/system/user-$UID_NUM.slice.d/50-app-limits.conf" <<EOF
+chown -R "$U:$U" "$DIR"
+chmod 711 "$DIR"; chmod 755 "$DIR/sites" "$DIR/logs"; chmod 700 "$DIR/.ssh" "$DIR/builds" "$DIR/data"
+chmod 600 "$DIR/.ssh/authorized_keys" "$DIR/secrets.env"
+
+# --- resource limits shared by everything this app runs ---
+cat > "/etc/systemd/system/app-$NAME.slice" <<EOF
+[Unit]
+Description=Resource limits for app $NAME
+
 [Slice]
 MemoryMax=$APP_MEMORY_MAX
 CPUQuota=$APP_CPU_QUOTA
 TasksMax=$APP_TASKS_MAX
 EOF
 systemctl daemon-reload
-loginctl enable-linger "$USER_NAME"        # user services keep running without a login
-systemctl enable --now "app-caddy@$NAME.path" >/dev/null 2>&1
-app-caddy-sync "$NAME" || echo "warning: Caddy config not applied yet; fix app.env and save it"
+systemctl enable --now "app-sync@$NAME.path" >/dev/null 2>&1 || echo "warning: could not start the sites/ watcher"
 
 KNOWN_HOSTS="$SSH_HOST $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"
 cat <<EOF
@@ -89,7 +51,7 @@ DEPLOY_HOST
 $SSH_HOST
 
 DEPLOY_USER
-$USER_NAME
+$U
 
 DEPLOY_KNOWN_HOSTS
 $KNOWN_HOSTS
@@ -98,28 +60,23 @@ DEPLOY_SSH_KEY
 $(cat "$KEYTMP/key")
 
 --- Variables ---
-APP_DIR      $DIR
-APP_PORT_1   ${PORTS[0]}
-APP_PORT_2   ${PORTS[1]}
-APP_PORT_3   ${PORTS[2]}
-APP_PORT_4   ${PORTS[3]}
-SITE_URL     https://$SUB.$BASE_DOMAIN
+APP_DIR       $DIR
+BASE_DOMAIN   $BASE_DOMAIN
 
 ================ Paste this to Claude ================
 
-Write a GitHub Actions workflow that deploys this repo to my server on push to main.
+Write the GitHub Actions workflow(s) that deploy this repo to my server.
 
-Server setup (already done, don't change it):
-- SSH as \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }} with the private key in secrets.DEPLOY_SSH_KEY. Write secrets.DEPLOY_KNOWN_HOSTS to ~/.ssh/known_hosts; never disable host key checking.
-- The user can only write inside \${{ vars.APP_DIR }} (its home). No root, no sudo, no pty.
-- Upload the build to \${{ vars.APP_DIR }}/releases/<git sha>, then point \${{ vars.APP_DIR }}/current at it (ln -sfn). Keep the 3 newest releases, delete older ones.
-- STATIC SITE: Caddy already serves https://$SUB.$BASE_DOMAIN from \${{ vars.APP_DIR }}/current (200.html = SPA fallback, 404.html = not found), so a static site only needs the upload + symlink. Make the uploaded files world-readable (chmod -R a+rX on the release).
-- RUNNING APP: listen on 127.0.0.1 only, on the ports in \$APP_PORT_1..\$APP_PORT_4 (also in ~/ports.env, loaded by ~/.profile). To expose port N, the workflow sets APP_SUBDOMAIN_N=<name> in \${{ vars.APP_DIR }}/app.env (sed -i), and Caddy picks it up within seconds.
-- Run it as a systemd user service with the "app" helper on the server, run through a login shell (bash -lc '...'):
-    app service add NAME -- <command run from \${{ vars.APP_DIR }}/current>
-    app restart NAME
-  "app service add" is idempotent, so the workflow can run it on every deploy.
-- Prefer building in the Action and uploading artifacts (rsync over ssh). Building on the server is allowed but the box has 1 GB RAM.
-- Runtime secrets for the app go in \${{ vars.APP_DIR }}/secrets.env (chmod 600), written by the workflow from repo secrets; the service loads it automatically if present.
+How the server works (already set up, don't change it):
+- SSH as \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }} with the private key in secrets.DEPLOY_SSH_KEY. Write secrets.DEPLOY_KNOWN_HOSTS to ~/.ssh/known_hosts; never disable host key checking. No root, no sudo, no pty. The user can only write inside \${{ vars.APP_DIR }}.
+- Every folder in \${{ vars.APP_DIR }}/sites/ is live at https://<folder>.\${{ vars.BASE_DOMAIN }} within a few seconds, and goes away when the folder is deleted. Folder names: lowercase letters, digits, dashes.
+  - Static site (Surge-style): just files. 200.html is the SPA fallback, 404.html the not-found page.
+  - Running app: if the folder contains an executable named "run", the server starts it as a service with the working directory set to that folder. It must listen on 127.0.0.1:\$PORT (provided in the environment). Caddy proxies HTTPS and websockets to it. It's restarted on redeploy and on crash. Logs go to \${{ vars.APP_DIR }}/logs/<folder>.log. Runtime secrets: write them to \${{ vars.APP_DIR }}/secrets.env (KEY=value lines) from repo secrets; every running app gets them as environment variables.
+  - A running app can only see its own app folder; keep anything persistent in \${{ vars.APP_DIR }}/data/, never inside the site folder (a redeploy replaces it).
+- Deploy with the helper on the server (atomic swap, triggers the restart):
+    rsync -a --delete ./out/ \${{ secrets.DEPLOY_USER }}@\${{ secrets.DEPLOY_HOST }}:builds/<name>/
+    ssh ... app site deploy builds/<name> <subdomain>
+  Other commands: app site rm <subdomain>, app site restart <subdomain>, app site list, app site logs <subdomain>.
+- Build in the Action (the server has 1 GB RAM). For binaries, build for x86_64 Linux (glibc, Debian 13).
+- Production: deploy main to the repo's subdomain. PR previews: deploy pull requests to <name>-pr-<number>, post the URL as a PR comment, and run "app site rm" when the PR closes.
 EOF
-rm -rf "$KEYTMP"

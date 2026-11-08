@@ -1,19 +1,22 @@
 #!/bin/bash
-# app-delete NAME : stops the app's services, removes its user, folder, ports, and Caddy routes.
+# app-delete NAME : takes down all of the app's sites, stops its services, removes its user and folder.
 set -euo pipefail
 . /etc/apps/config
-NAME="${1:-}"; USER_NAME="app-$NAME"; DIR="$APPS_DIR/$NAME"
-if [ -z "$NAME" ] || ! id "$USER_NAME" >/dev/null 2>&1; then echo "usage: app-delete NAME (no such app)"; exit 1; fi
+NAME="${1:-}"; U="app-$NAME"; DIR="$APPS_DIR/$NAME"
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
+if [ -z "$NAME" ] || ! id "$U" >/dev/null 2>&1; then echo "usage: app-delete NAME (no such app)"; exit 1; fi
 read -r -p "This deletes $DIR and everything in it. Type the app name to confirm: " c
 [ "$c" = "$NAME" ] || { echo "aborted"; exit 1; }
-UID_NUM=$(id -u "$USER_NAME")
-systemctl disable --now "app-caddy@$NAME.path" >/dev/null 2>&1 || true
-loginctl disable-linger "$USER_NAME" || true
-loginctl terminate-user "$USER_NAME" 2>/dev/null || true
-pkill -u "$USER_NAME" 2>/dev/null || true
-rm -f "$CADDY_APPS_DIR/$NAME.caddy"; systemctl reload caddy || true
-rm -rf "/etc/systemd/system/user-$UID_NUM.slice.d"; systemctl daemon-reload
-userdel -r "$USER_NAME" 2>/dev/null || { userdel "$USER_NAME"; rm -rf "$DIR"; }
+
+systemctl disable --now "app-sync@$NAME.path" >/dev/null 2>&1 || true
+awk -v a="$NAME" '$1==a {print $2}' "$PORTS_FILE" | while read -r s; do
+  systemctl disable --now "site-$NAME--$s.service" >/dev/null 2>&1 || true
+  rm -f "/etc/systemd/system/site-$NAME--$s.service" "$STATE_DIR/$NAME--$s.id"
+done
 sed -i "/^$NAME /d" "$PORTS_FILE"
-echo "deleted $NAME. Remove the deploy secrets from the GitHub repo too."
+rm -f "/etc/systemd/system/app-$NAME.slice"
+systemctl daemon-reload
+pkill -u "$U" 2>/dev/null || true
+rm -f "$CADDY_APPS_DIR/$NAME.caddy"; systemctl reload caddy || true
+userdel "$U"; rm -rf "$DIR"
+echo "deleted $NAME. Remove its deploy secrets from the GitHub repo too."
