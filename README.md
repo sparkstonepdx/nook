@@ -35,7 +35,7 @@ Details:
 
 ![Apps](docs/dashboard-apps.png)
 
-Lists every app and site (state, port, memory, whether it's live), and runs create, delete, sync, restart/stop/start, remove site, reload Caddy, and shows logs. It's a no-dependency Node server (`dashboard/server.mjs`) on 127.0.0.1:19999, running as root (unit `app-dashboard`). Caddy serves it at:
+Lists every app and site (state, port, memory, whether it's live), and runs create, delete, sync, restart/stop/start, remove site, reload Caddy, and shows logs. Caddy serves it at:
 
 - `https://<server ip>:8443`, always, with a self-signed certificate: for first setup, and as the way in if DNS breaks.
 - The dashboard address you set on the Domains page, once DNS points here. No app can claim that hostname.
@@ -47,6 +47,13 @@ Logins are per user (username + password, scrypt-hashed in `/etc/apps/dashboard/
 - Locked out: `app invite` on the server prints a fresh link.
 - Removing a user or changing a password logs out their sessions immediately.
 - Forms only work when posted from the dashboard itself (Origin check + SameSite cookies). Failed logins are slowed to one per second.
+
+### How it's built
+
+- `dashboard/server.mjs`: a no-dependency Node server on 127.0.0.1:19999, running as root (unit `app-dashboard`). It's a JSON API under `/api/*` (the only thing that runs commands) and serves the UI from `dashboard/public`.
+- `dashboard/ui`: the UI source, Solid + `@sparkstone/css`, built with Vite into `dashboard/public`. The build is committed so the server never builds anything; `install.sh` copies it.
+- Changing the UI: `cd dashboard/ui && npm install && npm run dev` (proxies `/api` to a local server on :19999), then `npm run build`, commit `dashboard/public`, and run `./install.sh` on the server.
+- The UI's JavaScript runs with your admin session, so it only ever comes from this repo, never from an app's deploy. Requests must be JSON from the dashboard's own origin; responses carry a strict Content-Security-Policy.
 
 ## Domains
 

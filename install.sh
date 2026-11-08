@@ -41,6 +41,7 @@ install -m 755 bin/app /usr/local/bin/
 install -m 644 systemd/app-sync@.path systemd/app-sync@.service /etc/systemd/system/
 install -m 644 logrotate/apps /etc/logrotate.d/apps
 install -D -m 644 dashboard/server.mjs /usr/local/lib/app-host/dashboard/server.mjs
+rm -rf /usr/local/lib/app-host/dashboard/public && cp -r dashboard/public /usr/local/lib/app-host/dashboard/public
 install -m 644 dashboard/app-dashboard.service /etc/systemd/system/
 systemctl daemon-reload
 
