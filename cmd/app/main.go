@@ -145,7 +145,13 @@ func site(args []string) int {
 		if fi, err := os.Stat(filepath.Join(dst, "run")); err == nil && fi.Mode()&0o111 != 0 {
 			kind = "running app"
 		}
-		if waitLive(s) {
+		var ino uint64
+		if fi, err := os.Stat(dst); err == nil {
+			if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+				ino = st.Ino
+			}
+		}
+		if waitLive(s, ino) {
 			fmt.Printf("deployed %s (%s)\n", s, kind)
 			return 0
 		}
@@ -211,17 +217,14 @@ func site(args []string) int {
 	return 0
 }
 
-// waitLive waits for the sites/ watcher to publish the site (it shows up in this app's Caddy file).
-func waitLive(s string) bool {
+// waitLive waits until the sites/ watcher has published this exact deploy: the app's Caddy file records
+// each site folder's inode, which changes with every atomic swap.
+func waitLive(s string, ino uint64) bool {
 	file := filepath.Join(config.CaddyAppsDir, appName()+".caddy")
-	for i := 0; i < 15; i++ {
-		if b, err := os.ReadFile(file); err == nil {
-			live, _ := caddyfile.Hosts(string(b))
-			for _, h := range live {
-				if h == s || strings.HasPrefix(h, s+".") && !strings.Contains(s, ".") {
-					return true
-				}
-			}
+	want := strconv.FormatUint(ino, 10)
+	for i := 0; i < 30; i++ {
+		if b, err := os.ReadFile(file); err == nil && caddyfile.Version(string(b), s) == want {
+			return true
 		}
 		time.Sleep(time.Second)
 	}

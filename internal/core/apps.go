@@ -1,8 +1,6 @@
 package core
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +10,7 @@ import (
 	"github.com/sparkstonepdx/app-host/internal/config"
 	"github.com/sparkstonepdx/app-host/internal/grants"
 	"github.com/sparkstonepdx/app-host/internal/names"
+	"github.com/sparkstonepdx/app-host/internal/token"
 )
 
 var (
@@ -22,23 +21,6 @@ var (
 )
 
 type CreateOpts struct{ Name, Memory, CPU, Tasks, Repo string }
-
-// Token is the APP_HOST secret: everything a deploy needs.
-type Token struct {
-	V          int    `json:"v"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	User       string `json:"user"`
-	Dir        string `json:"dir"`
-	Domain     string `json:"domain"`
-	KnownHosts string `json:"knownHosts"`
-	Key        string `json:"key"`
-}
-
-func (t Token) Encode() string {
-	b, _ := json.Marshal(t)
-	return "apphost1:" + base64.RawURLEncoding.EncodeToString(b)
-}
 
 // Create makes the user, folders, limits, deploy key and grant, and returns what to paste into GitHub.
 func (h *Host) Create(o CreateOpts) (string, error) {
@@ -123,7 +105,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	if len(f) >= 2 {
 		known += " " + f[0] + " " + f[1]
 	}
-	tok := Token{V: 1, Host: h.S.SSHHost, Port: 22, User: "app-" + o.Name, Dir: home, Domain: h.S.BaseDomain, KnownHosts: known, Key: string(priv)}
+	tok := token.Token{V: 1, Host: h.S.SSHHost, Port: 22, User: "app-" + o.Name, Dir: home, Domain: h.S.BaseDomain, KnownHosts: known, Key: string(priv)}
 	return createdText(o, tok.Encode()), nil
 }
 

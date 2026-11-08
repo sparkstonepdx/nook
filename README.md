@@ -64,7 +64,8 @@ gh secret set APP_HOST -R sparkstonepdx/myapp     # paste the apphost1:... value
 ```
 
 - Pushes deploy to `site`. Pull requests deploy a preview (`myapp-pr-12`, or `pr-12.client.com` for a hostname), comment its URL on the PR, and remove it when the PR closes. Turn that off with `previews: "false"`.
-- The job fails with a clear message if the site didn't go live (not granted, reserved, or taken).
+- The job fails with a clear message if the site didn't go live (not granted, reserved, or taken). It waits until the new build is the one being served, then until the site answers over HTTPS (a new hostname needs its certificate first; that part only warns).
+- The action is a small Go program in this repo (`cmd/deploy-action`, standard library only), built on the runner. GitHub-hosted runners already have Go; on others it installs it with `actions/setup-go`. It needs `ssh` and `rsync` on the runner.
 - Outputs: `url`, `site`. The workflow needs `permissions: pull-requests: write` for the PR comment.
 - Pin `@v1` (moved on each release) or a commit SHA, never `@main`.
 - While this repo is private, turn on **Settings → Actions → General → Access → "Accessible from repositories in the sparkstonepdx organization"** once.
