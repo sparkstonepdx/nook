@@ -31,3 +31,4 @@ main.container { padding-top: 1.5rem; }
 .hint { font-size: 0.875rem; margin: 0.25rem 0 0; }
 details.danger summary { cursor: pointer; }
 .env-value { max-width: 32rem; overflow-wrap: anywhere; }
+.update-banner { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }

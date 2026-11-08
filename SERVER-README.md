@@ -1,86 +1,61 @@
 # Server notes
 
-Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the internet. Everything else runs through **app-host**: each app is a locked-down user with a folder under `/srv/apps/NAME`, and each folder in its `sites/` becomes a subdomain.
+Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the internet. Everything else runs through **app-host**: each app is a locked-down user with a folder under `/srv/apps/NAME`, and each folder in its `sites/` becomes a site.
 
-## Apps and sites
+## Dashboard
 
-| App | Subdomain | What | Limits |
-|---|---|---|---|
-| subduction | `wss://subduction.sparkstonepdx.com` | Subduction sync server | 700M / 100% CPU |
-| push (planned) | TBD | VAPID push notifications | default 256M |
-| analytics (planned) | TBD | analytics / game stats | default 256M |
+- `https://<server ip>:8443` always works (self-signed certificate): first setup, and the way in if DNS breaks.
+- Its own address is set on its Domains page (e.g. `admin.sparkstonepdx.com`).
+- New login link: `app-host invite`
+- Services: `app-host-web` (unprivileged dashboard) and `app-host-helper` (root, accepts a fixed set of operations from the dashboard only)
 
-List everything live: `app sync --all` prints each site and its port. Ports are assigned automatically (20000–29999) and recorded in `/etc/apps/ports`.
+## Commands (root)
 
-## app-host cheat sheet
+- `app-host create NAME [--repo owner/name] [--memory 256M] [--cpu 50%] [--tasks 256]`: prints the one `APP_HOST` secret for the repo and a ready deploy workflow
+- `app-host delete NAME`
+- `app-host sync NAME | --all` (runs on its own after every deploy)
+- `app-host grant list` / `app-host grant add|rm APP domain|sub|host NAME`
+- `app-host env set NAME KEY` (prompts), `app-host env list NAME [--values]`, `app-host env unset NAME KEY`
+- `app-host update` / `app-host update --check`, `app-host version`
 
-- New app: `app create NAME [--repo owner/name]` (or the dashboard). It prints one `APP_HOST` secret for the repo and a ready-to-use deploy workflow.
-- Runtime env vars/secrets: dashboard → app → Environment, or `app env set NAME KEY` (prompts for the value)
-- Delete app: `app delete NAME` (asks you to type the name)
-- Re-sync by hand: `app sync NAME` (normally runs on its own when `sites/` changes)
-- Folder layout: `/srv/apps/NAME/{sites,builds,data}` (700, the app's own). Root-owned: env in `/etc/apps/env/NAME.env`, logs in `/var/log/apps/NAME/`, static copies in `/var/lib/app-host/www/NAME/`
-- A site folder with an executable `run` file is a running app: it gets `$PORT`, `$SITE`, `$SITE_HOST`, and runs as unit `site-APP--SUB.service`. Any other folder is served as static files (`200.html` = SPA fallback, `404.html` = not found).
-- As the app user (`runuser -u app-NAME -- bash -l`): `app site deploy DIR SUB`, `app site list|rm|restart|logs SUB`
-- Dashboard: `https://<server ip>:8443` (self-signed, always on as the backup way in) and the address set on its Domains page. New login link: `app invite`
-- Domains: `app grant list`, `app grant add APP domain|sub|host NAME`. Site folder `blog` = blog.<default domain>; `client.com` = exactly that.
-- Config: `/etc/apps/config` (base domain, reserved names, default limits)
+App users (and their deploy keys) only get `app site deploy|rm|restart|list|logs`. SSH for `app-*` users is forced through `app ssh-gate`: an rsync upload into `builds/` and `app site …`, nothing else.
+
+## Where things live
+
+| What | Where |
+|---|---|
+| App folders (700, the app's own) | `/srv/apps/NAME/{sites,builds,data}` |
+| Settings | `/etc/apps/config` (default domain, server IP, limits), `/etc/apps/dashboard.env`, `/etc/apps/update.env` |
+| Which hostnames each app may use | `/etc/apps/grants` |
+| Runtime env per app | `/etc/apps/env/NAME.env` (root-only) |
+| Deploy public keys | `/etc/ssh/app-host-keys/app-NAME` |
+| Logs of running sites | `/var/log/apps/NAME/SITE.log` (rotated hourly at 10 MB) |
+| Static copies Caddy serves | `/var/lib/app-host/www/NAME/SITE` |
+| Dashboard logins | `/var/lib/app-host-web/users.json` |
+| Generated Caddy config | `/etc/caddy/apps/*.caddy`, `/etc/caddy/admin.caddy` (don't edit) |
+| Catch-all 404 page | `/etc/caddy/catchall/index.html` (yours to edit) |
+
+## Updates
+
+- `app-host update` installs the latest signed release (verifies the ed25519 signature and checksums, swaps both binaries, restarts the dashboard; running sites keep running).
+- A daily check shows "update available" on the dashboard and in the login message. Put `UPDATE_NOTIFY_URL=https://ntfy.sh/<topic>` (or a Discord/Slack webhook) in `/etc/apps/update.env` to get pinged.
+- While the repo is private, add `GITHUB_TOKEN=<read-only token for app-host>` to `/etc/apps/update.env`.
 
 ## Caddy
 
-- Main config: `/etc/caddy/Caddyfile` (imports `/etc/caddy/apps/*.caddy`, which app-sync writes; don't edit those by hand)
-- Check syntax: `caddy validate --config /etc/caddy/Caddyfile`
-- Apply changes: `systemctl reload caddy`
-- Status / logs: `systemctl status caddy` / `journalctl -u caddy -f`
-- Update: `apt update && apt install --only-upgrade caddy`
+- Main config: `/etc/caddy/Caddyfile` (imports the generated files). Admin API is on a root-only socket, not `localhost:2019`.
+- Check / apply: `caddy validate --config /etc/caddy/Caddyfile` then `systemctl reload caddy`
+- Logs: `journalctl -u caddy -f`
 
-For something outside app-host, add a block to `/etc/caddy/Caddyfile`:
+## Subduction (optional)
 
-```
-example.sparkstonepdx.com {
-	reverse_proxy 127.0.0.1:PORT
-}
-```
-
-Caddy gets and renews TLS certs on its own. The domain's DNS must point at this server first. Let's Encrypt allows 50 certs per week for sparkstonepdx.com, so lots of PR previews would want a wildcard cert (needs a DNS-provider plugin for Caddy).
-
-## Subduction
-
-- App folder: `/srv/apps/subduction`, user `app-subduction`
-- Data: `/srv/apps/subduction/data/subduction` (redb + blobs)
-- Identity key: `/srv/apps/subduction/data/subduction.key`. **Back this up**: it's the server's identity, and Keyhive grants point at it.
-- Unit: `site-subduction--subduction.service` (`systemctl status|restart site-subduction--subduction`)
+- Build: `SUBDUCTION=1 sh setup-server.sh`, then `./extras/subduction-app.sh` (re-run to upgrade).
+- Data: `/srv/apps/subduction/data/subduction`, key `/srv/apps/subduction/data/subduction.key` (**back this up**)
 - Logs: `tail -f /var/log/apps/subduction/subduction.log`
-- Binaries: `/usr/local/bin/subduction_cli`, `/usr/local/bin/automerge-subduction-ingest` (0.22.0 / 0.9.0)
-- `--service-name` is the site's hostname (`$SITE_HOST`); clients must connect with exactly that host.
-- glibc malloc tunables are set in the `run` script, so freed memory goes back to the OS.
-- `--max-resident-trees` is deliberately not set (open upstream bugs inkandswitch/subduction #268, #333).
-
-Upgrade:
-
-```
-cargo install --locked subduction_cli@NEW automerge_subduction_ingest@NEW   # on a build machine
-scp ~/.cargo/bin/subduction_cli ~/.cargo/bin/automerge-subduction-ingest root@THIS_SERVER:/usr/local/bin/
-cd ~/app-host && ./extras/subduction-app.sh    # rebuilds the release and restarts; data untouched
-```
-
-Backup:
-
-```
-systemctl stop site-subduction--subduction
-tar czf subduction-$(date +%F).tar.gz -C /srv/apps/subduction data
-systemctl start site-subduction--subduction
-```
-
-Migration kit (export from the old automerge-repo server, ingest, verify): `~/migration-kit`, see `RUNBOOK.md`. Ingest target is `--service-name subduction.sparkstonepdx.com`.
-
-## Memory budget
-
-1 GB RAM + 2 GB swap. App caps should add up to less than RAM. Subduction is 700M; lower it (`/etc/systemd/system/app-subduction.slice`, then `systemctl daemon-reload`) as push and analytics arrive.
 
 ## System
 
 - Update everything: `apt update && apt upgrade`
-- Services on boot: `systemctl list-unit-files --state=enabled`
 - Swap: `/swapfile` (2 GB), check with `swapon --show`
 - Memory per app: `systemctl status app-NAME.slice`
-- If `/tmp` fills (it's RAM-backed on Debian 13): `rm -rf /tmp/cargo-install*`
+- Firewall: allow 22, 80, 443 (tcp + udp) and 8443

@@ -1,13 +1,15 @@
 #!/bin/sh
-# Prepare a fresh Debian VPS for app-host: packages, swap, Caddy, Subduction binaries, server notes.
+# Prepare a fresh Debian VPS and install app-host: packages, swap, Caddy, app-host, server notes.
 #
-#   curl -fsSL <raw-url>/setup-server.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/app-host/main/setup-server.sh | sh   (public repo)
+#   git clone ... && cd app-host && sh setup-server.sh                                              (private repo: builds from source)
 #
-# Then, from the app-host repo: ./install.sh && ./extras/subduction-app.sh
-# Safe to re-run. If /usr/local/bin/subduction_cli already exists (e.g. you scp'd a build), compiling is skipped.
+# SUBDUCTION=1 also builds the Subduction sync server (slow on 1 GB); then run ./extras/subduction-app.sh.
+# Safe to re-run.
 set -eu
 
 SWAP_GB="${SWAP_GB:-2}"
+REPO="${APP_HOST_REPO:-sparkstonepdx/app-host}"
 SUBDUCTION_VERSION="0.22.0"
 INGEST_VERSION="0.9.0"
 
@@ -15,12 +17,12 @@ say() { printf '\n==> %s\n' "$*"; }
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 grep -q '^ID=debian' /etc/os-release || echo "warning: not Debian; continuing anyway"
 
-say "1/5 packages"
+say "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl ca-certificates openssl git rsync nodejs npm caddy >/dev/null
+apt-get install -y -qq curl ca-certificates openssl rsync caddy >/dev/null
 
-say "2/5 swap (${SWAP_GB} GB)"
+say "swap (${SWAP_GB} GB)"
 if ! swapon --show | grep -q .; then
   fallocate -l "${SWAP_GB}G" /swapfile && chmod 600 /swapfile
   mkswap /swapfile >/dev/null && swapon /swapfile
@@ -29,35 +31,60 @@ else
   echo "swap already on"
 fi
 
-say "3/5 binaries"
-if [ -x /usr/local/bin/subduction_cli ] && [ -x /usr/local/bin/automerge-subduction-ingest ]; then
-  echo "found in /usr/local/bin, skipping build"
-else
-  echo "compiling on this machine (one job at a time to fit in RAM + swap; this is the slow part)"
-  apt-get install -y -qq build-essential pkg-config libssl-dev >/dev/null
-  if ! command -v cargo >/dev/null 2>&1; then
-    curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
-  fi
-  # shellcheck disable=SC1091
-  . "$HOME/.cargo/env"
-  # Build on disk, not /tmp: Debian 13's /tmp is RAM-backed (half of RAM), and the build needs ~1.2 GB.
-  BUILD_DIR=/var/tmp/subduction-build
-  avail_mb=$(df -Pm /var/tmp | awk 'NR==2 {print $4}')
-  [ "$avail_mb" -ge 2048 ] || { echo "need ~2 GB free on /var/tmp for the build, have ${avail_mb} MB"; exit 1; }
-  CARGO_TARGET_DIR="$BUILD_DIR" CARGO_BUILD_JOBS=1 cargo install --locked --root /usr/local \
-    "subduction_cli@${SUBDUCTION_VERSION}" "automerge_subduction_ingest@${INGEST_VERSION}"
-  rm -rf "$BUILD_DIR"
-fi
-/usr/local/bin/subduction_cli --version
-
-say "4/5 caddy"
+say "caddy"
 [ -f /etc/caddy/Caddyfile ] || printf '{\n}\n' > /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 || { caddy validate --config /etc/caddy/Caddyfile; exit 1; }
 systemctl enable caddy >/dev/null 2>&1
 systemctl reload caddy 2>/dev/null || systemctl restart caddy
 
-say "5/5 server notes"
-if [ -e /root/README.md ] && ! grep -q 'app-host' /root/README.md; then
+say "app-host"
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+if [ -d ./cmd/app-host ] && [ -f ./go.mod ]; then
+  echo "building from this checkout"
+  command -v go >/dev/null 2>&1 || apt-get install -y -qq golang-go >/dev/null
+  ver=$(git describe --tags --always 2>/dev/null || echo dev)
+  CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$work/app-host" ./cmd/app-host
+  CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$work/app" ./cmd/app
+else
+  arch=$(dpkg --print-architecture)
+  echo "downloading the latest release of $REPO ($arch)"
+  rel=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest") || { echo "no release found (private repo? clone it and run this script from the checkout)"; exit 1; }
+  url=$(printf '%s' "$rel" | grep -o '"browser_download_url": *"[^"]*_linux_'"$arch"'\.tar\.gz"' | sed 's/.*"\(https[^"]*\)"/\1/')
+  sums=$(printf '%s' "$rel" | grep -o '"browser_download_url": *"[^"]*/checksums\.txt"' | sed 's/.*"\(https[^"]*\)"/\1/')
+  curl -fsSL -o "$work/app-host.tgz" "$url"
+  curl -fsSL -o "$work/checksums.txt" "$sums"
+  want=$(grep "$(basename "$url")" "$work/checksums.txt" | cut -d' ' -f1)
+  got=$(sha256sum "$work/app-host.tgz" | cut -d' ' -f1)
+  [ "$want" = "$got" ] || { echo "checksum mismatch, stopping"; exit 1; }
+  tar -C "$work" -xzf "$work/app-host.tgz"
+fi
+"$work/app-host" install
+
+if [ "${SUBDUCTION:-0}" = 1 ]; then
+  say "subduction binaries"
+  if [ -x /usr/local/bin/subduction_cli ] && [ -x /usr/local/bin/automerge-subduction-ingest ]; then
+    echo "found in /usr/local/bin, skipping build"
+  else
+    echo "compiling on this machine (one job at a time to fit in RAM + swap; this is the slow part)"
+    apt-get install -y -qq build-essential pkg-config libssl-dev nodejs npm >/dev/null
+    if ! command -v cargo >/dev/null 2>&1; then
+      curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
+    fi
+    # shellcheck disable=SC1091
+    . "$HOME/.cargo/env"
+    # Build on disk, not /tmp: Debian 13's /tmp is RAM-backed (half of RAM), and the build needs ~1.2 GB.
+    BUILD_DIR=/var/tmp/subduction-build
+    avail_mb=$(df -Pm /var/tmp | awk 'NR==2 {print $4}')
+    [ "$avail_mb" -ge 2048 ] || { echo "need ~2 GB free on /var/tmp for the build, have ${avail_mb} MB"; exit 1; }
+    CARGO_TARGET_DIR="$BUILD_DIR" CARGO_BUILD_JOBS=1 cargo install --locked --root /usr/local \
+      "subduction_cli@${SUBDUCTION_VERSION}" "automerge_subduction_ingest@${INGEST_VERSION}"
+    rm -rf "$BUILD_DIR"
+  fi
+  /usr/local/bin/subduction_cli --version
+fi
+
+say "server notes"
+if [ -e /root/README.md ] && ! grep -q 'app-host-helper' /root/README.md; then
   mv /root/README.md /root/README.old.md
   echo "moved the old notes to /root/README.old.md"
 fi
@@ -67,95 +94,68 @@ else
   cat > /root/README.md <<'README_EOF'
 # Server notes
 
-Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the internet. Everything else runs through **app-host**: each app is a locked-down user with a folder under `/srv/apps/NAME`, and each folder in its `sites/` becomes a subdomain.
+Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the internet. Everything else runs through **app-host**: each app is a locked-down user with a folder under `/srv/apps/NAME`, and each folder in its `sites/` becomes a site.
 
-## Apps and sites
+## Dashboard
 
-| App | Subdomain | What | Limits |
-|---|---|---|---|
-| subduction | `wss://subduction.sparkstonepdx.com` | Subduction sync server | 700M / 100% CPU |
-| push (planned) | TBD | VAPID push notifications | default 256M |
-| analytics (planned) | TBD | analytics / game stats | default 256M |
+- `https://<server ip>:8443` always works (self-signed certificate): first setup, and the way in if DNS breaks.
+- Its own address is set on its Domains page (e.g. `admin.sparkstonepdx.com`).
+- New login link: `app-host invite`
+- Services: `app-host-web` (unprivileged dashboard) and `app-host-helper` (root, accepts a fixed set of operations from the dashboard only)
 
-List everything live: `app sync --all` prints each site and its port. Ports are assigned automatically (20000–29999) and recorded in `/etc/apps/ports`.
+## Commands (root)
 
-## app-host cheat sheet
+- `app-host create NAME [--repo owner/name] [--memory 256M] [--cpu 50%] [--tasks 256]`: prints the one `APP_HOST` secret for the repo and a ready deploy workflow
+- `app-host delete NAME`
+- `app-host sync NAME | --all` (runs on its own after every deploy)
+- `app-host grant list` / `app-host grant add|rm APP domain|sub|host NAME`
+- `app-host env set NAME KEY` (prompts), `app-host env list NAME [--values]`, `app-host env unset NAME KEY`
+- `app-host update` / `app-host update --check`, `app-host version`
 
-- New app: `app create NAME [--repo owner/name]` (or the dashboard). It prints one `APP_HOST` secret for the repo and a ready-to-use deploy workflow.
-- Runtime env vars/secrets: dashboard → app → Environment, or `app env set NAME KEY` (prompts for the value)
-- Delete app: `app delete NAME` (asks you to type the name)
-- Re-sync by hand: `app sync NAME` (normally runs on its own when `sites/` changes)
-- Folder layout: `/srv/apps/NAME/{sites,builds,data}` (700, the app's own). Root-owned: env in `/etc/apps/env/NAME.env`, logs in `/var/log/apps/NAME/`, static copies in `/var/lib/app-host/www/NAME/`
-- A site folder with an executable `run` file is a running app: it gets `$PORT`, `$SITE`, `$SITE_HOST`, and runs as unit `site-APP--SUB.service`. Any other folder is served as static files (`200.html` = SPA fallback, `404.html` = not found).
-- As the app user (`runuser -u app-NAME -- bash -l`): `app site deploy DIR SUB`, `app site list|rm|restart|logs SUB`
-- Dashboard: `https://<server ip>:8443` (self-signed, always on as the backup way in) and the address set on its Domains page. New login link: `app invite`
-- Domains: `app grant list`, `app grant add APP domain|sub|host NAME`. Site folder `blog` = blog.<default domain>; `client.com` = exactly that.
-- Config: `/etc/apps/config` (base domain, reserved names, default limits)
+App users (and their deploy keys) only get `app site deploy|rm|restart|list|logs`. SSH for `app-*` users is forced through `app ssh-gate`: an rsync upload into `builds/` and `app site …`, nothing else.
+
+## Where things live
+
+| What | Where |
+|---|---|
+| App folders (700, the app's own) | `/srv/apps/NAME/{sites,builds,data}` |
+| Settings | `/etc/apps/config` (default domain, server IP, limits), `/etc/apps/dashboard.env`, `/etc/apps/update.env` |
+| Which hostnames each app may use | `/etc/apps/grants` |
+| Runtime env per app | `/etc/apps/env/NAME.env` (root-only) |
+| Deploy public keys | `/etc/ssh/app-host-keys/app-NAME` |
+| Logs of running sites | `/var/log/apps/NAME/SITE.log` (rotated hourly at 10 MB) |
+| Static copies Caddy serves | `/var/lib/app-host/www/NAME/SITE` |
+| Dashboard logins | `/var/lib/app-host-web/users.json` |
+| Generated Caddy config | `/etc/caddy/apps/*.caddy`, `/etc/caddy/admin.caddy` (don't edit) |
+| Catch-all 404 page | `/etc/caddy/catchall/index.html` (yours to edit) |
+
+## Updates
+
+- `app-host update` installs the latest signed release (verifies the ed25519 signature and checksums, swaps both binaries, restarts the dashboard; running sites keep running).
+- A daily check shows "update available" on the dashboard and in the login message. Put `UPDATE_NOTIFY_URL=https://ntfy.sh/<topic>` (or a Discord/Slack webhook) in `/etc/apps/update.env` to get pinged.
+- While the repo is private, add `GITHUB_TOKEN=<read-only token for app-host>` to `/etc/apps/update.env`.
 
 ## Caddy
 
-- Main config: `/etc/caddy/Caddyfile` (imports `/etc/caddy/apps/*.caddy`, which app-sync writes; don't edit those by hand)
-- Check syntax: `caddy validate --config /etc/caddy/Caddyfile`
-- Apply changes: `systemctl reload caddy`
-- Status / logs: `systemctl status caddy` / `journalctl -u caddy -f`
-- Update: `apt update && apt install --only-upgrade caddy`
+- Main config: `/etc/caddy/Caddyfile` (imports the generated files). Admin API is on a root-only socket, not `localhost:2019`.
+- Check / apply: `caddy validate --config /etc/caddy/Caddyfile` then `systemctl reload caddy`
+- Logs: `journalctl -u caddy -f`
 
-For something outside app-host, add a block to `/etc/caddy/Caddyfile`:
+## Subduction (optional)
 
-```
-example.sparkstonepdx.com {
-	reverse_proxy 127.0.0.1:PORT
-}
-```
-
-Caddy gets and renews TLS certs on its own. The domain's DNS must point at this server first. Let's Encrypt allows 50 certs per week for sparkstonepdx.com, so lots of PR previews would want a wildcard cert (needs a DNS-provider plugin for Caddy).
-
-## Subduction
-
-- App folder: `/srv/apps/subduction`, user `app-subduction`
-- Data: `/srv/apps/subduction/data/subduction` (redb + blobs)
-- Identity key: `/srv/apps/subduction/data/subduction.key`. **Back this up**: it's the server's identity, and Keyhive grants point at it.
-- Unit: `site-subduction--subduction.service` (`systemctl status|restart site-subduction--subduction`)
+- Build: `SUBDUCTION=1 sh setup-server.sh`, then `./extras/subduction-app.sh` (re-run to upgrade).
+- Data: `/srv/apps/subduction/data/subduction`, key `/srv/apps/subduction/data/subduction.key` (**back this up**)
 - Logs: `tail -f /var/log/apps/subduction/subduction.log`
-- Binaries: `/usr/local/bin/subduction_cli`, `/usr/local/bin/automerge-subduction-ingest` (0.22.0 / 0.9.0)
-- `--service-name` is the site's hostname (`$SITE_HOST`); clients must connect with exactly that host.
-- glibc malloc tunables are set in the `run` script, so freed memory goes back to the OS.
-- `--max-resident-trees` is deliberately not set (open upstream bugs inkandswitch/subduction #268, #333).
-
-Upgrade:
-
-```
-cargo install --locked subduction_cli@NEW automerge_subduction_ingest@NEW   # on a build machine
-scp ~/.cargo/bin/subduction_cli ~/.cargo/bin/automerge-subduction-ingest root@THIS_SERVER:/usr/local/bin/
-cd ~/app-host && ./extras/subduction-app.sh    # rebuilds the release and restarts; data untouched
-```
-
-Backup:
-
-```
-systemctl stop site-subduction--subduction
-tar czf subduction-$(date +%F).tar.gz -C /srv/apps/subduction data
-systemctl start site-subduction--subduction
-```
-
-Migration kit (export from the old automerge-repo server, ingest, verify): `~/migration-kit`, see `RUNBOOK.md`. Ingest target is `--service-name subduction.sparkstonepdx.com`.
-
-## Memory budget
-
-1 GB RAM + 2 GB swap. App caps should add up to less than RAM. Subduction is 700M; lower it (`/etc/systemd/system/app-subduction.slice`, then `systemctl daemon-reload`) as push and analytics arrive.
 
 ## System
 
 - Update everything: `apt update && apt upgrade`
-- Services on boot: `systemctl list-unit-files --state=enabled`
 - Swap: `/swapfile` (2 GB), check with `swapon --show`
 - Memory per app: `systemctl status app-NAME.slice`
-- If `/tmp` fills (it's RAM-backed on Debian 13): `rm -rf /tmp/cargo-install*`
+- Firewall: allow 22, 80, 443 (tcp + udp) and 8443
 README_EOF
   echo "wrote /root/README.md"
 fi
 
 echo
-echo "Base setup done. Next, from the app-host repo:"
-echo "  ./install.sh                  # the app host"
-echo "  ./extras/subduction-app.sh    # Subduction as the first app"
+echo "Done. Notes are in /root/README.md."

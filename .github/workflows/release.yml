@@ -1,0 +1,44 @@
+# Push a tag like v1.2.3 to publish signed binaries. Servers pick them up with `app-host update`.
+# One-time setup: scripts/setup-release-key.sh (makes the signing key, stores the private half as a repo secret).
+name: release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Signing key is set up
+        run: test -s internal/update/signing.pub || { echo "run scripts/setup-release-key.sh first"; exit 1; }
+      - run: go vet ./... && go test ./...
+      - name: Build
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            out="build/$arch"; mkdir -p "$out"
+            for cmd in app-host app; do
+              CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$tag" -o "$out/$cmd" "./cmd/$cmd"
+            done
+            tar -C "$out" -czf "dist/app-host_${tag}_linux_${arch}.tar.gz" app-host app
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+      - name: Sign checksums
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: go run ./cmd/release-sign sign dist/checksums.txt > dist/checksums.txt.sig
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "$GITHUB_REF_NAME"
+      - name: Move the major tag (deploy action users pin @v1)
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA" && git push -f origin "refs/tags/$major"
