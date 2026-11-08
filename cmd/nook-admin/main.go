@@ -43,6 +43,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin env unset NAME KEY ...
   nook-admin invite                              one-time dashboard login link
   nook-admin update [--check]                    install the latest signed release
+  nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
 
 Internal: helper (root API for the dashboard), web (the dashboard; runs as nook-web)
@@ -159,6 +160,9 @@ func main() {
 	case "admin-caddy":
 		needRoot()
 		die(h.AdminCaddy())
+	case "firewall":
+		needRoot()
+		die(core.Firewall())
 	default:
 		fmt.Print(usage)
 		os.Exit(2)

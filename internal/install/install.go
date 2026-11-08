@@ -75,7 +75,7 @@ func Run(o Opts) error {
 
 	if !o.Upgrade && !o.NoApt {
 		var missing []string
-		for bin, pkg := range map[string]string{"caddy": "caddy", "rsync": "rsync", "ssh-keygen": "openssh-client", "sshd": "openssh-server"} {
+		for bin, pkg := range map[string]string{"caddy": "caddy", "rsync": "rsync", "ssh-keygen": "openssh-client", "sshd": "openssh-server", "nft": "nftables"} {
 			if !have(bin) && !(bin == "sshd" && fileExists("/usr/sbin/sshd")) {
 				missing = append(missing, pkg)
 			}
@@ -193,7 +193,7 @@ SITE_MAX_BYTES=1073741824
 	// --- units ---
 	st.say("services")
 	units := map[string]string{
-		"nook-helper.service": helperUnit, "nook-web.socket": webSocketUnit, "nook-web.service": webUnit,
+		"nook-helper.service": helperUnit, "nook-web.socket": webSocketUnit, "nook-firewall.service": firewallUnit, "nook-web.service": webUnit,
 		"nook-sync@.path": syncPath, "nook-sync@.service": syncService,
 		"nook-update-check.service": updateService, "nook-update-check.timer": updateTimer,
 		"nook-logrotate.service": logrotateService, "nook-logrotate.timer": logrotateTimer,
@@ -271,6 +271,10 @@ SITE_MAX_BYTES=1073741824
 	}
 	if webChanged || !o.Upgrade { // the socket can't be replaced under a running dashboard
 		exec.Command("systemctl", "stop", "nook-web.service", "nook-web.socket").Run()
+	}
+	exec.Command("systemctl", "enable", "nook-firewall.service").Run()
+	if err := core.Firewall(); err != nil {
+		fmt.Fprintf(o.Out, "    %v\n", err)
 	}
 	for _, u := range []string{"nook-helper.service", "nook-web.socket", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer"} {
 		exec.Command("systemctl", "enable", "--now", u).Run() // starts it if it isn't running (after a migration or the stop above)
@@ -422,6 +426,25 @@ ExecStart=/usr/local/sbin/nook-admin helper
 Restart=always
 RuntimeDirectory=nook
 RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target
+`
+
+// nook-firewall loads /etc/nook/firewall.nft at boot, after Debian's nftables.service (which flushes the whole
+// ruleset), and again whenever that service restarts.
+const firewallUnit = `[Unit]
+Description=nook firewall (apps can't connect to each other's ports)
+After=nftables.service
+PartOf=nftables.service
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/nook-admin firewall
+ExecReload=/usr/local/sbin/nook-admin firewall
 
 [Install]
 WantedBy=multi-user.target
