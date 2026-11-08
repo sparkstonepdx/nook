@@ -77,11 +77,40 @@ Over `https://`, an unknown hostname fails the TLS handshake instead, because Ca
 
 ## Admin commands (root)
 
-- `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
+- `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the one `APP_HOST` secret for the repo (with the `gh secret set` command) and a ready-to-use workflow. The deploy private key is inside that secret, shown once, and not stored on the server.
+- `app env list NAME [--values]`, `app env set NAME KEY [KEY...]` (prompts, so values stay out of shell history), `app env set NAME KEY=value`, `app env unset NAME KEY`: runtime environment for the app's running sites. Running sites restart with the new values.
 - `app delete NAME`: stops everything the app runs, removes its sites, user, and folder (asks for confirmation).
 - `app sync NAME | --all`: regenerate an app's routes and services. Runs automatically when `sites/` changes; run it by hand after editing `/etc/apps/config`.
 - `app grant list [APP]`, `app grant add|rm APP domain|sub|host NAME`: which hostnames an app may use (re-syncs the app).
 - `app invite`: one-time dashboard login link.
+
+## Deploying from GitHub
+
+`app create` prints everything a repo needs: one secret and one workflow step.
+
+```sh
+gh secret set APP_HOST -R sparkstonepdx/myapp     # paste the apphost1:... value when it asks
+```
+
+```yaml
+- uses: sparkstonepdx/app-host/deploy@main
+  with:
+    app-host: ${{ secrets.APP_HOST }}
+    dir: dist          # an executable "run" inside makes it a running app
+    site: myapp        # or a hostname like client.com (needs a grant)
+```
+
+- Pushes deploy to `site`. Pull requests deploy a preview (`myapp-pr-12`, or `pr-12.client.com` for a hostname), comment its URL on the PR, and remove it when the PR closes. Turn that off with `previews: "false"`.
+- The job fails with a clear message if the site didn't go live (not granted, reserved, or taken).
+- Outputs: `url`, `site`. The workflow needs `permissions: pull-requests: write` for the PR comment.
+- The action lives in this private repo, so turn on **Settings → Actions → General → Access → "Accessible from repositories in the sparkstonepdx organization"** once.
+- `APP_HOST` is `apphost1:` + base64url JSON (host, port, user, app folder, default domain, known_hosts, deploy key). The action pins the server's host key; it never disables host key checking.
+
+## Runtime environment
+
+![Environment](docs/dashboard-env.png)
+
+Env vars and secrets for running apps live on the server in `/srv/apps/NAME/secrets.env` (600, owned by the app user), not in GitHub. Set them on the dashboard (app → Environment, including pasting a .env block) or with `app env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by app-host and can't be overridden.
 
 ## App commands (as the app user, e.g. from GitHub Actions over SSH)
 
@@ -101,7 +130,7 @@ app site logs SITE [N]
 | `builds/` | private upload area for rsync |
 | `data/` | private persistent data for running apps (survives redeploys) |
 | `logs/<sub>.log` | stdout/stderr of running apps (rotated at 10 MB, 3 kept) |
-| `secrets.env` | `KEY=value` lines, loaded into every running app's environment |
+| `secrets.env` | runtime env vars, managed with `app env` or the dashboard; loaded into every running site |
 
 Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are set too. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice, capped at 256M memory / 50% CPU / 256 tasks by default (set per app with `app create` options, or edit `/etc/systemd/system/app-NAME.slice`).
 

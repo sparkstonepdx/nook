@@ -14,7 +14,8 @@ List everything live: `app sync --all` prints each site and its port. Ports are 
 
 ## app-host cheat sheet
 
-- New app: `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`. It prints the GitHub secrets, variables and a block to paste to Claude to write the deploy workflow.
+- New app: `app create NAME [--repo owner/name]` (or the dashboard). It prints one `APP_HOST` secret for the repo and a ready-to-use deploy workflow.
+- Runtime env vars/secrets: dashboard → app → Environment, or `app env set NAME KEY` (prompts for the value)
 - Delete app: `app delete NAME` (asks you to type the name)
 - Re-sync by hand: `app sync NAME` (normally runs on its own when `sites/` changes)
 - Folder layout: `/srv/apps/NAME/{sites,builds,data,logs}` plus `secrets.env` (600, loaded into running apps)

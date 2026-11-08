@@ -36,11 +36,12 @@ fi
 chmod 600 /etc/apps/config
 . /etc/apps/config
 
-install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite sbin/app-grant sbin/app-admin-caddy /usr/local/sbin/
+install -m 755 sbin/app-create sbin/app-sync sbin/app-delete sbin/app-dashboard-invite sbin/app-grant sbin/app-admin-caddy sbin/app-env /usr/local/sbin/
 install -m 755 bin/app /usr/local/bin/
 install -m 644 systemd/app-sync@.path systemd/app-sync@.service /etc/systemd/system/
 install -m 644 logrotate/apps /etc/logrotate.d/apps
 install -D -m 644 dashboard/server.mjs /usr/local/lib/app-host/dashboard/server.mjs
+install -D -m 644 lib/env.mjs /usr/local/lib/app-host/env.mjs
 rm -rf /usr/local/lib/app-host/dashboard/public && cp -r dashboard/public /usr/local/lib/app-host/dashboard/public
 install -m 644 dashboard/app-dashboard.service /etc/systemd/system/
 systemctl daemon-reload

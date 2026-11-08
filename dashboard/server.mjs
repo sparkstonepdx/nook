@@ -286,10 +286,11 @@ route("GET", "/api/overview", async () => {
   };
 });
 route("POST", "/api/apps", async ({ body }) => {
-  const { name, memory, cpu, tasks } = body;
+  const { name, memory, cpu, tasks, repo } = body;
   if (!NAME_RE.test(name || "")) fail(400, "Name: a lowercase letter, then 1-23 of a-z 0-9 -");
   if (!/^\d+[KMG]$/.test(memory) || !/^\d+%$/.test(cpu) || !/^\d+$/.test(String(tasks))) fail(400, "Memory like 256M, CPU like 50%, tasks a number.");
-  const args = [name, "--memory", memory, "--cpu", cpu, "--tasks", String(tasks)];
+  if (repo && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) fail(400, "GitHub repo must look like owner/name.");
+  const args = [name, "--memory", memory, "--cpu", cpu, "--tasks", String(tasks), ...(repo ? ["--repo", repo] : [])];
   return cmdResult(`app create ${args.join(" ")}`, await run("app-create", args));
 });
 route("POST", "/api/apps/:app/delete", async ({ params, body }) => {
@@ -329,6 +330,22 @@ route("GET", "/api/apps/:app/sync-log", async ({ params }) => {
   appExists(params.app);
   const j = await run("journalctl", ["--no-pager", "-n", "200", "-u", `app-sync@${params.app}.service`], { timeout: 10000 });
   return { log: j.out };
+});
+
+// --- runtime environment (secrets.env), via app env so the rules live in one place ---
+route("GET", "/api/apps/:app/env", async ({ params }) => {
+  appExists(params.app);
+  const r = await run("app-env", ["list", params.app, "--values"]);
+  if (r.code !== 0) fail(500, r.out);
+  const vars = r.out.split("\n").filter(Boolean).map((l) => ({ key: l.slice(0, l.indexOf("=")), value: l.slice(l.indexOf("=") + 1) }));
+  const running = (await listApps()).find((a) => a.name === params.app)?.sites.filter((s) => s.running).map((s) => s.host) || [];
+  return { vars, running };
+});
+route("POST", "/api/apps/:app/env", async ({ params, body }) => {
+  appExists(params.app);
+  const set = body.set && typeof body.set === "object" ? body.set : {};
+  const unset = Array.isArray(body.unset) ? body.unset : [];
+  return cmdResult(`app env apply ${params.app}`, await run("app-env", ["apply", params.app], { input: JSON.stringify({ set, unset }) }));
 });
 
 // --- domains ---

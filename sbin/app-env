@@ -1,0 +1,3 @@
+#!/bin/sh
+# app env: see /usr/local/lib/app-host/env.mjs
+exec /usr/bin/env node /usr/local/lib/app-host/env.mjs "$@"
