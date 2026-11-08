@@ -77,13 +77,13 @@ Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the interne
 | push (planned) | TBD | VAPID push notifications | default 256M |
 | analytics (planned) | TBD | analytics / game stats | default 256M |
 
-List everything live: `app-sync --all` prints each site and its port. Ports are assigned automatically (20000–29999) and recorded in `/etc/apps/ports`.
+List everything live: `app sync --all` prints each site and its port. Ports are assigned automatically (20000–29999) and recorded in `/etc/apps/ports`.
 
 ## app-host cheat sheet
 
-- New app: `app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`. It prints the GitHub secrets, variables and a block to paste to Claude to write the deploy workflow.
-- Delete app: `app-delete NAME` (asks you to type the name)
-- Re-sync by hand: `app-sync NAME` (normally runs on its own when `sites/` changes)
+- New app: `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`. It prints the GitHub secrets, variables and a block to paste to Claude to write the deploy workflow.
+- Delete app: `app delete NAME` (asks you to type the name)
+- Re-sync by hand: `app sync NAME` (normally runs on its own when `sites/` changes)
 - Folder layout: `/srv/apps/NAME/{sites,builds,data,logs}` plus `secrets.env` (600, loaded into running apps)
 - A site folder with an executable `run` file is a running app: it gets `$PORT`, `$SITE`, `$SITE_HOST`, and runs as unit `site-APP--SUB.service`. Any other folder is served as static files (`200.html` = SPA fallback, `404.html` = not found).
 - As the app user (`runuser -u app-NAME -- bash -l`): `app site deploy DIR SUB`, `app site list|rm|restart|logs SUB`

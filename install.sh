@@ -56,10 +56,10 @@ grep -qxF 'import /etc/caddy/apps/*.caddy' /etc/caddy/Caddyfile || printf '\nimp
 caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && systemctl reload caddy
 echo "App host installed (base domain $BASE_DOMAIN, SSH host $SSH_HOST)."
 echo "Each app's subdomains need DNS: easiest is one wildcard record, *.$BASE_DOMAIN -> this server."
-echo "Create an app with: app-create NAME, or at https://admin.$BASE_DOMAIN"
+echo "Create an app with: app create NAME, or at https://admin.$BASE_DOMAIN"
 if [ ! -s /etc/apps/dashboard/users.json ] || [ "$(cat /etc/apps/dashboard/users.json)" = "{}" ]; then
   echo
   echo "Dashboard setup (one use, expires in 24h). Open it to create your admin login:"
   app-dashboard-invite
-  echo "Lost it? Run app-dashboard-invite for a new one."
+  echo "Lost it? Run app invite for a new one."
 fi

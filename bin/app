@@ -1,5 +1,11 @@
 #!/bin/bash
-# app: the deploy helper, run as an app user (over SSH from GitHub Actions, or by hand).
+# app: one command for everything.
+# As root (admin):
+#   app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]
+#   app delete NAME
+#   app sync NAME|--all
+#   app invite                      one-time dashboard login link
+# As an app user (over SSH from GitHub Actions, or by hand):
 #   app site deploy DIR SUBDOMAIN   publish DIR at https://SUBDOMAIN.<base domain> (atomic swap)
 #   app site rm SUBDOMAIN           take it down
 #   app site restart SUBDOMAIN      restart a running app
@@ -7,12 +13,18 @@
 #   app site logs SUBDOMAIN [N]     last N lines (default 100) of a running app's log
 # A folder with an executable "run" is started as a service on $PORT; anything else is served as static files.
 set -euo pipefail
+case "${1:-}" in create|delete|sync|invite)
+  [ "$(id -u)" = 0 ] || { echo "app $1: run as root"; exit 1; }
+  c="$1"; shift; [ "$c" = invite ] && c=dashboard-invite
+  exec "/usr/local/sbin/app-$c" "$@";;
+esac
 S="$HOME/sites"
-[ -d "$S" ] || { echo "app: run this as an app user"; exit 1; }
+usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+[ -d "$S" ] || usage
 sub() { [[ "${1:-}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo "bad subdomain: '${1:-}' (lowercase letters, digits, dashes)"; exit 1; }; }
 wait_live() { sleep 3; }
 
-[ "${1:-}" = site ] || { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+[ "${1:-}" = site ] || usage
 case "${2:-}" in
   deploy)
     src="${3:-}"; s="${4:-}"

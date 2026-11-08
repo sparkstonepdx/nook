@@ -119,7 +119,7 @@ async function home(me) {
 <div class=app>
   <div class=row><h2 style="margin:0">${esc(a.name)}</h2>
     <span class=muted>memory ${esc(a.memory || "?")} / ${esc(a.memoryMax || "?")} · cpu ${esc(a.cpu || "?")} · watcher <span class=${stateClass(a.watcher)}>${esc(a.watcher)}</span></span>
-    <span style="flex:1"></span>${btn("sync", { app: a.name }, "app-sync")}
+    <span style="flex:1"></span>${btn("sync", { app: a.name }, "sync")}
     <a href="/logs?app=${encodeURIComponent(a.name)}">sync log</a>
   </div>
   ${a.sites.length ? `<table><tr><th>site</th><th>type</th><th>state</th><th>port</th><th>memory</th><th></th></tr>
@@ -139,7 +139,7 @@ async function home(me) {
 
   return page("app-host", `
 <div class=row><h1>app-host</h1><span class=muted>${esc(CONFIG.BASE_DOMAIN)} · caddy <span class=${stateClass(sys.caddy)}>${esc(sys.caddy)}</span></span>
-<span style="flex:1"></span>${btn("syncall", {}, "app-sync --all")}${btn("caddy", {}, "reload caddy")}
+<span style="flex:1"></span>${btn("syncall", {}, "sync all")}${btn("caddy", {}, "reload caddy")}
 <a href="/users">users</a><span class=muted>${esc(me)}</span><form method=post action="/logout"><button>log out</button></form></div>
 <h2>New app</h2>
 <form method=post action="/action"><input type=hidden name=do value=create>
@@ -357,7 +357,7 @@ http.createServer(async (req, res) => {
       return redirect("/", { "set-cookie": sessionCookie(user, readJson(USERS_FILE)[user].gen) });
     }
     if (route === "GET /invite") {
-      if (!getInvite(url.searchParams.get("t"))) return send(410, formPage("Link expired", `<p>This invite was already used or has expired. Ask an admin for a new one, or run <code>app-dashboard-invite</code> on the server.</p>`));
+      if (!getInvite(url.searchParams.get("t"))) return send(410, formPage("Link expired", `<p>This invite was already used or has expired. Ask an admin for a new one, or run <code>app invite</code> on the server.</p>`));
       return send(200, invitePage(url.searchParams.get("t")));
     }
     if (route === "POST /invite") {

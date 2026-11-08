@@ -34,15 +34,15 @@ Logins are per user (username + password, scrypt-hashed in `/etc/apps/dashboard/
 
 - First admin: `install.sh` prints a one-time setup link (24h). Open it, pick a username and password.
 - More users: Users page → "make invite link", send it privately. One use, 24h.
-- Locked out: `app-dashboard-invite` on the server prints a fresh link.
+- Locked out: `app invite` on the server prints a fresh link.
 - Removing a user or changing a password logs out their sessions immediately.
 - Forms only work when posted from the dashboard itself (Origin check + SameSite cookies). Failed logins are slowed to one per second.
 
 ## Admin commands (root)
 
-- `app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
-- `app-delete NAME`: stops everything the app runs, removes its sites, user, and folder (asks for confirmation).
-- `app-sync NAME | --all`: regenerate an app's routes and services. Runs automatically when `sites/` changes; run it by hand after editing `/etc/apps/config`.
+- `app create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.
+- `app delete NAME`: stops everything the app runs, removes its sites, user, and folder (asks for confirmation).
+- `app sync NAME | --all`: regenerate an app's routes and services. Runs automatically when `sites/` changes; run it by hand after editing `/etc/apps/config`.
 
 ## App commands (as the app user, e.g. from GitHub Actions over SSH)
 
@@ -64,7 +64,7 @@ app site logs SUBDOMAIN [N]
 | `logs/<sub>.log` | stdout/stderr of running apps (rotated at 10 MB, 3 kept) |
 | `secrets.env` | `KEY=value` lines, loaded into every running app's environment |
 
-Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are set too. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice, capped at 256M memory / 50% CPU / 256 tasks by default (set per app with `app-create` options, or edit `/etc/systemd/system/app-NAME.slice`).
+Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are set too. Ports come from 20000-29999, are assigned the first time a site has a `run` file, and are freed when it's removed. Everything one app runs shares a systemd slice, capped at 256M memory / 50% CPU / 256 tasks by default (set per app with `app create` options, or edit `/etc/systemd/system/app-NAME.slice`).
 
 ## Rules and isolation
 
@@ -76,4 +76,4 @@ Running apps listen on `127.0.0.1:$PORT`; `$SITE`, `$SITE_HOST` and `$HOME` are 
 
 ## Tested
 
-In an Ubuntu sandbox with real users, permissions, Caddy (local certs), and a stand-in for systemd: static sites, SPA fallback, 404 page, PR preview add/remove, a running Node app with `$PORT` and secrets, restart on redeploy, subdomain conflicts, reserved and invalid names, cross-app isolation, `app-delete`. Not tested: real systemd (the `sites/` watcher, the service sandboxing directives, the slice limits) and a real SSH deploy from GitHub Actions.
+In an Ubuntu sandbox with real users, permissions, Caddy (local certs), and a stand-in for systemd: static sites, SPA fallback, 404 page, PR preview add/remove, a running Node app with `$PORT` and secrets, restart on redeploy, subdomain conflicts, reserved and invalid names, cross-app isolation, `app delete`. Not tested: real systemd (the `sites/` watcher, the service sandboxing directives, the slice limits) and a real SSH deploy from GitHub Actions.
