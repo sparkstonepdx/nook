@@ -26,6 +26,12 @@ Details:
 2. Add a wildcard DNS record `*.sparkstonepdx.com` pointing at this server.
 3. `./install.sh` (set `BASE_DOMAIN=` / `SSH_HOST=` to override). Settings live in `/etc/apps/config`.
 
+## Dashboard
+
+`https://admin.<BASE_DOMAIN>` lists every app and site (state, port, memory), and runs create, delete, app-sync, restart/stop/start, remove site, reload Caddy, and shows logs. It's a no-dependency Node server (`dashboard/server.mjs`) on 127.0.0.1:19999, running as root (unit `app-dashboard`).
+
+Login is HTTP basic auth: any username, and the password `install.sh` printed. It lives in `/etc/apps/dashboard.env`; to change it, edit that file and `systemctl restart app-dashboard`. Forms only work when posted from the dashboard itself (Origin check), and wrong passwords are slowed to one try per second.
+
 ## Admin commands (root)
 
 - `app-create NAME [--memory 256M] [--cpu 50%] [--tasks 256]`: makes user `app-NAME` and `/srv/apps/NAME`, then prints the GitHub secrets/variables and a block of instructions to paste to Claude for writing the deploy workflow. The deploy private key is shown once and not stored on the server.

@@ -34,15 +34,36 @@ APP_TASKS_MAX=256
 EOF
 fi
 chmod 600 /etc/apps/config
+. /etc/apps/config
 
 install -m 755 sbin/app-create sbin/app-sync sbin/app-delete /usr/local/sbin/
 install -m 755 bin/app /usr/local/bin/
 install -m 644 systemd/app-sync@.path systemd/app-sync@.service /etc/systemd/system/
 install -m 644 logrotate/apps /etc/logrotate.d/apps
+install -D -m 644 dashboard/server.mjs /usr/local/lib/app-host/dashboard/server.mjs
+install -m 644 dashboard/app-dashboard.service /etc/systemd/system/
 systemctl daemon-reload
+
+# --- dashboard at admin.$BASE_DOMAIN, one long password ---
+NEW_PASSWORD=""
+if [ ! -f /etc/apps/dashboard.env ]; then
+  NEW_PASSWORD=$(openssl rand -base64 36 | tr -d '/+=' | head -c 40)
+  printf 'DASHBOARD_PASSWORD=%s\nDASHBOARD_PORT=19999\n' "$NEW_PASSWORD" > /etc/apps/dashboard.env
+fi
+chmod 600 /etc/apps/dashboard.env
+DASHBOARD_PORT=$(sed -n 's/^DASHBOARD_PORT=//p' /etc/apps/dashboard.env)
+printf 'admin.%s {\n\treverse_proxy 127.0.0.1:%s\n}\n' "$BASE_DOMAIN" "$DASHBOARD_PORT" > /etc/caddy/admin.caddy
+grep -qxF 'import /etc/caddy/admin.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/admin.caddy\n' >> /etc/caddy/Caddyfile
+systemctl enable app-dashboard >/dev/null 2>&1; systemctl restart app-dashboard
 
 grep -qxF 'import /etc/caddy/apps/*.caddy' /etc/caddy/Caddyfile || printf '\nimport /etc/caddy/apps/*.caddy\n' >> /etc/caddy/Caddyfile
 caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && systemctl reload caddy
 echo "App host installed (base domain $BASE_DOMAIN, SSH host $SSH_HOST)."
 echo "Each app's subdomains need DNS: easiest is one wildcard record, *.$BASE_DOMAIN -> this server."
-echo "Create an app with: app-create NAME"
+echo "Create an app with: app-create NAME, or at https://admin.$BASE_DOMAIN"
+if [ -n "$NEW_PASSWORD" ]; then
+  echo
+  echo "Dashboard: https://admin.$BASE_DOMAIN  (any username)"
+  echo "Password:  $NEW_PASSWORD"
+  echo "Save it in your password manager. It's also in /etc/apps/dashboard.env."
+fi
