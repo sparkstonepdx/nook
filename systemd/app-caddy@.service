@@ -1,0 +1,6 @@
+[Unit]
+Description=Regenerate Caddy routes for app %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/app-caddy-sync %i

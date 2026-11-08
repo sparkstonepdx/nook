@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch /srv/apps/%i/app.env for subdomain changes
+
+[Path]
+PathChanged=/srv/apps/%i/app.env
+Unit=app-caddy@%i.service
+
+[Install]
+WantedBy=multi-user.target

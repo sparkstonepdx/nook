@@ -1,0 +1,48 @@
+#!/bin/bash
+# app: run as the app user (over SSH or in a login shell) to manage the app's own services.
+#   app service add NAME -- COMMAND...   create/update a service (idempotent)
+#   app service rm NAME                  stop and remove a service
+#   app start|stop|restart|status NAME
+#   app logs NAME [-f]
+#   app list
+#   app ports
+set -euo pipefail
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+[ -f "$HOME/ports.env" ] || { echo "app: run this as an app user"; exit 1; }
+UNITS="$HOME/.config/systemd/user"
+sc() { systemctl --user "$@"; }
+unit() { [[ "$1" =~ ^[a-zA-Z0-9_-]+$ ]] || { echo "bad service name: $1"; exit 1; }; echo "app-$1.service"; }
+
+case "${1:-}" in
+  service)
+    case "${2:-}" in
+      add)
+        name="${3:-}"; [ "${4:-}" = "--" ] || { echo "usage: app service add NAME -- COMMAND..."; exit 1; }
+        shift 4; u=$(unit "$name"); mkdir -p "$UNITS"
+        cmd=$(printf '%q ' "$@")
+        cat > "$UNITS/$u.tmp" <<EOF
+[Unit]
+Description=$name ($(id -un))
+
+[Service]
+WorkingDirectory=$HOME/current
+EnvironmentFile=$HOME/ports.env
+EnvironmentFile=-$HOME/secrets.env
+ExecStart=/bin/bash -c 'exec $cmd'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+EOF
+        if cmp -s "$UNITS/$u.tmp" "$UNITS/$u"; then rm "$UNITS/$u.tmp"; else mv "$UNITS/$u.tmp" "$UNITS/$u"; sc daemon-reload; fi
+        sc enable "$u" >/dev/null 2>&1; echo "service $name ready (start with: app start $name)";;
+      rm) u=$(unit "${3:-}"); sc disable --now "$u" 2>/dev/null || true; rm -f "$UNITS/$u"; sc daemon-reload; echo "removed ${3}";;
+      *) echo "usage: app service add NAME -- COMMAND... | app service rm NAME"; exit 1;;
+    esac;;
+  start|stop|restart|status) sc "$1" "$(unit "${2:-}")";;
+  logs) u=$(unit "${2:-}"); shift 2; journalctl --user -u "$u" -n 100 --no-pager "$@";;
+  list) sc list-units 'app-*' --all --no-pager;;
+  ports) grep '^APP_PORT' "$HOME/ports.env";;
+  *) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 1;;
+esac
