@@ -224,6 +224,19 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		}
 		setAppRepo(p["app"], p["repo"])
 		return data(map[string]any{}, nil)
+	case "store":
+		return data(StoreOverview(p["refresh"] == "1"), nil)
+	case "storeInstall":
+		return command("nook-admin store install "+p["id"]+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
+			return h.StoreInstall(InstallOpts{ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
+		})
+	case "storeUpdate":
+		return command("nook-admin store update "+p["app"], func(h *Host) error { return h.StoreUpdate(p["app"], p["force"] == "true") })
+	case "storePolicy":
+		if err := StoreSetPolicy(p["app"], p["policy"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{}, nil)
 	case "services":
 		return data(ServicesOverview(), nil)
 	case "bind":

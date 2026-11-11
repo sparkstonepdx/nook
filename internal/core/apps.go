@@ -134,6 +134,7 @@ func (h *Host) Delete(app, confirm string) error {
 	config.WriteAtomic(config.GrantsFile, []byte(keep.Text()), 0o600)
 	tokensDropApp(app)
 	h.dropAppBindings(app)
+	storeForget(app)
 	for _, p := range []string{
 		filepath.Join(config.CaddyAppsDir, app+".caddy"), filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app+".user.env"),
 		filepath.Join(config.SSHKeysDir, "nook-"+app),

@@ -48,6 +48,8 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin instructions APP [--site S] [--repo OWNER/NAME] [--new-token]   how to deploy to APP, any time
   nook-admin token create APP [--label L]        a deploy token (shown once) for the deploy API
   nook-admin token list [APP] | rm APP ID
+  nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...]
+  nook-admin store update APP [--force] | policy APP off|notify|patch|minor|all | check
   nook-admin services [list] | install postgres | drop-db APP
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
@@ -142,6 +144,9 @@ func main() {
 	case "bind":
 		needRoot()
 		bindCmd(h, args)
+	case "store":
+		needRoot()
+		storeCmd(h, args)
 	case "unbind":
 		needRoot()
 		if len(args) != 2 {
@@ -475,4 +480,82 @@ func instructionsCmd(args []string) {
 		tok = t
 	}
 	fmt.Print(core.Instructions(app, tok, site))
+}
+
+func storeCmd(h *core.Host, args []string) {
+	usage := fmt.Errorf("usage: nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...] | update APP [--force] | policy APP P | check")
+	if len(args) == 0 || args[0] == "list" {
+		v := core.StoreOverview(len(args) > 1 && args[1] == "--refresh")
+		if v.Error != "" {
+			fmt.Fprintln(os.Stderr, "catalog:", v.Error)
+		}
+		fmt.Println("Catalog:")
+		for _, a := range v.Catalog {
+			fmt.Printf("  %-14s %-10s %s\n", a.ID, a.Version, a.Description)
+		}
+		fmt.Println("Installed:")
+		for _, r := range v.Installed {
+			note := ""
+			if r.Available {
+				note = " → " + r.Latest + " available"
+			}
+			if r.LastError != "" {
+				note += " (last update: " + r.LastError + ")"
+			}
+			fmt.Printf("  %-14s %-10s %-10s policy %s%s\n", r.App, r.ID, r.Version, r.Policy, note)
+		}
+		return
+	}
+	switch args[0] {
+	case "install":
+		o := core.InstallOpts{Env: map[string]string{}}
+		for i := 1; i < len(args); i++ {
+			if i+1 < len(args) {
+				switch args[i] {
+				case "--app":
+					o.App = args[i+1]
+					i++
+					continue
+				case "--site":
+					o.Site = args[i+1]
+					i++
+					continue
+				case "--policy":
+					o.Policy = args[i+1]
+					i++
+					continue
+				case "--env":
+					k, v, ok := strings.Cut(args[i+1], "=")
+					if !ok {
+						die(usage)
+					}
+					o.Env[k] = v
+					i++
+					continue
+				}
+			}
+			if o.ID != "" {
+				die(usage)
+			}
+			o.ID = args[i]
+		}
+		if o.ID == "" {
+			die(usage)
+		}
+		die(h.StoreInstall(o))
+	case "update":
+		if len(args) < 2 {
+			die(usage)
+		}
+		die(h.StoreUpdate(args[1], len(args) > 2 && args[2] == "--force"))
+	case "policy":
+		if len(args) != 3 {
+			die(usage)
+		}
+		die(core.StoreSetPolicy(args[1], args[2]))
+	case "check":
+		die(h.StoreCheck())
+	default:
+		die(usage)
+	}
 }

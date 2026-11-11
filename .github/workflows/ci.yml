@@ -44,5 +44,5 @@ jobs:
             echo "::notice::No changeset in this PR, so merging it won't publish a release. Add one with npx changeset if it should."
           else
             echo "Releases on merge:"; for f in $added; do cat "$f"; echo; done
-            npx changeset status
+            npx changeset status --since="origin/${{ github.base_ref }}"
           fi
