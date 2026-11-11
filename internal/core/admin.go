@@ -141,6 +141,16 @@ func (h *Host) SiteOp(app, site, op string) error {
 		return fmt.Errorf("invalid site name")
 	}
 	unit := UnitName(app, site)
+	if fileExists(filepath.Join("/etc/systemd/system", CronUnit(app, site)+".timer")) {
+		if op != "restart" && op != "remove" {
+			return fmt.Errorf("%s is a cron job: use run now (restart) or remove", site)
+		}
+		if op == "restart" { // a cron job's "restart" runs it now
+			out, err := Run("systemctl", "start", "--no-block", CronUnit(app, site)+".service")
+			h.say("started %s now %s", site, strings.TrimSpace(out))
+			return err
+		}
+	}
 	switch op {
 	case "restart", "stop", "start":
 		out, err := Run("systemctl", op, unit)
@@ -175,6 +185,11 @@ type SiteInfo struct {
 	PID      string `json:"MainPID,omitempty"`
 	Memory   string `json:"MemoryCurrent,omitempty"`
 	Restarts string `json:"NRestarts,omitempty"`
+	Kind     string `json:"kind"`               // static, web, service or cron
+	Schedule string `json:"schedule,omitempty"` // cron: the systemd calendar
+	Next     string `json:"next,omitempty"`     // cron: next run
+	Last     string `json:"last,omitempty"`     // cron: last run
+	Result   string `json:"result,omitempty"`   // cron: last result (success, exit-code, timeout ...)
 }
 
 type AppInfo struct {
@@ -229,10 +244,24 @@ func (h *Host) Overview() map[string]any {
 				if err != nil || !isDir(st) || !names.Site(s) {
 					continue
 				}
-				si := SiteInfo{Name: s, Host: names.HostOf(s, h.S.BaseDomain)}
+				si := SiteInfo{Name: s, Host: names.HostOf(s, h.S.BaseDomain), Kind: "static"}
 				si.Live = liveSet[si.Host]
-				if run, err := sites.lstatIn(s, "run"); err == nil && isFile(run) && run.Mode&0o111 != 0 {
-					si.Running = true
+				timer := filepath.Join("/etc/systemd/system", CronUnit(a, s)+".timer")
+				if t, err := os.ReadFile(timer); err == nil {
+					si.Kind, si.Host = "cron", ""
+					for _, l := range strings.Split(string(t), "\n") {
+						if v, ok := strings.CutPrefix(l, "OnCalendar="); ok {
+							si.Schedule = v
+						}
+					}
+					tp := UnitProps(CronUnit(a, s)+".timer", "NextElapseUSecRealtime", "LastTriggerUSec")
+					sp := UnitProps(CronUnit(a, s)+".service", "Result", "ActiveState")
+					si.Next, si.Last, si.Result, si.Active = tp["NextElapseUSecRealtime"], tp["LastTriggerUSec"], sp["Result"], sp["ActiveState"]
+				} else if run, err := sites.lstatIn(s, "run"); err == nil && isFile(run) && run.Mode&0o111 != 0 {
+					si.Running, si.Kind = true, "web"
+					if u, err := os.ReadFile(filepath.Join("/etc/systemd/system", UnitName(a, s))); err == nil && !strings.Contains(string(u), "SITE_HOST=") {
+						si.Kind, si.Host, si.Live = "service", "", false
+					}
 					p := UnitProps(UnitName(a, s), "ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts")
 					si.Active, si.Sub, si.PID, si.Memory, si.Restarts = p["ActiveState"], p["SubState"], p["MainPID"], p["MemoryCurrent"], p["NRestarts"]
 				}
