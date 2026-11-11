@@ -76,6 +76,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 | `POST /api/v1/sites/SITE?pr=12` | publish the preview `SITE-pr-12` (or `pr-12.client.com` for a hostname) |
 | `-F env=@prod.env`, `-F "env.KEY=$VALUE"` | in the same POST: replace that site's "sent by deploys" env (see Runtime environment) |
 | `DELETE /api/v1/sites/SITE?pr=12` | remove the preview (or a site, without `pr`) |
+| `POST /api/v1/env[?site=SITE]` | set env without deploying (below) |
 | `GET /api/v1/whoami` | which app the token deploys |
 
 - **SITE:** `blog` means `blog.<default domain>`. `client.com` means exactly that hostname, which needs a grant.
@@ -103,6 +104,30 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 - **What the action is:** a small Go program in this repo (`cmd/deploy-action`, standard library only), built on the runner.
 - **Older tokens:** `nook1:` tokens (SSH deploy keys, from before the deploy API) still work with the action, through the SSH gate.
 
+### Secrets from CI
+
+`POST /api/v1/env` sets env from CI without deploying.
+
+- **Write-only:** nothing can read values back, and they're never logged.
+- **Where they go:** with no `site`, into the app's "sent by CI" values, which every site loads; your dashboard values for the whole app still win. With `?site=SITE`, into that site's deploy values.
+- **Body:** a `.env`, JSON `{"KEY": "value"}`, or `-F env.KEY=value`.
+- **Options:**
+  - **Replace by default:** the scope ends up holding exactly what you sent.
+  - `?merge=1` adds instead of replacing.
+  - `?unset=A,B` removes those keys.
+  - `?prefix=PROD_` keeps only `PROD_*` names, minus the prefix.
+- **Dropped:** `GITHUB_TOKEN`, `NOOK_TOKEN`, nook's own names, invalid names, and multi-line values. Multi-line values can't go in an env file; keep certificates and keys as files in `data/` instead. The response lists what was skipped.
+
+Push every repo secret named `PROD_*`:
+
+```yaml
+- env:
+    SECRETS: ${{ toJSON(secrets) }}
+  run: |
+    printf '%s' "$SECRETS" | curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" \
+      -H 'Content-Type: application/json' --data-binary @- "https://admin.example.com/api/v1/env?prefix=PROD_"
+```
+
 ## Runtime environment
 
 ![Environment](docs/dashboard-env.png)
@@ -114,7 +139,8 @@ Env vars and secrets for running apps live on the server under `/etc/nook/env/` 
 | whole app | dashboard (app → Environment) or `nook-admin env set APP KEY` | every running site of the app |
 | site | `--site SITE` | that site only |
 | previews | `--previews SITE` | every PR preview of that site, not the site itself |
-| sent by deploys | the deploy request (`-F env=...`) | that site; replaced on each deploy |
+| sent by CI | `POST /api/v1/env` | every running site (before the whole-app values, so yours win) |
+| sent by deploys | the deploy request (`-F env=...`) or `POST /api/v1/env?site=SITE` | that site |
 
 - **Load order:** a running site loads, later wins: the app's own `secrets.env`, then the whole app, then previews (previews only), then sent by deploys, then its site scope.
 - **Previews:** they never get their base site's own values, so production secrets stay out of PR builds unless you put them in the app or previews scope.

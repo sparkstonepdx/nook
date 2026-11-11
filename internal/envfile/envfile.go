@@ -69,7 +69,7 @@ func Parse(text string) *Vars {
 func unescape(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) && (s[i+1] == '"' || s[i+1] == '\\') {
+		if s[i] == '\\' && i+1 < len(s) && strings.IndexByte("\"\\$`", s[i+1]) >= 0 {
 			i++
 		}
 		b.WriteByte(s[i])
@@ -98,7 +98,9 @@ func Format(v *Vars, header string) string {
 		b.WriteString("# " + header + "\n")
 	}
 	for _, k := range v.keys {
-		val := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(v.m[k])
+		// escape what systemd (and a shell sourcing the file) treat specially inside double quotes, so
+		// values reach the app exactly as written: no $VAR or `cmd` expansion
+		val := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(v.m[k])
 		fmt.Fprintf(&b, "%s=\"%s\"\n", k, val)
 	}
 	return b.String()

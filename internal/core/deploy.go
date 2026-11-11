@@ -186,3 +186,31 @@ func firstNonEmpty(a ...string) string {
 	}
 	return ""
 }
+
+// ciEnv handles the env API: values from CI into the app's "ci" scope (no site) or a site's deploy scope.
+func ciEnv(req *rpc.Request) rpc.Response {
+	app, ok := TokenApp(req.Secret)
+	if !ok {
+		return deployFail(401, "unknown deploy token")
+	}
+	scope := Scope{Kind: "ci"}
+	if req.Params["site"] != "" {
+		name, err := DeployTarget(req.Params["site"], req.Params["pr"])
+		if err != nil {
+			return deployFail(400, "%v", err)
+		}
+		scope = Scope{"deploy", name}
+	}
+	h := New(io.Discard)
+	keys, restarted, err := h.CIEnv(app, scope, req.Set, req.Unset, req.Params["replace"] == "1")
+	if err != nil {
+		return deployFail(400, "%v", err)
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	if restarted == nil {
+		restarted = []string{}
+	}
+	return data(map[string]any{"app": app, "scope": scope.String(), "keys": keys, "restarted": restarted}, nil)
+}

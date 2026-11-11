@@ -27,3 +27,13 @@ func TestParseAndFilter(t *testing.T) {
 		t.Fatal("Check")
 	}
 }
+
+func TestFormatIsLiteral(t *testing.T) {
+	v := New()
+	in := `p@ss$HOME "q" it's \n` + "`id`"
+	v.Set("X", in)
+	out := Parse(Format(v, ""))
+	if got, _ := out.Get("X"); got != in {
+		t.Fatalf("round trip: %q != %q", got, in)
+	}
+}

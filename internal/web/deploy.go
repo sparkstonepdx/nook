@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 //	                                   multipart may add "env" (a .env file) and/or "env.KEY" fields, which
 //	                                   replace the site's deploy env (#13)
 //	DELETE /api/v1/sites/SITE[?pr=N]   remove it (a preview when its PR closes)
+//	POST   /api/v1/env[?site=SITE[&pr=N]] set env without deploying (see envAPI)
 //	GET    /api/v1/whoami              which app the token deploys
 //
 // Cookies are never read here, so there's nothing for a browser to forge.
@@ -71,6 +73,14 @@ func (s *Server) serveDeployAPI(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/v1/whoami" && r.Method == "GET" {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(who.Data)
+		return
+	}
+	if r.URL.Path == "/api/v1/env" {
+		if r.Method != "POST" {
+			apiError(w, 405, "POST env to set it")
+			return
+		}
+		s.envAPI(w, r, tok, "token:"+info.App)
 		return
 	}
 	m := siteRoute.FindStringSubmatch(r.URL.Path)
@@ -209,4 +219,135 @@ func orDefault(n, d int) int {
 		return d
 	}
 	return n
+}
+
+// envAPI: POST /api/v1/env sets values from CI without deploying. Write-only: nothing ever returns a value.
+//
+//	no site:          the app's "sent by CI" scope (every site; your dashboard values still win)
+//	?site=S[&pr=N]:   that site's deploy scope
+//	body:             a .env file, JSON {"KEY": "value"} (GitHub's toJSON(secrets) works as is), or
+//	                  multipart env=@file / env.KEY=value
+//	?merge=1          add to what's there (default: replace the scope with exactly these)
+//	?unset=A,B        remove these
+//	?prefix=PROD_     only keys starting with PROD_, with the prefix removed
+//
+// GITHUB_TOKEN, NOOK_TOKEN and nook's own names (PORT, HOST, ...) are dropped, as are names that aren't
+// valid env names; the response lists what was skipped.
+func (s *Server) envAPI(w http.ResponseWriter, r *http.Request, tok, by string) {
+	q := r.URL.Query()
+	vals := map[string]string{}
+	body := http.MaxBytesReader(w, r.Body, 1<<20)
+	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	switch {
+	case strings.HasPrefix(mt, "multipart/"):
+		mr, err := r.MultipartReader()
+		if err != nil {
+			apiError(w, 400, "%v", err)
+			return
+		}
+		for {
+			part, err := mr.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				apiError(w, 400, "%v", err)
+				return
+			}
+			b, err := io.ReadAll(io.LimitReader(part, 64<<10+1))
+			if err != nil || len(b) > 64<<10 {
+				apiError(w, 413, "part %q over 64 KB", part.FormName())
+				return
+			}
+			switch name := part.FormName(); {
+			case name == "env":
+				v := envfile.Parse(string(b))
+				for _, k := range v.Keys() {
+					vals[k], _ = v.Get(k)
+				}
+			case strings.HasPrefix(name, "env."):
+				vals[strings.TrimPrefix(name, "env.")] = string(b)
+			}
+		}
+	case mt == "application/json":
+		var raw map[string]any
+		if err := json.NewDecoder(body).Decode(&raw); err != nil {
+			apiError(w, 400, "body: %v", err)
+			return
+		}
+		for k, v := range raw {
+			switch t := v.(type) {
+			case string:
+				vals[k] = t
+			case float64, bool:
+				b, _ := json.Marshal(t)
+				vals[k] = string(b)
+			}
+		}
+	default:
+		b, err := io.ReadAll(body)
+		if err != nil {
+			apiError(w, 413, "body over 1 MB")
+			return
+		}
+		v := envfile.Parse(string(b))
+		for _, k := range v.Keys() {
+			vals[k], _ = v.Get(k)
+		}
+	}
+
+	prefix := q.Get("prefix")
+	set := map[string]string{}
+	skipped := []string{}
+	drop := map[string]bool{"GITHUB_TOKEN": true, "NOOK_TOKEN": true}
+	for k, v := range vals {
+		name := k
+		if prefix != "" {
+			if !strings.HasPrefix(k, prefix) {
+				continue
+			}
+			name = strings.TrimPrefix(k, prefix)
+		}
+		if drop[strings.ToUpper(k)] || !envKeyRE.MatchString(name) || len(v) > 64<<10 || envfile.Check(name, v) != nil {
+			skipped = append(skipped, k)
+			continue
+		}
+		set[name] = v
+	}
+	if len(set) > 500 {
+		apiError(w, 400, "too many values (500 at most)")
+		return
+	}
+	var unset []string
+	for _, k := range strings.Split(q.Get("unset"), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			if !envKeyRE.MatchString(k) {
+				apiError(w, 400, "bad name %q in unset", k)
+				return
+			}
+			unset = append(unset, k)
+		}
+	}
+	params := map[string]string{"site": q.Get("site"), "pr": q.Get("pr")}
+	if q.Get("merge") != "1" && len(unset) == 0 {
+		params["replace"] = "1"
+	}
+	if q.Get("merge") != "1" && len(unset) > 0 && len(set) > 0 {
+		apiError(w, 400, "unset only makes sense with merge=1 (a replace already drops everything not sent)")
+		return
+	}
+	resp, err := rpc.Call(s.Socket, rpc.Request{Op: "ciEnv", By: by, Params: params, Set: set, Unset: unset, Secret: tok}, 2*time.Minute)
+	if err != nil {
+		apiError(w, 502, "%v", err)
+		return
+	}
+	if resp.Error != "" {
+		apiError(w, orDefault(resp.Status, 500), "%s", resp.Error)
+		return
+	}
+	var out map[string]any
+	json.Unmarshal(resp.Data, &out)
+	sort.Strings(skipped)
+	out["skipped"] = skipped
+	writeJSON(w, 200, out)
 }

@@ -228,6 +228,8 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return command("nook-admin unbind "+p["app"]+" "+p["interface"], func(h *Host) error { return h.Unbind(p["app"], p["interface"]) })
 	case "tokenApp":
 		return tokenApp(req)
+	case "ciEnv":
+		return ciEnv(req)
 	case "undeploy":
 		return undeploy(req)
 	case "tokenList":
