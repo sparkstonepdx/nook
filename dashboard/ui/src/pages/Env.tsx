@@ -8,6 +8,7 @@ type Env = { vars: { key: string; value: string }[]; running: string[]; affected
 const isPreview = (s: string) => /^pr-\d+\./.test(s) || /-pr-\d+$/.test(s);
 const label = (scope: string) => {
   if (scope === "app") return "Whole app";
+  if (scope === "ci") return "Sent by CI (whole app)";
   const [kind, name] = scope.split(":");
   return { site: `Site: ${name}`, previews: `Previews of ${name}`, deploy: `Sent by deploys: ${name}` }[kind] ?? scope;
 };
@@ -15,7 +16,8 @@ const explain: Record<string, string> = {
   app: "Loaded into every running site of this app.",
   site: "Loaded into this site only, after the app's values, so these win.",
   previews: "Loaded into every PR preview of this site (not the site itself). Previews never get the site's own values, so production secrets stay out of PR builds unless you put them here or in the whole app.",
-  deploy: "Sent with the latest deploy of this site and replaced by the next one. Set a value in the site's own scope to override it.",
+  deploy: "Sent with the latest deploy of this site (or by the env API for this site). Set a value in the site's own scope to override it.",
+  ci: "Sent by CI through the env API, for every site of this app. Your whole-app values load after these, so they win.",
 };
 
 export default function EnvPage() {
@@ -51,7 +53,7 @@ export default function EnvPage() {
         <p class="text-secondary hint">
           {explain[kind()]} Saving restarts the running sites that load it
           <Show when={data()?.affected.length} fallback=" (none are running right now)"> ({data()!.affected.join(", ")})</Show>.
-          Load order, later wins: the app's own secrets.env, whole app, previews, sent by deploys, site.
+          Load order, later wins: the app's own secrets.env, sent by CI, whole app, services, previews, sent by deploys, site.
           nook sets PORT, HOST, SITE and SITE_HOST itself.
         </p>
       </section>
@@ -69,7 +71,7 @@ export default function EnvPage() {
                     <td class="mono env-value">{shown().has(v.key) ? v.value : "••••••••"}</td>
                     <td><div class="actions">
                       <button class="btn btn-ghost btn-sm" onClick={() => toggle(v.key)}>{shown().has(v.key) ? "Hide" : "Show"}</button>
-                      <Show when={kind() !== "deploy"}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
+                      <Show when={!["deploy", "ci"].includes(kind())}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
                     </div></td>
                   </tr>
                 )}
@@ -79,7 +81,7 @@ export default function EnvPage() {
         </div>
       </section>
 
-      <Show when={kind() !== "deploy"}>
+      <Show when={!["deploy", "ci"].includes(kind())}>
       <section class="card">
         <h2>Set a variable</h2>
         <p class="text-secondary hint">Setting an existing name replaces its value.</p>

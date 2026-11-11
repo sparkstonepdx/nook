@@ -125,18 +125,31 @@ Site names: "%[2]s" is %[1]s; a hostname like client.com needs a grant (dashboar
 Keep data in $HOME/data (it survives deploys); running sites get $PORT, $SITE and $SITE_HOST.
 `, host, site)
 
+	envURL := strings.TrimSuffix(base, "sites/") + "env"
 	w(`
-================ 4. Environment ================
+================ 4. Environment and secrets ================
 
 Set on the server: dashboard → Apps → %[1]s → Environment (whole app, one site, or a site's previews),
 or nook-admin env set %[1]s KEY [--site SITE | --previews SITE]. Previews never get a site's own values.
 
-Or send it with the deploy from GitHub secrets; it replaces that site's "sent by deploys" values:
+From CI, push secrets without deploying (write-only: nothing can read them back). This sends every repo
+secret named PROD_* as the app's env, minus the prefix (PROD_DATABASE_URL becomes DATABASE_URL):
 
-          curl ... -F site=@site.tgz -F "env.DATABASE_URL=$DATABASE_URL" "$NOOK"     (or -F env=@prod.env)
-    with: env: |                                                                   (the action)
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-`, app)
+      - if: github.event.action != 'closed'
+        env:
+          SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          printf '%%s' "$SECRETS" | curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" \
+            -H 'Content-Type: application/json' --data-binary @- "%[2]s?prefix=PROD_"
+
+  %[2]s                        the app's "sent by CI" values (every site; your dashboard values still win)
+  %[2]s?site=SITE              one site's values ("sent by deploys")
+  body: .env, JSON {"KEY": "value"}, or -F env.KEY=value      ?merge=1 adds instead of replacing
+  ?unset=KEY1,KEY2 removes      ?prefix=P_ keeps only P_* names, without the P_
+GITHUB_TOKEN and NOOK_TOKEN are never stored. Running sites restart with the new values.
+
+Or send a site's values with its deploy:  curl ... -F site=@site.tgz -F "env.API_KEY=$API_KEY" "$NOOK"
+`, app, envURL)
 
 	w(`
 ================ 5. Shared services ================
