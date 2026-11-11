@@ -47,6 +47,7 @@ render(() => (
       <Route path="/domains" component={Domains} />
       <Route path="/services" component={Services} />
       <Route path="/store" component={Store} />
+      <Route path="/store/install" component={Store} />
       <Route path="/users" component={Users} />
     </Route>
   </Router>

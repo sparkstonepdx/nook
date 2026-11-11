@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createResource, createSignal } from "solid-js";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { api, runCmd } from "../api";
 import { Field, StatusBadge } from "../components";
 
@@ -21,6 +22,9 @@ export default function Store() {
   const [data, { refetch }] = createResource(() => ({ refresh: refresh() }), (s) => api<View>(`/api/store${s.refresh ? "?refresh=1" : ""}`));
   const [picked, setPicked] = createSignal<CatalogApp | null>(null);
   const installedIDs = () => new Set((data()?.installed ?? []).map((r) => r.id));
+  const loc = useLocation();
+  const browsing = () => loc.pathname.startsWith("/store/install");
+  const navigate = useNavigate();
 
   return (
     <div class="stack">
@@ -34,9 +38,14 @@ export default function Store() {
       </p>
       <Show when={data.error || data()?.error}><div class="alert alert-error">{String(data.error?.message ?? data()?.error)}</div></Show>
 
-      <Show when={data()?.installed.length}>
+      <div class="tab-bar" role="tablist">
+        <A href="/store" end class="btn btn-ghost" activeClass="nav-active" role="tab">Installed<Show when={data()?.installed.length}> ({data()!.installed.length})</Show></A>
+        <A href="/store/install" class="btn btn-ghost" activeClass="nav-active" role="tab">Install</A>
+      </div>
+
+      <Show when={!browsing()}>
+      <Show when={data()?.installed.length} fallback={<Show when={data()}><p class="text-secondary">Nothing from the store yet. <A class="link" href="/store/install">Install an app</A>.</p></Show>}>
         <section class="card">
-          <h2>Installed</h2>
           <div class="table-wrap">
             <table class="table">
               <thead><tr><th>App</th><th>Version</th><th>Updates</th><th /></tr></thead>
@@ -73,7 +82,9 @@ export default function Store() {
           <p class="text-secondary hint">Remove an app from the Apps page (Delete app). Its data goes with it.</p>
         </section>
       </Show>
+      </Show>
 
+      <Show when={browsing()}>
       <div class="store-grid">
         <For each={data()?.catalog} fallback={<Show when={data()}><p class="text-secondary">The catalog is empty.</p></Show>}>
           {(a) => (
@@ -93,8 +104,9 @@ export default function Store() {
         </For>
       </div>
       <Show when={data()?.fetchedAt}><p class="text-secondary hint">Catalog checked {new Date(data()!.fetchedAt).toLocaleString()}.</p></Show>
+      </Show>
 
-      <InstallDialog app={picked()} onClose={() => setPicked(null)} onDone={() => refetch()} taken={installedIDs()} />
+      <InstallDialog app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
     </div>
   );
 }

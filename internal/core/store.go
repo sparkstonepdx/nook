@@ -406,7 +406,7 @@ type InstallOpts struct {
 }
 
 // StoreInstall installs a catalog app as a new nook app.
-func (h *Host) StoreInstall(o InstallOpts) error {
+func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	a, err := findCatalogApp(o.ID)
 	if err != nil {
 		return err
@@ -450,6 +450,15 @@ func (h *Host) StoreInstall(o InstallOpts) error {
 	if _, err := h.Create(CreateOpts{Name: o.App, Memory: a.Memory, CPU: a.CPU}); err != nil {
 		return err
 	}
+	// a failed install removes the app it just made, so the same name can be tried again
+	defer func() {
+		if err != nil {
+			h.say("install failed; removing app %s", o.App)
+			if derr := h.Delete(o.App, o.App); derr != nil {
+				h.say("couldn't remove %s: %v (delete it from the Apps page)", o.App, derr)
+			}
+		}
+	}()
 	if len(env) > 0 {
 		if err := h.EnvApply(o.App, Scope{"site", o.Site}, env, nil, false); err != nil {
 			return err
