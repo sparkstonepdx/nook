@@ -1,27 +1,15 @@
 import { A, useNavigate } from "@solidjs/router";
-import { Show, createEffect, createResource, createSignal, type JSX } from "solid-js";
-import { api, user, setUser, result, setResult, runCmd } from "./api";
+import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { Portal } from "solid-js/web";
+import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 
 type UpdateStatus = { current: string; latest: string; available: boolean; url: string; notes: string; checkedAt: string; error?: string };
 
-export function UpdateBanner() {
-  const [s] = createResource(() => api<UpdateStatus>("/api/update").catch(() => null));
-  const install = async () => {
-    if (!window.confirm(`Install nook ${s()!.latest}? The dashboard restarts; running sites aren't affected.`)) return;
-    await runCmd(`Updating to ${s()!.latest}`, "/api/update");
-    setTimeout(() => location.reload(), 4000);
-  };
-  return (
-    <Show when={s()?.available}>
-      <div class="alert update-banner">
-        <span>nook <strong>{s()!.latest}</strong> is available (running {s()!.current}).</span>
-        <a class="link" href={s()!.url} target="_blank" rel="noopener">What's new</a>
-        <span class="spacer" />
-        <button class="btn btn-primary btn-sm" onClick={install}>Update</button>
-      </div>
-    </Show>
-  );
-}
+const installUpdate = async (s: UpdateStatus) => {
+  if (!window.confirm(`Install nook ${s.latest}? The dashboard restarts; running sites aren't affected.`)) return;
+  await runCmd(`Updating to ${s.latest}`, "/api/update");
+  setTimeout(() => location.reload(), 4000);
+};
 
 const ago = (iso?: string) => {
   if (!iso) return "never";
@@ -32,101 +20,195 @@ const ago = (iso?: string) => {
   return `${Math.round(s / 86400)} days ago`;
 };
 
-// UpdateFooter is on every page: the version this server runs, when it last looked for a release, and
-// a way to look now and install.
-export function UpdateFooter() {
+// One update check shared by the banner and the footer.
+function useUpdate() {
   const [s, { mutate }] = createResource(() => api<UpdateStatus>("/api/update").catch(() => null));
+  return { s, mutate };
+}
+
+export function UpdateBanner(props: { s: () => UpdateStatus | null | undefined }) {
+  return (
+    <Show when={props.s()?.available}>
+      <div class="alert update-banner">
+        <span>nook <strong>{props.s()!.latest}</strong> is ready to install.</span>
+        <span class="page-actions">
+          <a class="btn btn-ghost btn-sm" href={props.s()!.url} target="_blank" rel="noopener">What's new</a>
+          <button class="btn btn-sm" onClick={() => installUpdate(props.s()!)}>Update</button>
+        </span>
+      </div>
+    </Show>
+  );
+}
+
+// The version this server runs, when it last looked for a release, and a way to look now.
+export function UpdateFooter(props: { s: () => UpdateStatus | null | undefined; mutate: (v: UpdateStatus | null) => void }) {
   const [checking, setChecking] = createSignal(false);
   const check = async () => {
     setChecking(true);
-    try { mutate(await api<UpdateStatus>("/api/update/check", {})); } catch { /* shown via status */ }
+    try {
+      const r = await api<UpdateStatus>("/api/update/check", {});
+      props.mutate(r);
+      if (!r.error) say(r.available ? `nook ${r.latest} is ready to install` : "nook is up to date", { kind: r.available ? undefined : "success" });
+    } catch (e) { say("Couldn't check for updates", { kind: "error", detail: (e as Error).message }); }
     setChecking(false);
   };
-  const install = async () => {
-    if (!window.confirm(`Install nook ${s()!.latest}? The dashboard restarts; running sites aren't affected.`)) return;
-    await runCmd(`Updating to ${s()!.latest}`, "/api/update");
-    setTimeout(() => location.reload(), 4000);
-  };
   return (
-    <footer class="update-footer text-secondary">
-      <Show when={s()} fallback={<span>nook</span>}>
-        <span>nook <span class="mono">{s()!.current}</span></span>
-        <span>·</span>
-        <Show when={!s()!.error} fallback={<span class="text-error" title={s()!.error}>update check failed: {s()!.error}</span>}>
-          <Show when={s()!.available} fallback={<span>{s()!.checkedAt ? `up to date (checked ${ago(s()!.checkedAt)})` : "not checked for updates yet"}</span>}>
-            <span><strong>{s()!.latest}</strong> is available</span>
+    <footer class="update-footer">
+      <Show when={props.s()} fallback={<span>nook</span>}>
+        {(s) => (<>
+          <span>nook <span class="mono">{s().current}</span></span>
+          <Show when={!s().error} fallback={<span class="text-error" title={s().error}>update check failed</span>}>
+            <span>{s().available ? `${s().latest} is ready` : s().checkedAt ? `up to date, checked ${ago(s().checkedAt)}` : "not checked yet"}</span>
           </Show>
-        </Show>
-        <button class="btn btn-ghost btn-sm" disabled={checking()} onClick={check}>{checking() ? "Checking…" : "Check now"}</button>
-        <Show when={s()!.available}>
-          <a class="link" href={s()!.url} target="_blank" rel="noopener">What's new</a>
-          <button class="btn btn-primary btn-sm" onClick={install}>Update</button>
-        </Show>
+          <button class="btn btn-ghost btn-sm" disabled={checking()} onClick={check}>{checking() ? "Checking…" : "Check now"}</button>
+        </>)}
       </Show>
     </footer>
   );
 }
 
+const links = [
+  { href: "/", label: "Apps", end: true },
+  { href: "/domains", label: "Domains" },
+  { href: "/services", label: "Services" },
+  { href: "/store", label: "Store" },
+  { href: "/users", label: "Users" },
+];
+
+// On a wide screen the sections are in the top bar; on a phone they move to a dock under the thumb.
 export function Nav() {
   const navigate = useNavigate();
   const logout = async () => { await api("/api/logout", {}); setUser(null); navigate("/login"); };
   return (
-    <nav class="navbar">
-      <div class="navbar-start">
-        <A href="/" class="semantic brand">nook</A>
-        <div class="menubar">
-          <A href="/" end class="btn btn-ghost" activeClass="nav-active">Apps</A>
-          <A href="/domains" class="btn btn-ghost" activeClass="nav-active">Domains</A>
-          <A href="/services" class="btn btn-ghost" activeClass="nav-active">Services</A>
-          <A href="/store" class="btn btn-ghost" activeClass="nav-active">Store</A>
-          <A href="/users" class="btn btn-ghost" activeClass="nav-active">Users</A>
+    <>
+      <header class="navbar navbar-flush top-bar">
+        <A href="/" class="brand">nook</A>
+        <nav class="menubar wide-only" aria-label="Sections">
+          <For each={links}>{(l) => <A href={l.href} end={l.end} class="nav-link" activeClass="nav-active">{l.label}</A>}</For>
+        </nav>
+        <div class="navbar-end">
+          <span class="text-secondary">{user()}</span>
+          <button class="btn btn-ghost btn-sm" onClick={logout}>Log out</button>
         </div>
-      </div>
-      <div class="navbar-end">
-        <span class="text-secondary">{user()}</span>
-        <button class="btn btn-secondary" onClick={logout}>Log out</button>
-      </div>
-    </nav>
+      </header>
+      <Dock>
+        <nav class="dock-nav" aria-label="Sections">
+          <For each={links}>{(l) => <A href={l.href} end={l.end} class="dock-link" activeClass="nav-active">{l.label}</A>}</For>
+        </nav>
+      </Dock>
+    </>
   );
 }
 
-export function ResultDialog() {
-  let dialog!: HTMLDialogElement;
-  createEffect(() => { if (result()) dialog.showModal(); else dialog.close(); });
+// The dock publishes its height as --dock-h so notices and the page's bottom padding sit above it.
+function Dock(props: { children: JSX.Element }) {
+  let el!: HTMLDivElement;
+  onMount(() => {
+    const set = () => document.documentElement.style.setProperty("--dock-h", `${getComputedStyle(el).display === "none" ? 0 : el.offsetHeight}px`);
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    window.addEventListener("resize", set);
+    set();
+    onCleanup(() => { ro.disconnect(); window.removeEventListener("resize", set); document.documentElement.style.removeProperty("--dock-h"); });
+  });
+  return <div ref={el} class="dock phone-only">{props.children}</div>;
+}
+
+export function Notices() {
   return (
-    <dialog ref={dialog} class="dialog" onClose={() => setResult(null)}>
+    <Portal>
+      <ul class="notices" aria-live="polite">
+        <For each={notices()}>
+          {(n) => (
+            <li class={`notice${n.kind ? ` notice-${n.kind}` : ""}`} onClick={() => dismiss(n.id)}>
+              <span class="notice-text"><strong>{n.text}</strong><Show when={n.detail}><small>{n.detail}</small></Show></span>
+              <Show when={n.action}>
+                <span class="notice-actions"><button class="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); dismiss(n.id); n.action!.run(); }}>{n.action!.label}</button></span>
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Portal>
+  );
+}
+
+// A sheet slides up from the bottom (centred from 700px). It closes with ×, Escape, Back, or a tap on the
+// backdrop after the first 400 ms. Swipe-to-close is @sparkstone/kit's, which needs Solid 2.
+export function Sheet(props: { open: boolean; title: string; onClose: () => void; wide?: boolean; footer?: JSX.Element; children: JSX.Element }) {
+  let opened = 0;
+  let pushed = false;
+  createEffect(() => {
+    if (!props.open) return;
+    opened = Date.now();
+    history.pushState({ ...history.state, sheet: true }, "");
+    pushed = true;
+    const onPop = () => { pushed = false; props.onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    onCleanup(() => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      if (pushed) { pushed = false; history.back(); }
+    });
+  });
+  const close = () => props.onClose();
+  return (
+    <Show when={props.open}>
+      <Portal>
+        <div class="sheet-backdrop" onClick={(e) => { if (e.target === e.currentTarget && Date.now() - opened > 400) close(); }}>
+          <div class="sheet" classList={{ "sheet-wide": props.wide }} role="dialog" aria-modal="true" aria-label={props.title}>
+            <div class="sheet-grip" />
+            <div class="sheet-header">
+              <h2>{props.title}</h2>
+              <button class="icon-btn" aria-label="Close" onClick={close}>×</button>
+            </div>
+            <div class="sheet-body">{props.children}</div>
+            <Show when={props.footer}><div class="sheet-footer">{props.footer}</div></Show>
+          </div>
+        </div>
+      </Portal>
+    </Show>
+  );
+}
+
+export function ResultSheet() {
+  return (
+    <Sheet open={!!result()} title={result()?.title ?? ""} onClose={() => setResult(null)} wide
+      footer={<>
+        <button class="btn btn-secondary" onClick={() => { navigator.clipboard?.writeText(result()?.out ?? ""); say("Output copied"); }}>Copy output</button>
+        <button class="btn" onClick={() => setResult(null)}>Close</button>
+      </>}>
       <Show when={result()}>
         {(r) => (
-          <div class="dialog-box result">
-            <h3 class="dialog-header">{r().title}</h3>
-            <Show when={r().warning}><div class="alert alert-error">{r().warning}</div></Show>
+          <div class="stack">
+            <Show when={r().warning}><div class="alert alert-warning">{r().warning}</div></Show>
             <Show when={r().cmd}>
-              <p class="text-secondary">
-                <code>$ {r().cmd}</code> <StatusBadge ok={r().ok}>exit {r().code}</StatusBadge>
-              </p>
+              <p class="cmd-line"><code>$ {r().cmd}</code> <StatusBadge ok={r().ok}>exit {r().code}</StatusBadge></p>
             </Show>
             <pre class="output">{r().out || "(no output)"}</pre>
-            <div class="dialog-actions">
-              <button class="btn btn-secondary" onClick={() => navigator.clipboard?.writeText(r().out)}>Copy output</button>
-              <button class="btn" onClick={() => setResult(null)}>Close</button>
-            </div>
           </div>
         )}
       </Show>
-    </dialog>
+    </Sheet>
   );
 }
 
+// A status: ok is green, a problem is red, warn is amber, and none of them is plain.
 export function StatusBadge(props: { ok?: boolean; warn?: boolean; children: JSX.Element; title?: string }) {
-  return <span class="badge" classList={{ "status-ok": props.ok === true, "status-bad": props.ok === false || props.warn }} title={props.title}>{props.children}</span>;
+  const cls = () => (props.warn ? "badge-warning" : props.ok === true ? "badge-success" : props.ok === false ? "badge-error" : "");
+  return <span class={`badge ${cls()}`} title={props.title}>{props.children}</span>;
 }
 
-export function Field(props: { label: string; children: JSX.Element; hint?: string }) {
+export function Field(props: { label: string; children: JSX.Element; hint?: string; class?: string }) {
   return (
-    <label class="field">
-      <span class="label">{props.label}</span>
+    <label class={`label ${props.class ?? ""}`}>
+      {props.label}
       {props.children}
-      <Show when={props.hint}><small class="text-secondary">{props.hint}</small></Show>
+      <Show when={props.hint}><small class="hint">{props.hint}</small></Show>
     </label>
   );
 }
@@ -134,3 +216,17 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 export function ErrorAlert(props: { error?: string }) {
   return <Show when={props.error}><div class="alert alert-error" role="alert">{props.error}</div></Show>;
 }
+
+// The head of a page: an optional way back, the title, a muted detail, and the page's actions at the end.
+export function PageHead(props: { title: JSX.Element; back?: { href: string; label: string }; detail?: JSX.Element; children?: JSX.Element }) {
+  return (
+    <div class="page-head">
+      <Show when={props.back}><div class="back-row"><A class="btn btn-ghost btn-sm back" href={props.back!.href}>‹ {props.back!.label}</A></div></Show>
+      <h1>{props.title}</h1>
+      <Show when={props.detail}><span class="text-secondary">{props.detail}</span></Show>
+      <Show when={props.children}><div class="page-actions">{props.children}</div></Show>
+    </div>
+  );
+}
+
+export { useUpdate };

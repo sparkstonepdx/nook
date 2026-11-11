@@ -20,7 +20,9 @@ export default function Invite() {
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return (
-    <main class="auth card">
+    <main class="auth">
+      <p class="brand">nook</p>
+      <div class="card">
       <h1>Create your login</h1>
       <Show when={!check.loading}>
         <Show when={check()?.valid} fallback={<p>This invite was already used or has expired. Ask an admin for a new one, or run <code>app invite</code> on the server.</p>}>
@@ -35,10 +37,11 @@ export default function Invite() {
             <Field label="Password again">
               <input class="input" name="password2" type="password" autocomplete="new-password" required minlength={12} />
             </Field>
-            <button class="btn btn-primary" disabled={busy()}>Create login</button>
+            <button class="btn" disabled={busy()}>Create login</button>
           </form>
         </Show>
       </Show>
+      </div>
     </main>
   );
 }

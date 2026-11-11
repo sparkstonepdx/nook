@@ -1,39 +1,87 @@
-/* Layout only; colours and components come from @sparkstone/css. */
-.brand { font-weight: 700; font-size: 1.15rem; margin-inline-end: 0.5rem; }
-.nav-active { color: inherit; box-shadow: inset 0 -2px 0 currentColor; border-radius: 0; }
-main.container { padding-top: 1.5rem; }
-.page-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1rem; }
-.page-head h1, .page-head h2 { margin: 0; }
-.spacer { flex: 1; }
-.row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-.stack { display: grid; gap: 1rem; }
-.form-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-start; }
-.form-row > .btn { margin-top: calc(1.5em + 0.25rem); }
-.field .label { white-space: nowrap; }
-.form-row .field { flex: 1 1 8rem; }
-.field { display: grid; gap: 0.25rem; }
-.auth { max-width: 24rem; margin: 12vh auto; }
-.auth form { display: grid; gap: 0.75rem; }
-.app-card { display: grid; gap: 0.75rem; }
-.app-card header { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-.app-card header h2 { margin: 0; font-size: 1.2rem; }
+/* Nook's own layout. Colours, type and components come from @sparkstone/css 4 and tokens.css. */
+body { font-family: var(--font); }
+.page { padding-top: var(--space-xl); }
+.mono, code, pre { font-family: var(--mono); }
+.mono { font-size: 0.9em; }
+
+/* top bar; on a phone its sections move to the dock */
+.top-bar { position: sticky; top: 0; z-index: var(--z-dock); gap: var(--space-md); padding-block: var(--space-xs); padding-top: max(var(--space-xs), env(safe-area-inset-top, 0px)); }
+.brand { font-family: var(--display); font-weight: var(--display-weight); font-size: var(--text-lg); color: var(--ink); text-decoration: none; }
+.nav-link, .dock-link { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); padding-inline: var(--space-md); color: var(--muted); text-decoration: none; font-weight: 600; border-radius: var(--radius-field); }
+.nav-link:hover, .dock-link:hover { color: var(--ink); background: var(--fill); }
+.nav-active, .nav-active:hover { color: var(--accent-text); background: var(--fill); }
+.dock-nav { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-2xs); }
+.dock-link { padding-inline: 0; font-size: var(--text-sm); }
+@media (min-width: 700px) { .phone-only { display: none !important; } }
+@media (max-width: 699.98px) { .wide-only { display: none !important; } }
+
+/* page head: a way back sits above the title on its own line */
+.page-head .back { margin-inline-start: calc(-1 * var(--space-sm)); }
+.page-head .page-actions { flex-wrap: wrap; }
+.section > .page-head { margin-bottom: var(--space-md); }
+.section > .page-head h2 { font-size: var(--text-lg); margin: 0; }
+.hint { display: block; color: var(--muted); font-size: var(--text-sm); }
+p.hint { margin: var(--space-xs) 0 0; }
+.lede { color: var(--muted); max-width: 46rem; margin: 0 0 var(--space-xl); }
+
+/* forms: fields in a row wrap on a phone and share a bottom edge */
+.field-row { flex-wrap: wrap; }
+.field-row > .label { flex: 1 1 10rem; }
+.field-row > .label:has(.hint) { margin-bottom: 0; }
+form.stack > .label, .sheet-body .label { margin-bottom: 0; }
+.sheet-body > form, .sheet-body > .stack { display: flex; flex-direction: column; gap: var(--space-lg); }
+
+/* rows */
+.row-main small { overflow-wrap: anywhere; }
+.row-main .mono { font-size: 0.95em; }
+.row-end .chev { font-size: var(--text-lg); color: var(--muted); }
+.list + .hint { margin-top: var(--space-sm); }
+.empty { color: var(--muted); margin: 0; }
+
+/* output */
+.output { margin: 0; padding: var(--space-md); max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: var(--text-sm); background: var(--fill); border: var(--border-width) solid var(--line); border-radius: var(--radius-field); }
+.output.log { max-height: 70vh; }
+.cmd-line { margin: 0; display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .table-wrap { overflow-x: auto; }
-.table td { vertical-align: middle; }
-.actions { display: flex; gap: 0.25rem; justify-content: flex-end; flex-wrap: wrap; }
-.btn-sm { padding: 0.35rem 0.65rem; font-size: 0.875rem; }
-.meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.875rem; }
-.output { max-height: 60vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.8125rem; margin: 0; }
-.log { max-height: 70vh; }
-.result { max-width: 56rem; }
-.status-ok { --color: oklch(0.72 0.15 150); }   /* proposal: green for healthy */
-.status-bad { --color: var(--error-color); }
-.mono { font-family: ui-monospace, monospace; font-size: 0.875rem; }
-.hint { font-size: 0.875rem; margin: 0.25rem 0 0; }
-details.danger summary { cursor: pointer; }
-.env-value { max-width: 32rem; overflow-wrap: anywhere; }
-.update-banner { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
-.update-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; justify-content: center; padding: 1.5rem 1rem 2rem; font-size: 0.8125rem; }
-.update-footer .text-error { color: var(--color-error, #b42318); }
-.store-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
-.store-grid .card p { margin: 0; }
-.tab-bar { display: flex; gap: 0.25rem; border-bottom: var(--border-width) solid oklch(from var(--color) var(--surface-lc-2) h); }
+
+.update-banner { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xl); }
+.update-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-sm); padding: var(--space-xl) var(--space-lg); color: var(--muted); font-size: var(--text-sm); }
+
+.auth { max-width: 24rem; margin: 12vh auto 0; }
+.auth h1 { font-size: var(--text-xl); }
+.auth form { display: flex; flex-direction: column; gap: var(--space-lg); }
+.auth form .label { margin: 0; }
+
+.tabs { margin-bottom: var(--space-lg); }
+.danger-zone { border-color: var(--edge); }
+
+/* a site's facts, label beside value */
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-xs) var(--space-lg); margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: var(--space-sm); }
+.remove, .delete { align-self: flex-start; }
+.danger-zone { display: flex; flex-direction: column; gap: var(--space-md); }
+.card.flush { padding: 0; }
+.card.flush .table { margin: 0; }
+.card.flush :where(th, td):first-child { padding-inline-start: var(--card-pad); }
+.card.flush :where(th, td):last-child { padding-inline-end: var(--card-pad); }
+.card > form, .card.stack > .field-row { margin: 0; }
+.instructions { white-space: pre; overflow-x: auto; max-height: none; }
+details.hint summary { cursor: pointer; }
+.auth > .brand { display: block; text-align: center; font-size: var(--text-xl); margin-bottom: var(--space-lg); }
+
+/* fixes from the first screenshots */
+.auth .card h1 { margin: 0 0 var(--space-lg); }
+.tab { text-decoration: none; }
+.row-main > :first-child { white-space: normal; overflow-wrap: anywhere; }
+.card.stack > .label, .card .field-row > .label { margin-bottom: 0; }
+.section h2 { font-size: var(--text-lg); }
+.btn.danger { color: var(--bad); }
+.btn.danger-fill:not(:disabled) { background: var(--bad); border-color: var(--bad); color: oklch(0.99 0 0); }
+
+/* small buttons reach 44 by 44 with an invisible hit area (build-docs: Touch) */
+.btn-sm, .top-bar .btn, .page-head .back { position: relative; }
+.btn-sm::after, details summary::after { content: ""; position: absolute; inset: min(0px, (100% - var(--tap)) / 2); }
+details summary { position: relative; padding-block: var(--space-xs); }
+.page-head .back-row { flex-basis: 100%; }

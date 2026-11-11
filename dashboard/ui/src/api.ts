@@ -23,15 +23,42 @@ export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   return data as T;
 }
 
-// the last command's output, shown in <ResultDialog>
-export const [result, setResult] = createSignal<(CmdResult & { title: string; warning?: string }) | null>(null);
+// A command's output, shown in the result sheet.
+export type Result = CmdResult & { title: string; warning?: string };
+export const [result, setResult] = createSignal<Result | null>(null);
 
+// Notices: one line low on the screen, above the dock. From build-docs: read time is
+// about 280 ms a word plus 1.5 s, at least 3.5 s, 5 s with an action, 8 s for a problem, never over 10 s.
+export type Notice = { id: number; text: string; detail?: string; kind?: "success" | "warning" | "error"; action?: { label: string; run: () => void } };
+export const [notices, setNotices] = createSignal<Notice[]>([]);
+let nextId = 1;
+
+export function toastMs(text: string, opts: { bad?: boolean; actions?: boolean } = {}): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const floor = opts.bad ? 8000 : opts.actions ? 5000 : 3500;
+  return Math.min(10_000, Math.max(floor, 1500 + words * 280));
+}
+
+export function say(text: string, opts: Omit<Notice, "id" | "text"> = {}) {
+  const n = { id: nextId++, text, ...opts };
+  setNotices((l) => [...l.slice(-2), n]);
+  const ms = toastMs(`${text} ${opts.detail ?? ""}`, { bad: opts.kind === "error", actions: !!opts.action });
+  setTimeout(() => dismiss(n.id), ms);
+}
+
+export const dismiss = (id: number) => setNotices((l) => l.filter((n) => n.id !== id));
+
+// runCmd runs a command on the server. A success says so in a notice, with the output a tap away; a failure,
+// or anything with a warning to read, opens the output in a sheet.
 export async function runCmd(title: string, path: string, body: unknown = {}, warning?: string) {
+  let r: CmdResult;
   try {
-    const r = await api<CmdResult>(path, body);
-    setResult({ ...r, title, warning });
-    return r;
+    r = await api<CmdResult>(path, body);
   } catch (e) {
-    setResult({ ok: false, code: -1, cmd: "", out: (e as Error).message, title });
+    r = { ok: false, code: -1, cmd: "", out: (e as Error).message };
   }
+  const res = { ...r, title, warning };
+  if (!r.ok || warning) setResult(res);
+  else say(title, { kind: "success", action: r.out.trim() ? { label: "Output", run: () => setResult(res) } : undefined });
+  return r;
 }

@@ -1,6 +1,7 @@
 import { Show, createResource, createEffect } from "solid-js";
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { api } from "../api";
+import { PageHead } from "../components";
 
 export default function Logs() {
   const params = useParams();
@@ -15,15 +16,12 @@ export default function Logs() {
   createEffect(() => { if (data()) queueMicrotask(() => (pre.scrollTop = pre.scrollHeight)); });
   return (
     <div class="stack">
-      <div class="page-head">
-        <A class="btn btn-ghost btn-sm" href="/">← Apps</A>
-        <h1>{isSite() ? data()?.host || params.site : `${params.app}: sync log`}</h1>
-        <span class="spacer" />
-        <button class="btn btn-secondary" onClick={() => refetch()}>Refresh</button>
-      </div>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error.message)}</div></Show>
-      <Show when={isSite() && data()?.status}><pre class="output mono card-border">{data()!.status}</pre></Show>
-      <pre ref={pre} class="output log mono card-border">{data()?.log ?? "loading…"}</pre>
+      <PageHead title={isSite() ? "Logs" : "Sync log"} back={{ href: "/", label: "Apps" }} detail={isSite() ? data()?.host || params.site : params.app}>
+        <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>Refresh</button>
+      </PageHead>
+      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={isSite() && data()?.status}><pre class="output">{data()!.status}</pre></Show>
+      <pre ref={pre} class="output log">{data()?.log ?? "Loading…"}</pre>
     </div>
   );
 }
