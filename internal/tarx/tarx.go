@@ -90,6 +90,12 @@ func Extract(r io.Reader, dst string, max int64) error {
 			return err
 		}
 		name := strings.TrimSuffix(h.Name, "/")
+		for strings.HasPrefix(name, "./") { // what `tar -C dir -czf x .` writes
+			name = strings.TrimPrefix(name, "./")
+		}
+		if name == "." && h.Typeflag == tar.TypeDir {
+			continue
+		}
 		if name == "" || path.IsAbs(name) || path.Clean(name) != name || name == ".." || strings.HasPrefix(name, "../") || strings.Contains(name, "/../") {
 			return fmt.Errorf("unsafe name in site: %q", h.Name)
 		}
@@ -105,7 +111,11 @@ func Extract(r io.Reader, dst string, max int64) error {
 				return ErrTooBig
 			}
 			// O_EXCL + parent created by us: never follows anything
-			f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+			mode := os.FileMode(0o644)
+			if h.Mode&0o100 != 0 { // keep "executable" (a site's run file); nothing else from the archive's mode
+				mode = 0o755
+			}
+			f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
 			if err != nil {
 				return err
 			}

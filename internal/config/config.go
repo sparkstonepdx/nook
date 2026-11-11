@@ -15,6 +15,7 @@ const (
 	GrantsFile   = "/etc/nook/grants"
 	PortsFile    = "/etc/nook/ports"
 	FirewallFile = "/etc/nook/firewall.nft"
+	TokensFile   = "/etc/nook/tokens" // deploy token hashes
 	StateDir     = "/etc/nook/state"
 	EnvDir       = "/etc/nook/env"
 	SSHKeysDir   = "/etc/ssh/nook-keys" // public keys: readable (sshd reads them as the user), root-writable only

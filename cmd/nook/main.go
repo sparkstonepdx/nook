@@ -3,7 +3,9 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -57,6 +59,14 @@ func main() {
 		}
 		max, _ := strconv.ParseInt(os.Args[3], 10, 64)
 		if err := tarx.Pack(os.Args[2], os.Stdout, max); err != nil {
+			die("%v", err)
+		}
+	case "internal-unpack": // run by nook-admin as this app's user: a deploy API upload (tar.gz on stdin) into builds/NAME
+		if len(os.Args) != 4 || !names.Site(os.Args[2]) {
+			os.Exit(2)
+		}
+		max, _ := strconv.ParseInt(os.Args[3], 10, 64)
+		if err := unpack(os.Args[2], os.Stdin, max); err != nil {
 			die("%v", err)
 		}
 	case "internal-read-env": // run by nook-admin as this app's user
@@ -253,4 +263,39 @@ func sshGate() {
 		}
 	}
 	die("nook: %v", err)
+}
+
+// unpack extracts a gzipped tar into ~/builds/NAME, replacing what was there. Only plain files and folders are
+// accepted (tarx.Extract); a broken or oversized upload leaves the previous build alone.
+func unpack(name string, r io.Reader, max int64) error {
+	builds := filepath.Join(home(), "builds")
+	if err := os.MkdirAll(builds, 0o700); err != nil {
+		return err
+	}
+	zr, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("upload isn't a .tar.gz: %v", err)
+	}
+	tmp, err := os.MkdirTemp(builds, ".upload-")
+	if err != nil {
+		return err
+	}
+	os.Remove(tmp) // Extract creates it, so nothing inside can predate the upload
+	if err := tarx.Extract(zr, tmp, max); err != nil {
+		os.RemoveAll(tmp)
+		if err == tarx.ErrTooBig {
+			return fmt.Errorf("the site is bigger than %d bytes unpacked", max)
+		}
+		return fmt.Errorf("upload: %v", err)
+	}
+	dst, old := filepath.Join(builds, name), filepath.Join(builds, ".old-"+name)
+	os.RemoveAll(old)
+	if _, err := os.Lstat(dst); err == nil {
+		os.Rename(dst, old)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	os.RemoveAll(old)
+	return nil
 }

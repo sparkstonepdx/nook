@@ -10,7 +10,6 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/names"
-	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 var (
@@ -70,22 +69,6 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 		os.Chmod(p, 0o700)
 	}
 
-	// deploy key: GitHub gets the private half; sshd reads the public half from a root-owned file
-	tmp, err := os.MkdirTemp("", "nook-key-")
-	if err != nil {
-		return "", err
-	}
-	defer os.RemoveAll(tmp)
-	if out, err := Run("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "github-actions-"+o.Name, "-f", filepath.Join(tmp, "key")); err != nil {
-		return "", fmt.Errorf("ssh-keygen: %s", out)
-	}
-	pub, _ := os.ReadFile(filepath.Join(tmp, "key.pub"))
-	priv, _ := os.ReadFile(filepath.Join(tmp, "key"))
-	os.MkdirAll(config.SSHKeysDir, 0o755)
-	if err := config.WriteAtomic(filepath.Join(config.SSHKeysDir, "nook-"+o.Name), []byte("restrict "+strings.TrimSpace(string(pub))+"\n"), 0o644); err != nil {
-		return "", err
-	}
-
 	slice := fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=%s\n", o.Name, o.Memory, o.CPU, o.Tasks)
 	config.WriteAtomic(filepath.Join("/etc/systemd/system", "nook-"+o.Name+".slice"), []byte(slice), 0o644)
 	systemctl("daemon-reload")
@@ -99,27 +82,40 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 		config.WriteAtomic(config.GrantsFile, []byte((append(gl, g)).Text()), 0o600)
 	}
 
-	hostKey, _ := os.ReadFile("/etc/ssh/ssh_host_ed25519_key.pub")
-	f := strings.Fields(string(hostKey))
-	known := h.S.SSHHost
-	if len(f) >= 2 {
-		known += " " + f[0] + " " + f[1]
+	tok, err := newToken()
+	if err != nil {
+		return "", err
 	}
-	tok := token.Token{V: 1, Host: h.S.SSHHost, Port: 22, User: "nook-" + o.Name, Dir: home, Domain: h.S.BaseDomain, KnownHosts: known, Key: string(priv)}
-	return createdText(o, tok.Encode()), nil
+	if _, err := addTokenLocked(o.Name, "created with the app", tok); err != nil {
+		return "", err
+	}
+	return createdText(o, tok, DeployBase(h.S)), nil
 }
 
-func createdText(o CreateOpts, token string) string {
-	return fmt.Sprintf(`
-================ 1. GitHub secret (one) ================
+// DeployBase is the deploy API's base URL: the dashboard's address, or the IP fallback (self-signed).
+func DeployBase(s config.Settings) string {
+	d := config.LoadDashboard()
+	if d.Host != "" {
+		return "https://" + d.Host + "/api/v1/sites/"
+	}
+	return "https://" + s.SSHHost + ":" + d.IPPort + "/api/v1/sites/"
+}
 
-On your laptop, run this and paste the value below when it asks:
+func createdText(o CreateOpts, token, base string) string {
+	warn := ""
+	if strings.Contains(strings.TrimPrefix(base, "https://"), ":") {
+		warn = "\n(The dashboard has no address yet, so this uses the IP with a self-signed certificate, which curl refuses.\nSet the dashboard's address on its Domains page, then use https://<that address>/api/v1/sites/ instead.)\n"
+	}
+	return fmt.Sprintf(`
+================ 1. GitHub secret ================
+
+On your laptop, run this and paste the token below when it asks:
 
   gh secret set NOOK_TOKEN -R %[1]s
 
 %[2]s
 
-(It holds the deploy key; it's shown once and not stored on the server.)
+(Shown once; the server keeps only its hash. Make more or revoke on the dashboard: %[3]s → Deploy.)
 
 ================ 2. Workflow: .github/workflows/deploy.yml ================
 
@@ -129,34 +125,39 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, closed]
-permissions:
-  contents: read
-  pull-requests: write
 concurrency:
   group: deploy-${{ github.event.pull_request.number || github.ref }}
+env:
+  NOOK: %[4]s%[3]s        # site: "%[3]s", or a hostname like client.com (needs a grant)
+  NOOK_TOKEN: ${{ secrets.NOOK_TOKEN }}
+  PR: ${{ github.event.pull_request.number }}
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        if: github.event.action != 'closed'
-      - run: npm ci && npm run build      # your build; skip for plain files
-        if: github.event.action != 'closed'
-      - uses: sparkstonepdx/nook/deploy@v1
-        with:
-          token: ${{ secrets.NOOK_TOKEN }}
-          dir: dist                       # folder to publish; add an executable "run" for a running app
-          site: %[3]s                     # or a hostname like client.com (needs a grant)
-
-Pushes to main deploy to the site. Pull requests get a preview, a comment with its URL,
-and are removed when the PR closes.
+      - if: github.event.action == 'closed'
+        run: curl -fsS -X DELETE -H "Authorization: Bearer $NOOK_TOKEN" "$NOOK?pr=$PR"
+      - if: github.event.action != 'closed'
+        uses: actions/checkout@v4
+      - if: github.event.action != 'closed'
+        run: npm ci && npm run build      # your build; skip for plain files
+      - if: github.event.action != 'closed'
+        run: |
+          tar -C dist -czf site.tgz .     # folder to publish; an executable "run" makes it a running app
+          curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.tgz "$NOOK${PR:+?pr=$PR}"
+%[5]s
+Pushes to main deploy the site; pull requests deploy a preview and remove it when closed.
+Any CI works the same way: it's one HTTPS POST of a .tar.gz.
 
 ================ 3. Runtime environment ================
 
-Set env vars and secrets for running apps on the server, not in GitHub:
-  dashboard → %[3]s → Environment,  or  nook-admin env set %[3]s KEY
-Running sites restart with the new values. Running apps also get $PORT, $SITE, $SITE_HOST.
-`, o.Repo, token, o.Name)
+Set it on the server (dashboard → %[3]s → Environment, or nook-admin env set %[3]s KEY), or send it with
+the deploy from GitHub secrets, which replaces that site's "sent by deploys" values each time:
+
+  curl ... -F site=@site.tgz -F "env.DATABASE_URL=$DATABASE_URL" "$NOOK"     (or -F env=@prod.env)
+
+Running apps also get $PORT, $SITE and $SITE_HOST.
+`, o.Repo, token, o.Name, base, warn)
 }
 
 // Delete removes everything an app has. confirm must equal the name.
@@ -187,6 +188,7 @@ func (h *Host) Delete(app, confirm string) error {
 		}
 	}
 	config.WriteAtomic(config.GrantsFile, []byte(keep.Text()), 0o600)
+	tokensDropApp(app)
 	for _, p := range []string{
 		filepath.Join(config.CaddyAppsDir, app+".caddy"), filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app+".user.env"),
 		filepath.Join(config.SSHKeysDir, "nook-"+app),
