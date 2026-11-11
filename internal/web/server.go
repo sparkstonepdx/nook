@@ -181,7 +181,7 @@ func (s *Server) routes() []route {
 			if params != nil {
 				req.Params = params(c)
 			}
-			if op == "envApply" || op == "bind" {
+			if op == "envApply" || op == "bind" || op == "storeInstall" {
 				req.Set, req.Unset = map[string]string{}, []string{}
 				if m, ok := c.body["set"].(map[string]any); ok {
 					for k, v := range m {
@@ -248,6 +248,10 @@ func (s *Server) routes() []route {
 	add("GET", "/api/apps/:app/sync-log", false, helper("syncLog", p("app"), false))
 	add("GET", "/api/apps/:app/instructions", false, helper("instructions", p("app", "site"), false))
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
+	add("GET", "/api/store", false, helper("store", p("refresh"), false))
+	add("POST", "/api/store/install", false, helper("storeInstall", p("id", "app", "site", "policy"), true))
+	add("POST", "/api/store/:app/update", false, helper("storeUpdate", p("app", "force"), true))
+	add("POST", "/api/store/:app/policy", false, helper("storePolicy", p("app", "policy"), false))
 	add("GET", "/api/services", false, helper("services", nil, false))
 	add("POST", "/api/services/bind", false, helper("bind", p("app", "interface", "provider"), true))
 	add("POST", "/api/services/unbind", false, helper("unbind", p("app", "interface"), true))

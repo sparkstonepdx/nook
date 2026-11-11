@@ -78,6 +78,7 @@ export function Nav() {
           <A href="/" end class="btn btn-ghost" activeClass="nav-active">Apps</A>
           <A href="/domains" class="btn btn-ghost" activeClass="nav-active">Domains</A>
           <A href="/services" class="btn btn-ghost" activeClass="nav-active">Services</A>
+          <A href="/store" class="btn btn-ghost" activeClass="nav-active">Store</A>
           <A href="/users" class="btn btn-ghost" activeClass="nav-active">Users</A>
         </div>
       </div>

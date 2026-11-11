@@ -178,6 +178,23 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Firewall:** opens the provider's port to exactly the bound apps.
 - **Known services:** known names (above) must provide exactly their env names, so providers are interchangeable. Any other name is a new interface that its provider defines.
 
+## Store
+
+The dashboard's **Store** page installs ready-made apps (ntfy to start) from a signed catalog. Each one becomes an ordinary nook app with its own user, folder, limits and firewall rules.
+
+- **Trust:** the catalog is signed with the release key and pins every download's sha256. A bad signature or hash stops the install.
+- **Updates:** each app has a policy: `off`, `notify`, `patch`, `minor` (default) or `all`. The nightly check applies allowed updates and notifies about the rest.
+- **Rollback:** after an update nook health-checks the app. If it doesn't come up, nook redeploys the previous version, notifies you, and skips that version from then on.
+- **Removing:** delete the app from the Apps page. Its data goes with it.
+- **Adding apps:** see [catalog/README.md](catalog/README.md). CI resolves each app's GitHub release, pins the hashes and signs the catalog.
+
+```
+nook-admin store list [--refresh]
+nook-admin store install ID [--app NAME] [--site SITE] [--policy P] [--env K=V]
+nook-admin store update APP [--force]
+nook-admin store policy APP off|notify|patch|minor|all
+```
+
 ## Domains
 
 ![Domains](docs/dashboard-domains.png)

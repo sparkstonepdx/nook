@@ -522,11 +522,12 @@ ExecStart=/usr/local/sbin/nook-admin sync %i
 `
 
 const updateService = `[Unit]
-Description=Check for nook-admin updates
+Description=Check for nook updates, and update store apps by their policy
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/nook-admin update --check --notify
+ExecStart=-/usr/local/sbin/nook-admin update --check --notify
+ExecStart=-/usr/local/sbin/nook-admin store check
 `
 
 const updateTimer = `[Unit]

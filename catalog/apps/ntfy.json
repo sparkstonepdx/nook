@@ -1,0 +1,24 @@
+{
+  "id": "ntfy",
+  "name": "ntfy",
+  "description": "Push notifications to phones and desktops over plain HTTP PUT/POST. Also a target for nook's own update alerts.",
+  "homepage": "https://ntfy.sh",
+  "license": "Apache-2.0 / GPL-2.0",
+  "kind": "web",
+  "site": "ntfy",
+  "health": "/v1/health",
+  "memory": "128M",
+  "binary": "ntfy",
+  "env": [
+    { "key": "NTFY_BASE_URL", "desc": "Public URL of this server", "default": "https://{site_host}" },
+    { "key": "NTFY_AUTH_DEFAULT_ACCESS", "desc": "read-write, read-only, write-only or deny-all for anyone without a login", "default": "read-write" }
+  ],
+  "files": {
+    "run": "#!/bin/sh\nset -e\nmkdir -p \"$HOME/data/ntfy/attachments\"\nexport NTFY_LISTEN_HTTP=\"127.0.0.1:$PORT\"\nexport NTFY_BEHIND_PROXY=true\nexport NTFY_CACHE_FILE=\"$HOME/data/ntfy/cache.db\"\nexport NTFY_AUTH_FILE=\"$HOME/data/ntfy/auth.db\"\nexport NTFY_ATTACHMENT_CACHE_DIR=\"$HOME/data/ntfy/attachments\"\nexec ./ntfy serve\n"
+  },
+  "source": {
+    "github": "binwiederhier/ntfy",
+    "assets": { "amd64": "^ntfy_.*_linux_amd64\\.tar\\.gz$", "arm64": "^ntfy_.*_linux_arm64\\.tar\\.gz$" },
+    "format": "tar.gz"
+  }
+}

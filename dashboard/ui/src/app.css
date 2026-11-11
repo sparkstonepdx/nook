@@ -34,3 +34,5 @@ details.danger summary { cursor: pointer; }
 .update-banner { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
 .update-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; justify-content: center; padding: 1.5rem 1rem 2rem; font-size: 0.8125rem; }
 .update-footer .text-error { color: var(--color-error, #b42318); }
+.store-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); }
+.store-grid .card p { margin: 0; }

@@ -17,6 +17,7 @@ const (
 	FirewallFile = "/etc/nook/firewall.nft"
 	TokensFile   = "/etc/nook/tokens" // deploy token hashes
 	BindingsFile = "/etc/nook/bindings.json"
+	StoreFile    = "/etc/nook/store.json" // apps installed from the store
 	StateDir     = "/etc/nook/state"
 	EnvDir       = "/etc/nook/env"
 	SSHKeysDir   = "/etc/ssh/nook-keys" // public keys: readable (sshd reads them as the user), root-writable only
