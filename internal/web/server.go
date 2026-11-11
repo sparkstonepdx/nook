@@ -210,7 +210,11 @@ func (s *Server) routes() []route {
 				return nil, fail(st, resp.Error)
 			}
 			if cmd {
-				return map[string]any{"ok": resp.OK, "code": resp.Code, "cmd": resp.Cmd, "out": resp.Out}, nil
+				r := map[string]any{"ok": resp.OK, "code": resp.Code, "cmd": resp.Cmd, "out": resp.Out}
+				if len(resp.Data) > 0 {
+					r["data"] = resp.Data
+				}
+				return r, nil
 			}
 			return resp.Data, nil
 		}

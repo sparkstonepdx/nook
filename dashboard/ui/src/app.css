@@ -90,3 +90,4 @@ details summary { position: relative; padding-block: var(--space-xs); }
 .sub-head { align-items: flex-start; }
 .sub-head .hint { flex: 1 1 20rem; margin: 0; }
 .row-main .text-error { color: var(--bad); }
+.token-box .label { margin: 0; } .token-box .field-row .input { flex: 1; }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -32,7 +33,13 @@ func AppRepo(app string) string {
 // Instructions is everything a repo needs to deploy to app: the same text `nook-admin create` prints, any
 // time later. token is shown only when it was just made; otherwise the text says where to make one. site
 // defaults to the app's name.
-func Instructions(app, token, site string) string {
+func Instructions(app, token, site string) string { return instructions(app, token, site, true) }
+
+// InstructionsNoToken is the instructions without the token section, for the dashboard, which shows the
+// token (and how to store it) on its own.
+func InstructionsNoToken(app, site string) string { return instructions(app, "", site, false) }
+
+func instructions(app, token, site string, tokenSection bool) string {
 	s := config.Load()
 	if site == "" || !names.Site(site) {
 		site = app
@@ -51,16 +58,18 @@ func Instructions(app, token, site string) string {
 		w("\nNOTE: the dashboard has no address yet, so these URLs use the server's IP and a self-signed\ncertificate, which curl and GitHub refuse. Set the address on the dashboard's Domains page first.\n")
 	}
 
-	w("\n================ 1. Deploy token (GitHub secret NOOK_TOKEN) ================\n\n")
-	if token != "" {
-		w("  gh secret set NOOK_TOKEN -R %s      # paste this when it asks:\n\n  %s\n\n", repo, token)
-		w("Shown once; the server keeps only its hash.\n")
-	} else {
-		w("Tokens are shown only when made. Make one and store it:\n\n")
-		w("  dashboard → Apps → %s → Deploy → New token     (or: nook-admin token create %s --label %s)\n", app, app, repo)
-		w("  gh secret set NOOK_TOKEN -R %s\n", repo)
+	if tokenSection {
+		w("\n================ 1. Deploy token (GitHub secret NOOK_TOKEN) ================\n\n")
+		if token != "" {
+			w("  gh secret set NOOK_TOKEN -R %s      # paste this when it asks:\n\n  %s\n\n", repo, token)
+			w("Shown once; the server keeps only its hash.\n")
+		} else {
+			w("Tokens are shown only when made. Make one and store it:\n\n")
+			w("  dashboard → Apps → %s → Deploy → New token     (or: nook-admin token create %s --label %s)\n", app, app, repo)
+			w("  gh secret set NOOK_TOKEN -R %s\n", repo)
+		}
+		w("\nRevoke tokens on the same page. Any CI works: a deploy is one HTTPS request.\n")
 	}
-	w("\nRevoke tokens on the same page. Any CI works: a deploy is one HTTPS request.\n")
 
 	w("\n================ 2. Workflow: .github/workflows/deploy.yml ================\n\n")
 	w(`name: deploy
@@ -158,5 +167,13 @@ Add "needs": ["postgres"] (or email, alerts, analytics, s3, ...) to a site's noo
 grant it on the dashboard's Services page (or nook-admin bind %s postgres). The app gets standard env vars,
 e.g. DATABASE_URL for its own private database.
 `, app)
+	if !tokenSection { // the sections after the token's move up one
+		return sectionNumRE.ReplaceAllStringFunc(b.String(), func(m string) string {
+			d := sectionNumRE.FindStringSubmatch(m)[1]
+			return "================ " + string(rune(d[0]-1)) + ". "
+		})
+	}
 	return b.String()
 }
+
+var sectionNumRE = regexp.MustCompile(`================ ([2-9])\. `)

@@ -136,13 +136,18 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "domains":
 		return data(h.Domains(), nil)
 	case "createApp":
-		var created string
+		// The dashboard shows the token on its own, with a copy button and the gh command, so the output
+		// here is the rest of the instructions.
+		var tok string
 		r := command("nook-admin create "+p["name"], func(h *Host) error {
-			out, err := h.Create(CreateOpts{Name: p["name"], Memory: p["memory"], CPU: p["cpu"], Tasks: p["tasks"], Repo: p["repo"]})
-			created = out
+			var err error
+			tok, err = h.CreateToken(CreateOpts{Name: p["name"], Memory: p["memory"], CPU: p["cpu"], Tasks: p["tasks"], Repo: p["repo"]})
 			return err
 		})
-		r.Out += created
+		if r.OK {
+			r.Out += InstructionsNoToken(p["name"], "")
+			r.Data, _ = json.Marshal(map[string]string{"token": tok, "repo": AppRepo(p["name"])})
+		}
 		return r
 	case "deleteApp":
 		return command("nook-admin delete "+p["app"], func(h *Host) error { return h.Delete(p["app"], p["confirm"]) })
@@ -215,7 +220,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)
 		}
-		return data(map[string]any{"text": Instructions(p["app"], "", p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
+		return data(map[string]any{"text": InstructionsNoToken(p["app"], p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
 	case "setRepo":
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)

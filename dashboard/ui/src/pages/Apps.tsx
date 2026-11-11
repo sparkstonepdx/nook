@@ -1,7 +1,7 @@
 import { For, Show, createResource, createSignal, onCleanup } from "solid-js";
 import { A } from "@solidjs/router";
-import { api, runCmd } from "../api";
-import { StatusBadge, Field, PageHead, Sheet } from "../components";
+import { api, runCmd, setResult, type CmdResult } from "../api";
+import { StatusBadge, Field, PageHead, Sheet, TokenBox } from "../components";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][] };
@@ -119,16 +119,28 @@ export default function Apps() {
 }
 
 function NewApp(props: { open: boolean; defaults: Overview["defaults"]; onClose: () => void; onDone: () => void }) {
+  const [created, setCreated] = createSignal<{ app: string; token: string; repo: string } | null>(null);
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
-    const f = Object.fromEntries(new FormData(form));
+    const f = Object.fromEntries(new FormData(form)) as Record<string, string>;
     props.onClose();
-    const r = await runCmd(`Created ${f.name}`, "/api/apps", f, "The deploy token below is shown once: add it to the repo as NOOK_TOKEN now. The rest of these instructions are on the app's Deploy page any time.");
-    if (r.ok) form.reset();
+    let r: CmdResult & { data?: { token: string; repo: string } };
+    try { r = await api("/api/apps", f); } catch (x) { r = { ok: false, code: -1, cmd: "", out: (x as Error).message }; }
+    if (r.ok && r.data?.token) { form.reset(); setCreated({ app: f.name, token: r.data.token, repo: r.data.repo }); }
+    else setResult({ ...r, title: r.ok ? `Created ${f.name}` : `Couldn't create ${f.name}` });
     props.onDone();
   };
-  return (
+  return (<>
+    <Sheet open={!!created()} title={`Created ${created()?.app ?? ""}`} onClose={() => setCreated(null)}
+      footer={<><button class="btn btn-secondary" onClick={() => setCreated(null)}>Done</button><A class="btn" href={`/apps/${created()?.app}/deploy`}>Setup instructions</A></>}>
+      <Show when={created()}>{(c) => (
+        <div class="stack">
+          <TokenBox token={c().token} repo={c().repo} />
+          <p class="hint">The workflow to copy into the repo, what to publish, env and services are on the app's Deploy page, any time.</p>
+        </div>
+      )}</Show>
+    </Sheet>
     <Sheet open={props.open} title="New app" onClose={props.onClose}
       footer={<><button class="btn btn-secondary" onClick={props.onClose}>Cancel</button><button class="btn" type="submit" form="new-app">Create</button></>}>
       <form id="new-app" onSubmit={submit}>
@@ -138,10 +150,10 @@ function NewApp(props: { open: boolean; defaults: Overview["defaults"]; onClose:
           <Field label="CPU" hint="100% is one core"><input class="input" name="cpu" value={props.defaults.cpu} required /></Field>
           <Field label="Tasks" hint="processes and threads"><input class="input" name="tasks" value={props.defaults.tasks} required /></Field>
         </div>
-        <Field label="GitHub repo" hint="Optional. Used in the deploy instructions."><input class="input" name="repo" placeholder="sparkstonepdx/myapp" pattern="[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+" /></Field>
+        <Field label="GitHub repo" hint="Optional. Fills in the gh command and the deploy instructions."><input class="input" name="repo" placeholder="sparkstonepdx/myapp" pattern="[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+" /></Field>
       </form>
     </Sheet>
-  );
+  </>);
 }
 
 function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after: (p?: Promise<unknown>) => void }) {

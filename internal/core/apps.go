@@ -95,6 +95,20 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	return Instructions(o.Name, tok, ""), nil
 }
 
+// CreateToken creates the app like Create, and returns its first deploy token rather than the instructions.
+func (h *Host) CreateToken(o CreateOpts) (string, error) {
+	out, err := h.Create(o)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range strings.Fields(out) {
+		if strings.HasPrefix(f, "nook_") {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("created %s, but couldn't find its token: make one on its Deploy page", o.Name)
+}
+
 // DeployBase is the deploy API's base URL: the dashboard's address, or the IP fallback (self-signed).
 func DeployBase(s config.Settings) string {
 	d := config.LoadDashboard()
