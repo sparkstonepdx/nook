@@ -2,6 +2,7 @@ import { Show, createResource, createEffect } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { api } from "../api";
 import { PageHead } from "../components";
+import { Ansi } from "../ansi";
 
 export default function Logs() {
   const params = useParams();
@@ -20,8 +21,8 @@ export default function Logs() {
         <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>Refresh</button>
       </PageHead>
       <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
-      <Show when={isSite() && data()?.status}><pre class="output">{data()!.status}</pre></Show>
-      <pre ref={pre} class="output log">{data()?.log ?? "Loading…"}</pre>
+      <Show when={isSite() && data()?.status}><pre class="output"><Ansi text={data()!.status} /></pre></Show>
+      <pre ref={pre} class="output log"><Show when={data()} fallback="Loading…"><Ansi text={data()!.log} /></Show></pre>
     </div>
   );
 }

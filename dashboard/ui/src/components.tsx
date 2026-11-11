@@ -1,6 +1,7 @@
 import { A, useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
+import { Ansi } from "./ansi";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 
 type UpdateStatus = { current: string; latest: string; available: boolean; url: string; notes: string; checkedAt: string; error?: string };
@@ -192,7 +193,7 @@ export function ResultSheet() {
             <Show when={r().cmd}>
               <p class="cmd-line"><code>$ {r().cmd}</code> <StatusBadge ok={r().ok}>exit {r().code}</StatusBadge></p>
             </Show>
-            <pre class="output">{r().out || "(no output)"}</pre>
+            <pre class="output"><Ansi text={r().out || "(no output)"} /></pre>
           </div>
         )}
       </Show>
