@@ -151,7 +151,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		out, err := SyncLog(p["app"])
 		return data(map[string]string{"log": out}, err)
 	case "envGet":
-		v, err := EnvList(p["app"])
+		scope, err := ParseScope(p["scope"])
+		if err != nil {
+			return data(nil, err)
+		}
+		v, err := EnvList(p["app"], scope)
 		if err != nil {
 			return data(nil, err)
 		}
@@ -164,9 +168,17 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		for _, s := range RunningSites(p["app"]) {
 			running = append(running, s)
 		}
-		return data(map[string]any{"vars": vars, "running": running}, nil)
+		affected := sitesUsing(p["app"], scope)
+		if affected == nil {
+			affected = []string{}
+		}
+		return data(map[string]any{"vars": vars, "running": running, "affected": affected, "scope": scope.String(), "scopes": EnvScopes(p["app"]), "sites": SiteNames(p["app"])}, nil)
 	case "envApply":
-		return command("nook-admin env apply "+p["app"], func(h *Host) error { return h.EnvApply(p["app"], req.Set, req.Unset, true) })
+		scope, err := ParseScope(p["scope"])
+		if err != nil {
+			return data(nil, err)
+		}
+		return command("nook-admin env apply "+p["app"]+" --scope "+scope.String(), func(h *Host) error { return h.EnvApply(p["app"], scope, req.Set, req.Unset, true) })
 	case "grant":
 		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"]}
 		verb := "add"

@@ -41,6 +41,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin env set NAME KEY [KEY ...]          prompts for each value (stays out of shell history)
   nook-admin env set NAME KEY=value ...
   nook-admin env unset NAME KEY ...
+      add --site SITE (one site) or --previews SITE (that site's PR previews); default: the whole app
   nook-admin invite                              one-time dashboard login link
   nook-admin update [--check]                    install the latest signed release
   nook-admin firewall                            reload the rules that keep apps off each other's ports
@@ -189,13 +190,25 @@ func grantCmd(h *core.Host, args []string) {
 func envCmd(h *core.Host, args []string) {
 	var flags []string
 	var pos []string
-	for _, a := range args {
-		if strings.HasPrefix(a, "--") {
+	scopeArg := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case (a == "--site" || a == "--previews" || a == "--scope") && i+1 < len(args):
+			i++
+			if a == "--scope" {
+				scopeArg = args[i]
+			} else {
+				scopeArg = strings.TrimPrefix(a, "--") + ":" + args[i]
+			}
+		case strings.HasPrefix(a, "--"):
 			flags = append(flags, a)
-		} else {
+		default:
 			pos = append(pos, a)
 		}
 	}
+	scope, err := core.ParseScope(scopeArg)
+	die(err)
 	has := func(f string) bool {
 		for _, x := range flags {
 			if x == f {
@@ -210,7 +223,7 @@ func envCmd(h *core.Host, args []string) {
 	verb, app, rest := pos[0], pos[1], pos[2:]
 	switch verb {
 	case "list":
-		v, err := core.EnvList(app)
+		v, err := core.EnvList(app, scope)
 		die(err)
 		for _, k := range v.Keys() {
 			if has("--values") {
@@ -238,16 +251,16 @@ func envCmd(h *core.Host, args []string) {
 			}
 			set[a] = strings.TrimRight(line, "\r\n")
 		}
-		die(h.EnvApply(app, set, nil, !has("--no-restart")))
+		die(h.EnvApply(app, scope, set, nil, !has("--no-restart")))
 	case "unset":
-		die(h.EnvApply(app, nil, rest, !has("--no-restart")))
+		die(h.EnvApply(app, scope, nil, rest, !has("--no-restart")))
 	case "apply":
 		var j struct {
 			Set   map[string]string `json:"set"`
 			Unset []string          `json:"unset"`
 		}
 		die(json.NewDecoder(os.Stdin).Decode(&j))
-		die(h.EnvApply(app, j.Set, j.Unset, !has("--no-restart")))
+		die(h.EnvApply(app, scope, j.Set, j.Unset, !has("--no-restart")))
 	default:
 		die(fmt.Errorf("usage: nook-admin env list|set|unset|apply NAME ..."))
 	}

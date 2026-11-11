@@ -1,16 +1,40 @@
 import { For, Show, createResource, createSignal } from "solid-js";
-import { A, useParams } from "@solidjs/router";
+import { A, useParams, useSearchParams } from "@solidjs/router";
 import { api, runCmd } from "../api";
 import { Field } from "../components";
 
-type Env = { vars: { key: string; value: string }[]; running: string[] };
+type Env = { vars: { key: string; value: string }[]; running: string[]; affected: string[]; scope: string; scopes: string[]; sites: string[] };
+
+const isPreview = (s: string) => /^pr-\d+\./.test(s) || /-pr-\d+$/.test(s);
+const label = (scope: string) => {
+  if (scope === "app") return "Whole app";
+  const [kind, name] = scope.split(":");
+  return { site: `Site: ${name}`, previews: `Previews of ${name}`, deploy: `Sent by deploys: ${name}` }[kind] ?? scope;
+};
+const explain: Record<string, string> = {
+  app: "Loaded into every running site of this app.",
+  site: "Loaded into this site only, after the app's values, so these win.",
+  previews: "Loaded into every PR preview of this site (not the site itself). Previews never get the site's own values, so production secrets stay out of PR builds unless you put them here or in the whole app.",
+  deploy: "Sent with the latest deploy of this site and replaced by the next one. Set a value in the site's own scope to override it.",
+};
 
 export default function EnvPage() {
   const params = useParams();
-  const [data, { refetch }] = createResource(() => params.app, (app) => api<Env>(`/api/apps/${app}/env`));
+  const [search, setSearch] = useSearchParams();
+  const scope = () => (search.scope as string) || "app";
+  const kind = () => scope().split(":")[0];
+  const [data, { refetch }] = createResource(() => [params.app, scope()] as const, ([app, sc]) => api<Env>(`/api/apps/${app}/env?scope=${encodeURIComponent(sc)}`));
+  const scopes = () => {
+    const d = data();
+    const all = ["app"];
+    for (const s of d?.sites ?? []) if (!isPreview(s)) all.push(`site:${s}`, `previews:${s}`);
+    for (const s of d?.scopes ?? []) if (!all.includes(s)) all.push(s);
+    if (!all.includes(scope())) all.push(scope());
+    return all;
+  };
   const [shown, setShown] = createSignal<Set<string>>(new Set());
   const toggle = (k: string) => { const s = new Set(shown()); s.has(k) ? s.delete(k) : s.add(k); setShown(s); };
-  const apply = async (title: string, body: { set?: Record<string, string>; unset?: string[] }) => { await runCmd(title, `/api/apps/${params.app}/env`, body); refetch(); };
+  const apply = async (title: string, body: { set?: Record<string, string>; unset?: string[] }) => { await runCmd(title, `/api/apps/${params.app}/env`, { ...body, scope: scope() }); refetch(); };
 
   return (
     <div class="stack">
@@ -18,11 +42,19 @@ export default function EnvPage() {
         <A class="btn btn-ghost btn-sm" href="/">← Apps</A>
         <h1>{params.app}: environment</h1>
       </div>
-      <p class="text-secondary hint">
-        Loaded into every running site of this app. Saving restarts them
-        <Show when={data()?.running.length}> ({data()!.running.join(", ")})</Show>.
-        nook sets PORT, HOST, SITE and SITE_HOST itself. Values the app's own deploys write to secrets.env also load; these override them.
-      </p>
+      <section class="card">
+        <Field label="Scope">
+          <select class="select" value={scope()} onChange={(e) => setSearch({ scope: e.currentTarget.value === "app" ? undefined : e.currentTarget.value })}>
+            <For each={scopes()}>{(s) => <option value={s}>{label(s)}</option>}</For>
+          </select>
+        </Field>
+        <p class="text-secondary hint">
+          {explain[kind()]} Saving restarts the running sites that load it
+          <Show when={data()?.affected.length} fallback=" (none are running right now)"> ({data()!.affected.join(", ")})</Show>.
+          Load order, later wins: the app's own secrets.env, whole app, previews, sent by deploys, site.
+          nook sets PORT, HOST, SITE and SITE_HOST itself.
+        </p>
+      </section>
       <Show when={data.error}><div class="alert alert-error">{String(data.error.message)}</div></Show>
 
       <section class="card">
@@ -37,7 +69,7 @@ export default function EnvPage() {
                     <td class="mono env-value">{shown().has(v.key) ? v.value : "••••••••"}</td>
                     <td><div class="actions">
                       <button class="btn btn-ghost btn-sm" onClick={() => toggle(v.key)}>{shown().has(v.key) ? "Hide" : "Show"}</button>
-                      <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button>
+                      <Show when={kind() !== "deploy"}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
                     </div></td>
                   </tr>
                 )}
@@ -47,6 +79,7 @@ export default function EnvPage() {
         </div>
       </section>
 
+      <Show when={kind() !== "deploy"}>
       <section class="card">
         <h2>Set a variable</h2>
         <p class="text-secondary hint">Setting an existing name replaces its value.</p>
@@ -80,6 +113,7 @@ export default function EnvPage() {
           <div><button class="btn btn-secondary">Save all</button></div>
         </form>
       </section>
+      </Show>
     </div>
   );
 }
