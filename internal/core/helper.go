@@ -204,6 +204,20 @@ func Dispatch(req *rpc.Request) rpc.Response {
 			return data(nil, errors.New("updates aren't available"))
 		}
 		return data(UpdateHooks.Status())
+	case "instructions":
+		if _, err := LookupApp(p["app"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{"text": Instructions(p["app"], "", p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
+	case "setRepo":
+		if _, err := LookupApp(p["app"]); err != nil {
+			return data(nil, err)
+		}
+		if !repoRE.MatchString(p["repo"]) {
+			return data(nil, fmt.Errorf("repo must look like owner/name"))
+		}
+		setAppRepo(p["app"], p["repo"])
+		return data(map[string]any{}, nil)
 	case "services":
 		return data(ServicesOverview(), nil)
 	case "bind":

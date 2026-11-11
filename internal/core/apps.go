@@ -89,7 +89,10 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	if _, err := addTokenLocked(o.Name, "created with the app", tok); err != nil {
 		return "", err
 	}
-	return createdText(o, tok, DeployBase(h.S)), nil
+	if o.Repo != "OWNER/REPO" {
+		setAppRepo(o.Name, o.Repo)
+	}
+	return Instructions(o.Name, tok, ""), nil
 }
 
 // DeployBase is the deploy API's base URL: the dashboard's address, or the IP fallback (self-signed).
@@ -99,65 +102,6 @@ func DeployBase(s config.Settings) string {
 		return "https://" + d.Host + "/api/v1/sites/"
 	}
 	return "https://" + s.SSHHost + ":" + d.IPPort + "/api/v1/sites/"
-}
-
-func createdText(o CreateOpts, token, base string) string {
-	warn := ""
-	if strings.Contains(strings.TrimPrefix(base, "https://"), ":") {
-		warn = "\n(The dashboard has no address yet, so this uses the IP with a self-signed certificate, which curl refuses.\nSet the dashboard's address on its Domains page, then use https://<that address>/api/v1/sites/ instead.)\n"
-	}
-	return fmt.Sprintf(`
-================ 1. GitHub secret ================
-
-On your laptop, run this and paste the token below when it asks:
-
-  gh secret set NOOK_TOKEN -R %[1]s
-
-%[2]s
-
-(Shown once; the server keeps only its hash. Make more or revoke on the dashboard: %[3]s → Deploy.)
-
-================ 2. Workflow: .github/workflows/deploy.yml ================
-
-name: deploy
-on:
-  push:
-    branches: [main]
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-concurrency:
-  group: deploy-${{ github.event.pull_request.number || github.ref }}
-env:
-  NOOK: %[4]s%[3]s        # site: "%[3]s", or a hostname like client.com (needs a grant)
-  NOOK_TOKEN: ${{ secrets.NOOK_TOKEN }}
-  PR: ${{ github.event.pull_request.number }}
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - if: github.event.action == 'closed'
-        run: curl -fsS -X DELETE -H "Authorization: Bearer $NOOK_TOKEN" "$NOOK?pr=$PR"
-      - if: github.event.action != 'closed'
-        uses: actions/checkout@v4
-      - if: github.event.action != 'closed'
-        run: npm ci && npm run build      # your build; skip for plain files
-      - if: github.event.action != 'closed'
-        run: |
-          tar -C dist -czf site.tgz .     # folder to publish; an executable "run" makes it a running app
-          curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.tgz "$NOOK${PR:+?pr=$PR}"
-%[5]s
-Pushes to main deploy the site; pull requests deploy a preview and remove it when closed.
-Any CI works the same way: it's one HTTPS POST of a .tar.gz.
-
-================ 3. Runtime environment ================
-
-Set it on the server (dashboard → %[3]s → Environment, or nook-admin env set %[3]s KEY), or send it with
-the deploy from GitHub secrets, which replaces that site's "sent by deploys" values each time:
-
-  curl ... -F site=@site.tgz -F "env.DATABASE_URL=$DATABASE_URL" "$NOOK"     (or -F env=@prod.env)
-
-Running apps also get $PORT, $SITE and $SITE_HOST.
-`, o.Repo, token, o.Name, base, warn)
 }
 
 // Delete removes everything an app has. confirm must equal the name.

@@ -49,7 +49,7 @@ function NewApp(props: { defaults: Overview["defaults"]; onDone: () => void }) {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
     const f = Object.fromEntries(new FormData(form));
-    const r = await runCmd(`Created ${f.name}`, "/api/apps", f, "The NOOK_TOKEN secret below holds the deploy key and is shown once. Add it to the repo now.");
+    const r = await runCmd(`Created ${f.name}`, "/api/apps", f, "The deploy token below is shown once: add it to the repo as NOOK_TOKEN now. The rest of these instructions are on the app's Deploy page any time.");
     if (r?.ok) form.reset();
     props.onDone();
   };
