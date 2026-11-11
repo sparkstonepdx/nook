@@ -30,3 +30,26 @@ func TestHostOfAndPreview(t *testing.T) {
 		t.Fatal("Preview")
 	}
 }
+
+func TestPreviewOf(t *testing.T) {
+	for _, c := range []struct {
+		name, base string
+		pr         int
+		ok         bool
+	}{
+		{"myapp-pr-12", "myapp", 12, true},
+		{"pr-3.client.com", "client.com", 3, true},
+		{"client.com", "", 0, false},
+		{"my-pr-app", "", 0, false},
+		{"pr-x.client.com", "", 0, false},
+		{"a-pr-0", "", 0, false},
+	} {
+		b, n, ok := PreviewOf(c.name)
+		if b != c.base || n != c.pr || ok != c.ok {
+			t.Errorf("PreviewOf(%q) = %q %d %v", c.name, b, n, ok)
+		}
+		if ok && Preview(b, n) != c.name {
+			t.Errorf("round trip %q", c.name)
+		}
+	}
+}

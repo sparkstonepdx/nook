@@ -221,6 +221,8 @@ func (s *Server) routes() []route {
 			for _, k := range keys {
 				if v, ok := c.params[k]; ok {
 					m[k] = v
+				} else if v := c.r.URL.Query().Get(k); v != "" {
+					m[k] = v
 				} else if v, ok := c.body[k]; ok {
 					switch t := v.(type) {
 					case string:
@@ -244,8 +246,8 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/sites/:site/:op", false, helper("siteOp", p("app", "site", "op"), true))
 	add("GET", "/api/apps/:app/sites/:site/logs", false, helper("siteLogs", p("app", "site"), false))
 	add("GET", "/api/apps/:app/sync-log", false, helper("syncLog", p("app"), false))
-	add("GET", "/api/apps/:app/env", false, helper("envGet", p("app"), false))
-	add("POST", "/api/apps/:app/env", false, helper("envApply", p("app"), true))
+	add("GET", "/api/apps/:app/env", false, helper("envGet", p("app", "scope"), false))
+	add("POST", "/api/apps/:app/env", false, helper("envApply", p("app", "scope"), true))
 	add("GET", "/api/domains", false, helper("domains", nil, false))
 	add("POST", "/api/grants", false, helper("grant", p("op", "app", "kind", "name"), true))
 	add("POST", "/api/default-domain", false, helper("setDefaultDomain", p("domain"), true))

@@ -79,7 +79,20 @@ gh secret set NOOK_TOKEN -R sparkstonepdx/myapp     # paste the nook1:... value 
 
 ![Environment](docs/dashboard-env.png)
 
-Env vars and secrets for running apps live on the server in `/etc/nook/env/NAME.env` (root-only), not in GitHub. A `secrets.env` the app's own deploys write into its folder still works: `app sync` copies it, reading it as the app user, and `nook-admin env` values override it. Set them on the dashboard (app → Environment, including pasting a .env block) or with `nook-admin env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by nook-admin and can't be overridden.
+Env vars and secrets for running apps live on the server under `/etc/nook/env/` (root-only), in scopes:
+
+| Scope | Set with | Loaded into |
+|---|---|---|
+| whole app | dashboard (app → Environment) or `nook-admin env set APP KEY` | every running site of the app |
+| site | `--site SITE` | that site only |
+| previews | `--previews SITE` | every PR preview of that site, not the site itself |
+| sent by deploys | the deploy request (`-F env=...`) | that site; replaced on each deploy |
+
+- **Load order:** a running site loads, later wins: the app's own `secrets.env`, then the whole app, then previews (previews only), then sent by deploys, then its site scope.
+- **Previews:** they never get their base site's own values, so production secrets stay out of PR builds unless you put them in the app or previews scope.
+- **Saving:** restarts the running sites that load that scope.
+- **The app's own `secrets.env`:** if the app's deploys write one into its folder, `nook-admin sync` copies it, reading it as the app user.
+- **Set by nook:** `PORT`, `HOST`, `SITE` and `SITE_HOST`, which can't be overridden.
 
 ## Domains
 

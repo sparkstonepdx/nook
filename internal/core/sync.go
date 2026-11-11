@@ -402,9 +402,7 @@ Slice=nook-%[1]s.slice
 WorkingDirectory=%[4]s/sites/%[2]s
 ExecStart=%[4]s/sites/%[2]s/run
 Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s SITE_HOST=%[3]s
-EnvironmentFile=-%[6]s/%[1]s.user.env
-EnvironmentFile=-%[6]s/%[1]s.env
-Restart=always
+%[9]sRestart=always
 RestartSec=2
 StandardOutput=append:%[7]s
 StandardError=append:%[7]s
@@ -437,12 +435,21 @@ CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target
-`, app, site, host, u.Home, port, config.EnvDir, log, config.AppsDir)
+`, app, site, host, u.Home, port, config.EnvDir, log, config.AppsDir, envLines(app, site))
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil
 	}
 	return true, config.WriteAtomic(path, []byte(text), 0o644)
+}
+
+// envLines is the unit's EnvironmentFile lines, general to specific (see env.go).
+func envLines(app, site string) string {
+	var b strings.Builder
+	for _, f := range envFiles(app, site) {
+		b.WriteString("EnvironmentFile=-" + f + "\n")
+	}
+	return b.String()
 }
 
 func (h *Host) stopUnit(app, site string) {
@@ -451,6 +458,7 @@ func (h *Host) stopUnit(app, site string) {
 	os.Remove(filepath.Join("/etc/systemd/system", unit))
 	os.Remove(filepath.Join(config.StateDir, app+"--"+site+".id"))
 	dropPort(app, site)
+	dropSiteEnv(app, site)
 }
 
 func lastLines(s string, n int) string {

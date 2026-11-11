@@ -193,7 +193,7 @@ func (h *Host) Delete(app, confirm string) error {
 	} {
 		os.Remove(p)
 	}
-	for _, p := range []string{filepath.Join(config.WWWDir, app), filepath.Join(config.LogDir, app)} {
+	for _, p := range []string{filepath.Join(config.WWWDir, app), filepath.Join(config.LogDir, app), filepath.Join(config.EnvDir, app)} {
 		os.RemoveAll(p)
 	}
 	if states, _ := filepath.Glob(filepath.Join(config.StateDir, app+"--*")); states != nil {
