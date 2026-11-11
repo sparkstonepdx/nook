@@ -1,6 +1,7 @@
-// deploy-action is the GitHub Action behind sparkstonepdx/nook/deploy: it uploads a folder over SSH
-// (rsync into builds/<site>/), publishes it with `nook site deploy`, and handles PR previews.
-// It needs only the runner's ssh and rsync. The deploy key is written to a private temp file and never printed.
+// deploy-action is the GitHub Action behind sparkstonepdx/nook/deploy. With a deploy token ("nook_...") it
+// uses the dashboard's HTTPS deploy API (api.go). With an older SSH token ("nook1:...") it uploads over SSH
+// (rsync into builds/<site>/) and publishes with `nook site deploy`. Either way it handles PR previews, the
+// PR comment and the job summary. Tokens and keys are never printed.
 package main
 
 import (
@@ -44,6 +45,10 @@ type event struct {
 }
 
 func main() {
+	if raw := in("TOKEN"); strings.HasPrefix(raw, "nook_") {
+		apiMain(raw)
+		return
+	}
 	tok, err := token.Decode(in("TOKEN"))
 	if err != nil {
 		fail("%v", err)

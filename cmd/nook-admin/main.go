@@ -44,6 +44,8 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
       add --site SITE (one site) or --previews SITE (that site's PR previews); default: the whole app
   nook-admin invite                              one-time dashboard login link
   nook-admin update [--check]                    install the latest signed release
+  nook-admin token create APP [--label L]        a deploy token (shown once) for the deploy API
+  nook-admin token list [APP] | rm APP ID
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
 
@@ -122,6 +124,9 @@ func main() {
 	case "env":
 		needRoot()
 		envCmd(h, args)
+	case "token":
+		needRoot()
+		tokenCmd(args)
 	case "invite":
 		needRoot()
 		store, err := web.OpenStore(config.WebStateDir)
@@ -297,4 +302,46 @@ func serveWeb() {
 	log.Printf("dashboard on %s", config.WebSocket)
 	syscall.Umask(0o077)
 	die(srv.Serve(ln))
+}
+
+func tokenCmd(args []string) {
+	usage := fmt.Errorf("usage: nook-admin token create APP [--label L] | list [APP] | rm APP ID")
+	if len(args) == 0 {
+		die(usage)
+	}
+	switch args[0] {
+	case "create":
+		label := ""
+		var pos []string
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--label" && i+1 < len(args) {
+				label = args[i+1]
+				i++
+				continue
+			}
+			pos = append(pos, args[i])
+		}
+		if len(pos) != 1 {
+			die(usage)
+		}
+		tok, info, err := core.TokenCreate(pos[0], label)
+		die(err)
+		fmt.Printf("%s\n\nDeploy token %s for %s. Shown once; store it as the NOOK_TOKEN secret.\nDeploy URL: %s<site>\n", tok, info.ID, pos[0], core.DeployBase(config.Load()))
+	case "list":
+		app := ""
+		if len(args) > 1 {
+			app = args[1]
+		}
+		for _, t := range core.TokenList(app) {
+			fmt.Printf("%s  %-16s %s  %s\n", t.ID, t.App, time.Unix(t.Created, 0).Format("2006-01-02"), t.Label)
+		}
+	case "rm", "revoke":
+		if len(args) != 3 {
+			die(usage)
+		}
+		die(core.TokenRevoke(args[1], args[2]))
+		fmt.Println("revoked")
+	default:
+		die(usage)
+	}
 }

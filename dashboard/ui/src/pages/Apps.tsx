@@ -83,6 +83,7 @@ function AppCard(props: { app: App; after: (p?: Promise<unknown>) => void }) {
         </div>
         <span class="spacer" />
         <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/env`}>Environment</A>
+        <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/deploy`}>Deploy</A>
         <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/sync-log`}>Sync log</A>
         <button class="btn btn-secondary btn-sm" onClick={() => props.after(runCmd(`Synced ${a().name}`, `/api/apps/${a().name}/sync`))}>Sync</button>
       </header>
