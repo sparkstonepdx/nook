@@ -85,3 +85,8 @@ details.hint summary { cursor: pointer; }
 .btn-sm::after, details summary::after { content: ""; position: absolute; inset: min(0px, (100% - var(--tap)) / 2); }
 details summary { position: relative; padding-block: var(--space-xs); }
 .page-head .back-row { flex-basis: 100%; }
+.verified { gap: var(--space-2xs); }
+.row-main .badge { vertical-align: middle; font-size: var(--text-xs); }
+.sub-head { align-items: flex-start; }
+.sub-head .hint { flex: 1 1 20rem; margin: 0; }
+.row-main .text-error { color: var(--bad); }

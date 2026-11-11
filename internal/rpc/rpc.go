@@ -41,7 +41,7 @@ var Ops = map[string]bool{
 	"updateStatus": true, "updateNow": true, "updateCheck": true,
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
 	"services": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "ciEnv": true,
-	"store": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true,
+	"store": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "catalogRemove": true,
 }
 
 const maxMessage = 4 << 20

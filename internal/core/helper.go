@@ -17,6 +17,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/rpc"
+	"github.com/sparkstonepdx/nook/internal/update"
 )
 
 // UpdateHooks lets the updater plug into the helper without an import cycle.
@@ -227,9 +228,24 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "store":
 		return data(StoreOverview(p["refresh"] == "1"), nil)
 	case "storeInstall":
-		return command("nook-admin store install "+p["id"]+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
-			return h.StoreInstall(InstallOpts{ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
+		from := ""
+		if p["catalog"] != "" && p["catalog"] != OfficialCatalog {
+			from = " --catalog " + p["catalog"]
+		}
+		return command("nook-admin store install "+p["id"]+from+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
+			return h.StoreInstall(InstallOpts{Catalog: p["catalog"], ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
 		})
+	case "catalogAdd":
+		s, err := AddCatalog(p["source"])
+		if err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{"id": s.ID, "name": s.Name, "fingerprint": update.KeyFingerprint(s.Key)}, nil)
+	case "catalogRemove":
+		if err := RemoveCatalog(p["id"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{}, nil)
 	case "storeUpdate":
 		return command("nook-admin store update "+p["app"], func(h *Host) error { return h.StoreUpdate(p["app"], p["force"] == "true") })
 	case "storePolicy":

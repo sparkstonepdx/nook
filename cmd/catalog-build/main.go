@@ -1,8 +1,9 @@
-// catalog-build turns catalog/apps/*.json into the store's index.json: for each app it finds the release
-// (the latest, or a pinned tag) on GitHub, picks the asset for each architecture by pattern, downloads it
-// and pins its sha256. Run by .github/workflows/catalog.yml, which then signs and publishes the index.
+// catalog-build turns a catalog repo's apps/*.json into the store's index.json: for each app it finds the
+// release (the latest, or a pinned tag) on GitHub, picks the asset for each architecture by pattern,
+// downloads it and pins its sha256. Catalog repos (sparkstonepdx/nook-catalog, and community ones copied
+// from it) run it from their workflow, then sign and publish the index to their dist branch.
 //
-//	go run ./cmd/catalog-build catalog/apps > index.json      (GITHUB_TOKEN raises the API rate limit)
+//	go run github.com/sparkstonepdx/nook/cmd/catalog-build@latest apps > index.json   (GITHUB_TOKEN raises the API rate limit)
 package main
 
 import (
