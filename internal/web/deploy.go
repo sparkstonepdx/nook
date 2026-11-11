@@ -15,6 +15,7 @@ import (
 
 	"github.com/sparkstonepdx/nook/internal/envfile"
 	"github.com/sparkstonepdx/nook/internal/rpc"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 // The deploy API: plain HTTPS with a per-app bearer token, for any CI.
@@ -29,7 +30,7 @@ import (
 // Cookies are never read here, so there's nothing for a browser to forge.
 
 var (
-	bearerRE  = regexp.MustCompile(`^nook_[A-Za-z0-9_-]{43}$`)
+	bearerRE  = token.APIRE
 	siteRoute = regexp.MustCompile(`^/api/v1/sites/([^/]+)$`)
 	envKeyRE  = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )

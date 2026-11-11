@@ -82,6 +82,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 - **SITE:** `blog` means `blog.<default domain>`. `client.com` means exactly that hostname, which needs a grant.
 - **Responses:** JSON `{app, site, url, live, kind, output}`. A deploy that didn't go live (not granted, reserved or taken) answers `409`, so `curl --fail-with-body` fails the job.
 - **What an upload may contain:** only plain files and folders. Symlinks, devices and paths outside the folder are refused, and the previous build stays up.
+- **Tokens carry the address:** a token looks like `nook_admin.example.com/AbC…`, so the action needs only the secret. Tokens made before nook 1.6 (`nook_AbC…`) still work, with the action's `url` input. A token keeps the address it was made with; if the dashboard moves, make a new one or pass `url`.
 - **Tokens:** make and revoke them on the dashboard's **Deploy** page (it also shows a ready-to-paste workflow) or with `nook-admin token create APP`. A token is shown once; the server keeps only its SHA-256. Wrong tokens are throttled like logins.
 - **How it works:** the dashboard (unprivileged) spools the upload to an unlinked file and hands the open file to the root helper. The helper checks the token and unpacks the file as the app user. Root never opens a path the upload chose.
 
@@ -90,8 +91,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 ```yaml
 - uses: sparkstonepdx/nook/deploy@v1
   with:
-    url: https://admin.example.com
-    token: ${{ secrets.NOOK_TOKEN }}
+    token: ${{ secrets.NOOK_TOKEN }}   # carries the server's address
     site: myapp        # or a hostname like client.com (needs a grant)
     dir: dist          # an executable "run" inside makes it a running app
     env: |             # optional, from secrets

@@ -108,8 +108,7 @@ Prefer a PR comment with the preview link? Use the action instead of the curl st
 
       - uses: sparkstonepdx/nook/deploy@v1
         with:
-          url: %[3]s
-          token: ${{ secrets.NOOK_TOKEN }}
+          token: ${{ secrets.NOOK_TOKEN }}   # carries this server's address
           site: %[1]s
           dir: dist
     (with permissions: pull-requests: write)
