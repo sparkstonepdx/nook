@@ -1,5 +1,11 @@
 # nook
 
+## 1.4.0
+
+### Minor Changes
+
+- faf682c: Add the Store: install apps from a signed catalog, with per-app update policies, health checks and automatic rollback.
+
 ## 1.3.0
 
 ### Minor Changes
