@@ -44,7 +44,7 @@ func DeployTarget(site, pr string) (string, error) {
 type DeployResult struct {
 	App    string `json:"app"`
 	Site   string `json:"site"`
-	URL    string `json:"url"`
+	URL    string `json:"url,omitempty"`
 	Live   bool   `json:"live"`
 	Kind   string `json:"kind,omitempty"`
 	Output string `json:"output"`
@@ -96,10 +96,13 @@ func DispatchDeploy(req *rpc.Request, file *os.File) rpc.Response {
 	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", filepath.Join(u.Home, "builds", name), name)
 	res := DeployResult{App: app, Site: name, URL: "https://" + names.HostOf(name, s.BaseDomain), Output: strings.TrimSpace(string(out))}
 	res.Live = err == nil
-	if strings.Contains(res.Output, "(running app)") {
-		res.Kind = "running"
-	} else if strings.Contains(res.Output, "(static)") {
-		res.Kind = "static"
+	for marker, kind := range map[string]string{"(running app)": "web", "(static)": "static", "(cron job)": "cron", "(service)": "service"} {
+		if strings.Contains(res.Output, marker) {
+			res.Kind = kind
+		}
+	}
+	if res.Kind == "cron" || res.Kind == "service" {
+		res.URL = "" // no hostname
 	}
 	var ee *exec.ExitError
 	if err != nil && !(errors.As(err, &ee) && ee.ExitCode() == 2) {

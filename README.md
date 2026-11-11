@@ -7,8 +7,18 @@ Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. 
 /srv/nook/<app>/sites/client.com/        ->  https://client.com   (+ www.client.com redirecting to it)
 /srv/nook/<app>/sites/pr-12.client.com/  ->  https://pr-12.client.com
     index.html, 200.html, 404.html       static site (200.html = SPA fallback, 404.html = not found)
-    run (executable)                     running app: a sandboxed service on $PORT, Caddy proxies to it
+    run (executable)                     something that runs (sandboxed, as the app's user); nook.json picks the kind
 ```
+
+| Kind (`nook.json`) | What `run` is | Gets |
+|---|---|---|
+| `web` (default, no `nook.json` needed) | an HTTP server on `$PORT` | the site's hostname, routed by Caddy |
+| `service` | a long-running server on `$PORT`, like a database | a port only: no hostname, no route; only its own app can reach it (other apps once bound, #12) |
+| `cron` | a job: `{"kind": "cron", "schedule": "*/15 * * * *", "timeout": 600}` | runs on the schedule; no port, no hostname |
+
+- **Schedules** can be 5-field cron, `@daily`-style shorthands, or a systemd calendar expression. Cron's "day of month OR day of week" combination is refused rather than silently changed.
+- **What every kind gets:** all three get the same env scopes, logs and sandbox.
+- **Cron jobs:** a run that's still going after `timeout` (default 1 hour) is stopped. Runs missed while the server was down happen at the next boot. The dashboard shows the last result and the next run, and **Run now** (or `nook site restart NAME`) runs one immediately.
 
 Two static Go binaries, no runtime dependencies:
 
