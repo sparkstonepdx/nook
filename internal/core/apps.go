@@ -124,7 +124,12 @@ func (h *Host) Delete(app, confirm string) error {
 		return fmt.Errorf("type the app name to confirm")
 	}
 	if _, err := LookupApp(app); err != nil {
-		return err
+		// No user: either it's already gone, or a create or delete stopped part way. Clean up what's left
+		// of it rather than refusing.
+		if !names.App(app) || !appLeftovers(app) {
+			return fmt.Errorf("there's no app named %s: it may already be deleted", app)
+		}
+		h.say("%s has no user, so it was only partly created or deleted: removing what's left", app)
 	}
 	unlock, err := Lock()
 	if err != nil {
@@ -164,8 +169,10 @@ func (h *Host) Delete(app, confirm string) error {
 		}
 	}
 	systemctl("reload", "caddy")
-	if out, err := Run("userdel", "nook-"+app); err != nil {
-		h.say("userdel: %s", strings.TrimSpace(out))
+	if _, err := LookupApp(app); err == nil {
+		if out, err := Run("userdel", "nook-"+app); err != nil {
+			h.say("userdel: %s", strings.TrimSpace(out))
+		}
 	}
 	os.RemoveAll(filepath.Join(config.AppsDir, app)) // RemoveAll never follows symlinks
 	h.say("deleted %s. Remove its NOOK_TOKEN secret from the GitHub repo too.", app)
@@ -197,4 +204,17 @@ func (h *Host) Grant(add bool, g grants.Grant) error {
 		return err
 	}
 	return h.Sync(g.App)
+}
+
+// appLeftovers reports whether anything of app is still on disk.
+func appLeftovers(app string) bool {
+	for _, p := range []string{
+		filepath.Join(config.AppsDir, app), filepath.Join(config.WWWDir, app), filepath.Join(config.CaddyAppsDir, app+".caddy"),
+		filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app), filepath.Join("/etc/systemd/system", "nook-"+app+".slice"),
+	} {
+		if _, err := os.Lstat(p); err == nil {
+			return true
+		}
+	}
+	return len(TokenList(app)) > 0
 }
