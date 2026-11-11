@@ -3,7 +3,7 @@ import { A } from "@solidjs/router";
 import { api, runCmd } from "../api";
 import { StatusBadge, Field } from "../components";
 
-type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string };
+type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][] };
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
@@ -83,6 +83,7 @@ function AppCard(props: { app: App; after: (p?: Promise<unknown>) => void }) {
         </div>
         <span class="spacer" />
         <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/env`}>Environment</A>
+        <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/deploy`}>Deploy</A>
         <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/sync-log`}>Sync log</A>
         <button class="btn btn-secondary btn-sm" onClick={() => props.after(runCmd(`Synced ${a().name}`, `/api/apps/${a().name}/sync`))}>Sync</button>
       </header>
@@ -96,11 +97,20 @@ function AppCard(props: { app: App; after: (p?: Promise<unknown>) => void }) {
                 {(s) => (
                   <tr>
                     <td>
-                      <a class="link" href={`https://${s.host}`} target="_blank" rel="noopener">{s.host}</a>{" "}
-                      <Show when={!s.live}><StatusBadge ok={false} title="Skipped by sync: not granted, reserved, or claimed by another app. Run Sync to see why.">not live</StatusBadge></Show>
+                      <Show when={s.host} fallback={<span class="mono">{s.name}</span>}>
+                        <a class="link" href={`https://${s.host}`} target="_blank" rel="noopener">{s.host}</a>{" "}
+                        <Show when={!s.live}><StatusBadge ok={false} title="Skipped by sync: not granted, reserved, or claimed by another app. Run Sync to see why.">not live</StatusBadge></Show>
+                      </Show>
                     </td>
-                    <td><span class="badge">{s.running ? "app" : "static"}</span></td>
+                    <td><span class="badge" title={{ static: "static files", web: "HTTP server at this hostname", service: "runs on its port with no hostname; reachable only by apps bound to it", cron: "runs on a schedule" }[s.kind]}>{s.kind}</span></td>
                     <td>
+                      <Show when={s.kind === "cron"}>
+                        <span class="mono">{s.schedule}</span>
+                        <div class="text-secondary">
+                          <Show when={s.ActiveState === "active" || s.ActiveState === "activating"} fallback={<>last: {s.last && s.last !== "n/a" ? <StatusBadge ok={s.result === "success"}>{s.result}</StatusBadge> : "never run"}</>}>running now</Show>
+                          <Show when={s.next && s.next !== "n/a"}> · next {s.next}</Show>
+                        </div>
+                      </Show>
                       <Show when={s.running}>
                         <StatusBadge ok={s.ActiveState === "active"}>{s.ActiveState || "?"}</StatusBadge>{" "}
                         <span class="text-secondary">{s.SubState}{s.MainPID && s.MainPID !== "0" ? ` · pid ${s.MainPID}` : ""}{Number(s.NRestarts) ? ` · ${s.NRestarts} restarts` : ""}</span>
@@ -110,13 +120,17 @@ function AppCard(props: { app: App; after: (p?: Promise<unknown>) => void }) {
                     <td>{mb(s.MemoryCurrent)}</td>
                     <td>
                       <div class="actions">
+                        <Show when={s.kind === "cron"}>
+                          <button class="btn btn-secondary btn-sm" onClick={() => siteOp(s, "restart", `Started ${s.name}`)}>Run now</button>
+                          <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/sites/${encodeURIComponent(s.name)}/logs`}>Logs</A>
+                        </Show>
                         <Show when={s.running}>
                           <button class="btn btn-secondary btn-sm" onClick={() => siteOp(s, "restart", `Restarted ${s.host}`)}>Restart</button>
                           <button class="btn btn-secondary btn-sm" onClick={() => siteOp(s, "stop", `Stopped ${s.host}`)}>Stop</button>
                           <button class="btn btn-secondary btn-sm" onClick={() => siteOp(s, "start", `Started ${s.host}`)}>Start</button>
                           <A class="btn btn-ghost btn-sm" href={`/apps/${a().name}/sites/${encodeURIComponent(s.name)}/logs`}>Logs</A>
                         </Show>
-                        <button class="btn btn-ghost btn-sm" onClick={() => confirm_(`Remove ${s.host}? This deletes sites/${s.name}.`) && siteOp(s, "remove", `Removed ${s.host}`)}>Remove</button>
+                        <button class="btn btn-ghost btn-sm" onClick={() => confirm_(`Remove ${s.host || s.name}? This deletes sites/${s.name}.`) && siteOp(s, "remove", `Removed ${s.host || s.name}`)}>Remove</button>
                       </div>
                     </td>
                   </tr>

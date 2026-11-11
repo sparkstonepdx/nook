@@ -49,6 +49,36 @@ func Preview(site string, pr int) string {
 	return site + "-pr-" + itoa(pr)
 }
 
+// PreviewOf reverses Preview: "myapp-pr-12" -> ("myapp", 12), "pr-12.client.com" -> ("client.com", 12).
+func PreviewOf(name string) (base string, pr int, ok bool) {
+	num := func(s string) (int, bool) {
+		if s == "" || len(s) > 9 {
+			return 0, false
+		}
+		n := 0
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				return 0, false
+			}
+			n = n*10 + int(c-'0')
+		}
+		return n, n > 0
+	}
+	if strings.HasPrefix(name, "pr-") {
+		if i := strings.IndexByte(name, '.'); i > 3 {
+			if n, ok := num(name[3:i]); ok {
+				return name[i+1:], n, true
+			}
+		}
+	}
+	if i := strings.LastIndex(name, "-pr-"); i > 0 && !strings.Contains(name, ".") {
+		if n, ok := num(name[i+4:]); ok {
+			return name[:i], n, true
+		}
+	}
+	return "", 0, false
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

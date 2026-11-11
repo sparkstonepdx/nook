@@ -2,8 +2,14 @@ name: nook deploy
 description: Publish a folder to a nook server. Pull requests get a preview site that is removed when the PR closes.
 inputs:
   token:
-    description: The NOOK_TOKEN secret printed by `nook-admin create`
+    description: The NOOK_TOKEN secret (a deploy token from the dashboard's Deploy page or `nook-admin token create`)
     required: true
+  url:
+    description: The dashboard's address, like https://admin.example.com (needed for deploy tokens)
+    required: false
+  env:
+    description: KEY=value lines sent with the deploy (from secrets); they replace this site's "sent by deploys" env
+    required: false
   site:
     description: Site name. "blog" = blog.<default domain>; "client.com" = exactly that hostname (needs a grant)
     required: true
@@ -51,6 +57,8 @@ runs:
       shell: bash
       env:
         INPUT_TOKEN: ${{ inputs.token }}
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_ENV: ${{ inputs.env }}
         INPUT_SITE: ${{ inputs.site }}
         INPUT_DIR: ${{ inputs.dir }}
         INPUT_PREVIEWS: ${{ inputs.previews }}

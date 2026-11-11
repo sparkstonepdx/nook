@@ -7,8 +7,18 @@ Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. 
 /srv/nook/<app>/sites/client.com/        ->  https://client.com   (+ www.client.com redirecting to it)
 /srv/nook/<app>/sites/pr-12.client.com/  ->  https://pr-12.client.com
     index.html, 200.html, 404.html       static site (200.html = SPA fallback, 404.html = not found)
-    run (executable)                     running app: a sandboxed service on $PORT, Caddy proxies to it
+    run (executable)                     something that runs (sandboxed, as the app's user); nook.json picks the kind
 ```
+
+| Kind (`nook.json`) | What `run` is | Gets |
+|---|---|---|
+| `web` (default, no `nook.json` needed) | an HTTP server on `$PORT` | the site's hostname, routed by Caddy |
+| `service` | a long-running server on `$PORT`, like a database | a port only: no hostname, no route; only its own app can reach it (other apps once bound, #12) |
+| `cron` | a job: `{"kind": "cron", "schedule": "*/15 * * * *", "timeout": 600}` | runs on the schedule; no port, no hostname |
+
+- **Schedules** can be 5-field cron, `@daily`-style shorthands, or a systemd calendar expression. Cron's "day of month OR day of week" combination is refused rather than silently changed.
+- **What every kind gets:** all three get the same env scopes, logs and sandbox.
+- **Cron jobs:** a run that's still going after `timeout` (default 1 hour) is stopped. Runs missed while the server was down happen at the next boot. The dashboard shows the last result and the next run, and **Run now** (or `nook site restart NAME`) runs one immediately.
 
 Two static Go binaries, no runtime dependencies:
 
@@ -51,35 +61,66 @@ Apps and sites (state, port, memory, live or not), create/delete, sync, restart/
 - **Reaching it:** always at `https://<ip>:8443` (self-signed), plus the address set on the Domains page.
 - **UI source:** `dashboard/ui` (Solid + `@sparkstone/css`), built into `dashboard/public` and embedded in the binary. Change it with `cd dashboard/ui && npm install && npm run dev` (proxies `/api` to `/tmp/nook-web.sock`; serve one there with `systemd-socket-activate -l /tmp/nook-web.sock nook-admin web` as the `nook-web` user), then `npm run build` and commit `dashboard/public`. CI fails if it's stale.
 
-## Deploying from GitHub
+## Deploying
 
-`app create` prints everything a repo needs: one secret and one workflow step.
+Any CI deploys with one HTTPS request to the dashboard's address: POST the folder as a `.tar.gz`, with a per-app deploy token.
 
 ```sh
-gh secret set NOOK_TOKEN -R sparkstonepdx/myapp     # paste the nook1:... value when it asks
+tar -C dist -czf site.tgz .
+curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.tgz https://admin.example.com/api/v1/sites/blog
 ```
+
+| Request | Does |
+|---|---|
+| `POST /api/v1/sites/SITE` | publish; the body is the `.tar.gz`, raw or as multipart field `site` |
+| `POST /api/v1/sites/SITE?pr=12` | publish the preview `SITE-pr-12` (or `pr-12.client.com` for a hostname) |
+| `-F env=@prod.env`, `-F "env.KEY=$VALUE"` | in the same POST: replace that site's "sent by deploys" env (see Runtime environment) |
+| `DELETE /api/v1/sites/SITE?pr=12` | remove the preview (or a site, without `pr`) |
+| `GET /api/v1/whoami` | which app the token deploys |
+
+- **SITE:** `blog` means `blog.<default domain>`. `client.com` means exactly that hostname, which needs a grant.
+- **Responses:** JSON `{app, site, url, live, kind, output}`. A deploy that didn't go live (not granted, reserved or taken) answers `409`, so `curl --fail-with-body` fails the job.
+- **What an upload may contain:** only plain files and folders. Symlinks, devices and paths outside the folder are refused, and the previous build stays up.
+- **Tokens:** make and revoke them on the dashboard's **Deploy** page (it also shows a ready-to-paste workflow) or with `nook-admin token create APP`. A token is shown once; the server keeps only its SHA-256. Wrong tokens are throttled like logins.
+- **How it works:** the dashboard (unprivileged) spools the upload to an unlinked file and hands the open file to the root helper. The helper checks the token and unpacks the file as the app user. Root never opens a path the upload chose.
+
+`nook-admin create` prints the token and a complete workflow (push deploys, PR previews, cleanup on close) that uses only `curl`. For a PR comment with the preview URL and an HTTPS check, use the action instead:
 
 ```yaml
 - uses: sparkstonepdx/nook/deploy@v1
   with:
-    nook: ${{ secrets.NOOK_TOKEN }}
-    dir: dist          # an executable "run" inside makes it a running app
+    url: https://admin.example.com
+    token: ${{ secrets.NOOK_TOKEN }}
     site: myapp        # or a hostname like client.com (needs a grant)
+    dir: dist          # an executable "run" inside makes it a running app
+    env: |             # optional, from secrets
+      DATABASE_URL=${{ secrets.DATABASE_URL }}
 ```
 
-- Pushes deploy to `site`. Pull requests deploy a preview (`myapp-pr-12`, or `pr-12.client.com` for a hostname), comment its URL on the PR, and remove it when the PR closes. Turn that off with `previews: "false"`.
-- The job fails with a clear message if the site didn't go live (not granted, reserved, or taken). It waits until the new build is the one being served, then until the site answers over HTTPS (a new hostname needs its certificate first; that part only warns).
-- The action is a small Go program in this repo (`cmd/deploy-action`, standard library only), built on the runner. GitHub-hosted runners already have Go; on others it installs it with `actions/setup-go`. It needs `ssh` and `rsync` on the runner.
-- Outputs: `url`, `site`. The workflow needs `permissions: pull-requests: write` for the PR comment.
-- Pin `@v1` (moved on each release) or a commit SHA, never `@main`.
-- While this repo is private, turn on **Settings → Actions → General → Access → "Accessible from repositories in the sparkstonepdx organization"** once.
-- `NOOK_TOKEN` is `nook1:` + base64url JSON (host, port, user, app folder, default domain, known_hosts, deploy key). The action pins the server's host key; it never disables host key checking.
+- **Previews:** pull requests deploy a preview, comment its URL on the PR, and remove it when the PR closes. Turn that off with `previews: "false"`.
+- **Outputs and permissions:** the outputs are `url` and `site`. The PR comment needs `permissions: pull-requests: write`.
+- **Pinning:** pin `@v1` (moved on each release) or a commit SHA, never `@main`.
+- **What the action is:** a small Go program in this repo (`cmd/deploy-action`, standard library only), built on the runner.
+- **Older tokens:** `nook1:` tokens (SSH deploy keys, from before the deploy API) still work with the action, through the SSH gate.
 
 ## Runtime environment
 
 ![Environment](docs/dashboard-env.png)
 
-Env vars and secrets for running apps live on the server in `/etc/nook/env/NAME.env` (root-only), not in GitHub. A `secrets.env` the app's own deploys write into its folder still works: `app sync` copies it, reading it as the app user, and `nook-admin env` values override it. Set them on the dashboard (app → Environment, including pasting a .env block) or with `nook-admin env`. Saving restarts the app's running sites. `PORT`, `HOST`, `SITE`, `SITE_HOST` are set by nook-admin and can't be overridden.
+Env vars and secrets for running apps live on the server under `/etc/nook/env/` (root-only), in scopes:
+
+| Scope | Set with | Loaded into |
+|---|---|---|
+| whole app | dashboard (app → Environment) or `nook-admin env set APP KEY` | every running site of the app |
+| site | `--site SITE` | that site only |
+| previews | `--previews SITE` | every PR preview of that site, not the site itself |
+| sent by deploys | the deploy request (`-F env=...`) | that site; replaced on each deploy |
+
+- **Load order:** a running site loads, later wins: the app's own `secrets.env`, then the whole app, then previews (previews only), then sent by deploys, then its site scope.
+- **Previews:** they never get their base site's own values, so production secrets stay out of PR builds unless you put them in the app or previews scope.
+- **Saving:** restarts the running sites that load that scope.
+- **The app's own `secrets.env`:** if the app's deploys write one into its folder, `nook-admin sync` copies it, reading it as the app user.
+- **Set by nook:** `PORT`, `HOST`, `SITE` and `SITE_HOST`, which can't be overridden.
 
 ## Domains
 
@@ -142,7 +183,8 @@ Running sites listen on `127.0.0.1:$PORT` and also get `$SITE`, `$SITE_HOST`, `$
 
 - **App folders are `700`.** Static sites are served from a root-owned copy in `/var/lib/nook/www/`, made by `nook` running as the app user (so symlinks only reach what that app could already read); only plain files and folders are unpacked.
 - **Root never opens a path inside an app's folder by name.** Directory reads use `O_NOFOLLOW` file descriptors and `*at()` calls; reading an app's own files happens as the app user. Env files, logs and deploy keys live in root-owned places.
-- **Deploy keys can only deploy.** sshd forces every `nook-*` login through `nook ssh-gate`, which allows an rsync upload into `builds/<name>/` and `nook site …`: no shell, no port forwarding, no downloads. Keys live in `/etc/ssh/nook-keys/`, which apps can't write.
+- **Deploy tokens only deploy.** They reach nothing but the deploy API, for their own app; the token decides the app, not the request.
+- **Old SSH deploy keys can only deploy.** sshd forces every `nook-*` login through `nook ssh-gate`, which allows an rsync upload into `builds/<name>/` and `nook site …`: no shell, no port forwarding, no downloads. Keys live in `/etc/ssh/nook-keys/`, which apps can't write.
 - **Running sites are sandboxed.** `ProtectSystem=strict`, only their own folder visible, no new privileges, no capabilities, may only listen on their own `$PORT`, single files capped at 2 GB.
 - **Apps can't reach each other's ports.** An nftables table (`/etc/nook/firewall.nft`, rewritten whenever ports change, loaded at boot by `nook-firewall.service`) lets only root, Caddy and the owning app connect to a port in the app range, including through the server's own public IP. Talk to another app through its public URL. `nook-admin firewall` reloads it. Restarting Debian's `nftables.service` flushes every table; nook's reloads right after.
 - **Caddy's admin API is on a root-only unix socket**, not `localhost:2019`, so apps can't rewrite Caddy's config.

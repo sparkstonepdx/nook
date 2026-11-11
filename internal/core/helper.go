@@ -78,16 +78,23 @@ func handleHelper(c *net.UnixConn, webUID int) {
 		json.NewEncoder(c).Encode(rpc.Response{Error: "not allowed", Status: 403})
 		return
 	}
-	req, err := rpc.ReadRequest(c)
+	req, file, err := rpc.ReadRequestFile(c)
 	if err != nil {
 		json.NewEncoder(c).Encode(rpc.Response{Error: "bad request", Status: 400})
 		return
+	}
+	if file != nil {
+		defer file.Close()
 	}
 	if !rpc.Ops[req.Op] {
 		json.NewEncoder(c).Encode(rpc.Response{Error: "unknown operation", Status: 404})
 		return
 	}
 	log.Printf("%s: %s %v", req.By, req.Op, req.Params)
+	if req.Op == "deploy" {
+		json.NewEncoder(c).Encode(DispatchDeploy(req, file))
+		return
+	}
 	json.NewEncoder(c).Encode(Dispatch(req))
 }
 
@@ -151,7 +158,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		out, err := SyncLog(p["app"])
 		return data(map[string]string{"log": out}, err)
 	case "envGet":
-		v, err := EnvList(p["app"])
+		scope, err := ParseScope(p["scope"])
+		if err != nil {
+			return data(nil, err)
+		}
+		v, err := EnvList(p["app"], scope)
 		if err != nil {
 			return data(nil, err)
 		}
@@ -164,9 +175,17 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		for _, s := range RunningSites(p["app"]) {
 			running = append(running, s)
 		}
-		return data(map[string]any{"vars": vars, "running": running}, nil)
+		affected := sitesUsing(p["app"], scope)
+		if affected == nil {
+			affected = []string{}
+		}
+		return data(map[string]any{"vars": vars, "running": running, "affected": affected, "scope": scope.String(), "scopes": EnvScopes(p["app"]), "sites": SiteNames(p["app"])}, nil)
 	case "envApply":
-		return command("nook-admin env apply "+p["app"], func(h *Host) error { return h.EnvApply(p["app"], req.Set, req.Unset, true) })
+		scope, err := ParseScope(p["scope"])
+		if err != nil {
+			return data(nil, err)
+		}
+		return command("nook-admin env apply "+p["app"]+" --scope "+scope.String(), func(h *Host) error { return h.EnvApply(p["app"], scope, req.Set, req.Unset, true) })
 	case "grant":
 		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"]}
 		verb := "add"
@@ -185,6 +204,28 @@ func Dispatch(req *rpc.Request) rpc.Response {
 			return data(nil, errors.New("updates aren't available"))
 		}
 		return data(UpdateHooks.Status())
+	case "tokenApp":
+		return tokenApp(req)
+	case "undeploy":
+		return undeploy(req)
+	case "tokenList":
+		if _, err := LookupApp(p["app"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{"tokens": TokenList(p["app"]), "base": DeployBase(config.Load())}, nil)
+	case "tokenCreate":
+		tok, info, err := TokenCreate(p["app"], p["label"])
+		if err != nil {
+			return data(nil, err)
+		}
+		log.Printf("%s: created deploy token %s for %s", req.By, info.ID, p["app"])
+		return data(map[string]any{"token": tok, "info": info}, nil)
+	case "tokenRevoke":
+		if err := TokenRevoke(p["app"], p["id"]); err != nil {
+			return data(nil, err)
+		}
+		log.Printf("%s: revoked deploy token %s of %s", req.By, p["id"], p["app"])
+		return data(map[string]any{}, nil)
 	case "updateNow":
 		if UpdateHooks.Now == nil {
 			return data(nil, errors.New("updates aren't available"))

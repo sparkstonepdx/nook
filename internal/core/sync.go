@@ -160,7 +160,8 @@ func (h *Host) syncLocked(app string) error {
 	others := otherCaddyFiles(app)
 	var published []caddyfile.Site
 	hosts := map[string]bool{}
-	seen := map[string]bool{}
+	seen, cronSeen := map[string]bool{}, map[string]bool{}
+	var cronChanged, cronRunNow []string
 	reload := false
 	var restartUnits []string
 
@@ -192,6 +193,65 @@ func (h *Host) syncLocked(app string) error {
 			h.say("%s: '%s' is not a valid subdomain or hostname, skipped", app, s)
 			continue
 		}
+		run, rerr := sites.lstatIn(s, "run")
+		runs := rerr == nil && isFile(run) && run.Mode&0o111 != 0
+		kind := "static"
+		var man Manifest
+		if runs {
+			m, err := u.readManifest(s)
+			if err != nil {
+				h.say("%s: %s: %v; left as it was", app, s, err)
+				seen[s], cronSeen[s] = true, true // keep whatever runs now
+				continue
+			}
+			man, kind = m, m.Kind
+		}
+		if kind != "cron" && fileExists(filepath.Join("/etc/systemd/system", CronUnit(app, s)+".timer")) {
+			h.stopCron(app, s)
+			reload = true
+		}
+		switch kind {
+		case "cron":
+			if _, err := os.Stat(filepath.Join("/etc/systemd/system", UnitName(app, s))); err == nil {
+				h.stopUnit(app, s)
+			}
+			changed, err := h.writeCron(u, s, man)
+			if err != nil {
+				h.say("%s: %s: %v", app, s, err)
+				continue
+			}
+			seen[s], cronSeen[s] = true, true
+			if changed {
+				cronChanged = append(cronChanged, s)
+			}
+			if restartMarks[s] {
+				cronRunNow = append(cronRunNow, s)
+			}
+			h.say("%s: cron %s (%s)", app, s, man.calendar)
+			continue
+		case "service":
+			port, err := h.allocPort(app, s)
+			if err != nil {
+				h.say("%s: %s: %v", app, s, err)
+				continue
+			}
+			changed, err := h.writeUnit(u, s, "", port)
+			if err != nil {
+				h.say("%s: %s: %v", app, s, err)
+				continue
+			}
+			seen[s] = true
+			reload = reload || changed
+			idFile := filepath.Join(config.StateDir, app+"--"+s+".id")
+			id := strconv.FormatUint(st.Ino, 10)
+			old, _ := os.ReadFile(idFile)
+			if changed || string(old) != id || restartMarks[s] || envChanged {
+				restartUnits = append(restartUnits, UnitName(app, s))
+				os.WriteFile(idFile, []byte(id), 0o600)
+			}
+			h.say("%s: service %s on port %d (no hostname)", app, s, port)
+			continue
+		}
 		host := names.HostOf(s, h.S.BaseDomain)
 		if why := h.refuse(app, host, dash.Host, gl, others); why != "" {
 			h.say("%s: %s, skipped", app, why)
@@ -206,8 +266,7 @@ func (h *Host) syncLocked(app string) error {
 		}
 		seen[s], hosts[host] = true, true
 
-		run, rerr := sites.lstatIn(s, "run")
-		if rerr == nil && isFile(run) && run.Mode&0o111 != 0 {
+		if runs {
 			port, err := h.allocPort(app, s)
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
@@ -266,17 +325,31 @@ func (h *Host) syncLocked(app string) error {
 			reload = true
 		}
 	}
+	// cron jobs whose folder is gone
+	for _, s := range CronJobs(app) {
+		if !cronSeen[s] {
+			h.stopCron(app, s)
+			reload = true
+		}
+	}
 	// static copies whose site is gone or now runs
 	if copies, err := os.ReadDir(filepath.Join(config.WWWDir, app)); err == nil {
 		for _, c := range copies {
-			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 {
+			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 || cronSeen[c.Name()] {
 				os.RemoveAll(filepath.Join(config.WWWDir, app, c.Name()))
 				os.Remove(filepath.Join(config.StateDir, app+"--"+c.Name()+".static"))
 			}
 		}
 	}
-	if reload {
+	if reload || len(cronChanged) > 0 {
 		systemctl("daemon-reload")
+	}
+	for _, s := range cronChanged {
+		systemctl("enable", CronUnit(app, s)+".timer")
+		systemctl("restart", CronUnit(app, s)+".timer")
+	}
+	for _, s := range cronRunNow {
+		systemctl("start", "--no-block", CronUnit(app, s)+".service")
 	}
 	for _, unit := range restartUnits {
 		systemctl("enable", unit)
@@ -391,6 +464,10 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int) (bool, error) 
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
+	desc, siteHost := host, " SITE_HOST="+host
+	if host == "" { // a service: no hostname
+		desc, siteHost = site+" (service)", ""
+	}
 	text := fmt.Sprintf(`[Unit]
 Description=%[3]s (app %[1]s)
 After=nook-firewall.service
@@ -401,22 +478,32 @@ Group=nook-%[1]s
 Slice=nook-%[1]s.slice
 WorkingDirectory=%[4]s/sites/%[2]s
 ExecStart=%[4]s/sites/%[2]s/run
-Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s SITE_HOST=%[3]s
-EnvironmentFile=-%[6]s/%[1]s.user.env
-EnvironmentFile=-%[6]s/%[1]s.env
-Restart=always
+Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s%[6]s
+%[8]sRestart=always
 RestartSec=2
 StandardOutput=append:%[7]s
 StandardError=append:%[7]s
 # a single file can't fill the disk
 LimitFSIZE=2G
-# network: may only listen on its own port; ordinary sockets only
-SocketBindAllow=tcp:%[5]d
-SocketBindDeny=any
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+%[9]s
+[Install]
+WantedBy=multi-user.target
+`, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
+		sandbox(u.Home, app, fmt.Sprintf("SocketBindAllow=tcp:%d\nSocketBindDeny=any\n", port)))
+	old, _ := os.ReadFile(path)
+	if string(old) == text {
+		return false, nil
+	}
+	return true, config.WriteAtomic(path, []byte(text), 0o644)
+}
+
+// sandbox is the confinement every app process gets; bind says which ports it may listen on.
+func sandbox(home, app, bind string) string {
+	return `# network: may only listen on its own port (if any); ordinary sockets only
+` + bind + `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # sandbox: only its own app folder is visible and writable
-TemporaryFileSystem=%[8]s:ro
-BindPaths=%[4]s
+TemporaryFileSystem=` + config.AppsDir + `:ro
+BindPaths=` + home + `
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
@@ -434,15 +521,16 @@ RestrictRealtime=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 CapabilityBoundingSet=
+`
+}
 
-[Install]
-WantedBy=multi-user.target
-`, app, site, host, u.Home, port, config.EnvDir, log, config.AppsDir)
-	old, _ := os.ReadFile(path)
-	if string(old) == text {
-		return false, nil
+// envLines is the unit's EnvironmentFile lines, general to specific (see env.go).
+func envLines(app, site string) string {
+	var b strings.Builder
+	for _, f := range envFiles(app, site) {
+		b.WriteString("EnvironmentFile=-" + f + "\n")
 	}
-	return true, config.WriteAtomic(path, []byte(text), 0o644)
+	return b.String()
 }
 
 func (h *Host) stopUnit(app, site string) {
@@ -451,6 +539,7 @@ func (h *Host) stopUnit(app, site string) {
 	os.Remove(filepath.Join("/etc/systemd/system", unit))
 	os.Remove(filepath.Join(config.StateDir, app+"--"+site+".id"))
 	dropPort(app, site)
+	dropSiteEnv(app, site)
 }
 
 func lastLines(s string, n int) string {

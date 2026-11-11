@@ -3,7 +3,10 @@
 package main
 
 import (
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -59,6 +62,19 @@ func main() {
 		if err := tarx.Pack(os.Args[2], os.Stdout, max); err != nil {
 			die("%v", err)
 		}
+	case "internal-unpack": // run by nook-admin as this app's user: a deploy API upload (tar.gz on stdin) into builds/NAME
+		if len(os.Args) != 4 || !names.Site(os.Args[2]) {
+			os.Exit(2)
+		}
+		max, _ := strconv.ParseInt(os.Args[3], 10, 64)
+		if err := unpack(os.Args[2], os.Stdin, max); err != nil {
+			die("%v", err)
+		}
+	case "internal-read-manifest": // run by nook-admin as this app's user: sites/SITE/nook.json
+		if len(os.Args) != 3 || !names.Site(os.Args[2]) {
+			os.Exit(2)
+		}
+		readCapped(filepath.Join(home(), "sites", os.Args[2], "nook.json"), 16<<10)
 	case "internal-read-env": // run by nook-admin as this app's user
 		readCapped(filepath.Join(home(), "secrets.env"), 64<<10)
 	case "internal-read-keys": // migration from the old layout, run as this app's user
@@ -80,9 +96,8 @@ func readCapped(path string, max int64) {
 		return
 	}
 	defer f.Close()
-	buf := make([]byte, max)
-	n, _ := f.Read(buf)
-	os.Stdout.Write(buf[:n])
+	b, _ := io.ReadAll(io.LimitReader(f, max))
+	os.Stdout.Write(b)
 }
 
 func home() string {
@@ -144,6 +159,21 @@ func site(args []string) int {
 		kind := "static"
 		if fi, err := os.Stat(filepath.Join(dst, "run")); err == nil && fi.Mode()&0o111 != 0 {
 			kind = "running app"
+			var m struct {
+				Kind string `json:"kind"`
+			}
+			if b, err := os.ReadFile(filepath.Join(dst, "nook.json")); err == nil && json.Unmarshal(b, &m) == nil {
+				switch m.Kind {
+				case "cron":
+					kind = "cron job"
+				case "service":
+					kind = "service"
+				}
+			}
+		}
+		if kind == "cron job" || kind == "service" { // no hostname to wait for; sync picks it up from sites/
+			fmt.Printf("deployed %s (%s)\n", s, kind)
+			return 0
 		}
 		var ino uint64
 		if fi, err := os.Stat(dst); err == nil {
@@ -253,4 +283,39 @@ func sshGate() {
 		}
 	}
 	die("nook: %v", err)
+}
+
+// unpack extracts a gzipped tar into ~/builds/NAME, replacing what was there. Only plain files and folders are
+// accepted (tarx.Extract); a broken or oversized upload leaves the previous build alone.
+func unpack(name string, r io.Reader, max int64) error {
+	builds := filepath.Join(home(), "builds")
+	if err := os.MkdirAll(builds, 0o700); err != nil {
+		return err
+	}
+	zr, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("upload isn't a .tar.gz: %v", err)
+	}
+	tmp, err := os.MkdirTemp(builds, ".upload-")
+	if err != nil {
+		return err
+	}
+	os.Remove(tmp) // Extract creates it, so nothing inside can predate the upload
+	if err := tarx.Extract(zr, tmp, max); err != nil {
+		os.RemoveAll(tmp)
+		if err == tarx.ErrTooBig {
+			return fmt.Errorf("the site is bigger than %d bytes unpacked", max)
+		}
+		return fmt.Errorf("upload: %v", err)
+	}
+	dst, old := filepath.Join(builds, name), filepath.Join(builds, ".old-"+name)
+	os.RemoveAll(old)
+	if _, err := os.Lstat(dst); err == nil {
+		os.Rename(dst, old)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	os.RemoveAll(old)
+	return nil
 }

@@ -70,3 +70,23 @@ func TestTooBig(t *testing.T) {
 		t.Fatal("expected ErrTooBig")
 	}
 }
+
+func TestExtractDotSlashAndExecBit(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	tw.WriteHeader(&tar.Header{Name: "./", Typeflag: tar.TypeDir, Mode: 0o755})
+	tw.WriteHeader(&tar.Header{Name: "./run", Typeflag: tar.TypeReg, Mode: 0o755, Size: 2})
+	tw.Write([]byte("hi"))
+	tw.WriteHeader(&tar.Header{Name: "./a/../../x", Typeflag: tar.TypeReg, Mode: 0o644, Size: 1})
+	tw.Write([]byte("x"))
+	tw.Close()
+	dst := filepath.Join(t.TempDir(), "out")
+	err := Extract(bytes.NewReader(buf.Bytes()), dst, 1<<20)
+	if err == nil {
+		t.Fatal("escape not refused")
+	}
+	fi, serr := os.Stat(filepath.Join(dst, "run"))
+	if serr != nil || fi.Mode()&0o111 == 0 {
+		t.Fatalf("run missing or not executable: %v", serr)
+	}
+}
