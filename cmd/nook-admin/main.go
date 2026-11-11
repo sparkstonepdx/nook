@@ -44,6 +44,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
       add --site SITE (one site) or --previews SITE (that site's PR previews); default: the whole app
   nook-admin invite                              one-time dashboard login link
   nook-admin update [--check]                    install the latest signed release
+  nook-admin instructions APP [--site S] [--repo OWNER/NAME] [--new-token]   how to deploy to APP, any time
   nook-admin token create APP [--label L]        a deploy token (shown once) for the deploy API
   nook-admin token list [APP] | rm APP ID
   nook-admin services [list] | install postgres | drop-db APP
@@ -130,6 +131,9 @@ func main() {
 	case "token":
 		needRoot()
 		tokenCmd(args)
+	case "instructions":
+		needRoot()
+		instructionsCmd(args)
 	case "bind":
 		needRoot()
 		bindCmd(h, args)
@@ -425,4 +429,45 @@ func servicesCmd(h *core.Host, args []string) {
 	default:
 		die(fmt.Errorf("usage: nook-admin services [list] | install postgres | drop-db APP"))
 	}
+}
+
+func instructionsCmd(args []string) {
+	usage := fmt.Errorf("usage: nook-admin instructions APP [--site SITE] [--repo OWNER/NAME] [--new-token]")
+	var pos []string
+	site, repo, newToken := "", "", false
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--site" && i+1 < len(args):
+			site = args[i+1]
+			i++
+		case args[i] == "--repo" && i+1 < len(args):
+			repo = args[i+1]
+			i++
+		case args[i] == "--new-token":
+			newToken = true
+		default:
+			pos = append(pos, args[i])
+		}
+	}
+	if len(pos) != 1 {
+		die(usage)
+	}
+	app := pos[0]
+	if _, err := core.LookupApp(app); err != nil {
+		die(err)
+	}
+	if repo != "" {
+		die(core.SetAppRepo(app, repo))
+	}
+	tok := ""
+	if newToken {
+		label := core.AppRepo(app)
+		if label == "" {
+			label = "instructions"
+		}
+		t, _, err := core.TokenCreate(app, label)
+		die(err)
+		tok = t
+	}
+	fmt.Print(core.Instructions(app, tok, site))
 }

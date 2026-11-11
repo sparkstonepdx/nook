@@ -84,7 +84,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 - **Tokens:** make and revoke them on the dashboard's **Deploy** page (it also shows a ready-to-paste workflow) or with `nook-admin token create APP`. A token is shown once; the server keeps only its SHA-256. Wrong tokens are throttled like logins.
 - **How it works:** the dashboard (unprivileged) spools the upload to an unlinked file and hands the open file to the root helper. The helper checks the token and unpacks the file as the app user. Root never opens a path the upload chose.
 
-`nook-admin create` prints the token and a complete workflow (push deploys, PR previews, cleanup on close) that uses only `curl`. For a PR comment with the preview URL and an HTTPS check, use the action instead:
+`nook-admin create` prints the token and complete setup instructions: a curl-only workflow (push deploys, PR previews, cleanup on close), the action alternative, what to publish, env and services. Get them again any time on the app's **Deploy** page or with `nook-admin instructions APP [--site S] [--repo OWNER/NAME] [--new-token]`. For a PR comment with the preview URL and an HTTPS check, use the action instead:
 
 ```yaml
 - uses: sparkstonepdx/nook/deploy@v1

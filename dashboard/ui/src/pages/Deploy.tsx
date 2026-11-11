@@ -6,40 +6,15 @@ import { Field } from "../components";
 type Token = { id: string; app: string; label: string; created: number };
 type Tokens = { tokens: Token[]; base: string };
 
-const workflow = (url: string) => `name: deploy
-on:
-  push:
-    branches: [main]
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-concurrency:
-  group: deploy-\${{ github.event.pull_request.number || github.ref }}
-env:
-  NOOK: ${url}
-  NOOK_TOKEN: \${{ secrets.NOOK_TOKEN }}
-  PR: \${{ github.event.pull_request.number }}
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - if: github.event.action == 'closed'
-        run: curl -fsS -X DELETE -H "Authorization: Bearer $NOOK_TOKEN" "$NOOK?pr=$PR"
-      - if: github.event.action != 'closed'
-        uses: actions/checkout@v4
-      - if: github.event.action != 'closed'
-        run: npm ci && npm run build
-      - if: github.event.action != 'closed'
-        run: |
-          tar -C dist -czf site.tgz .
-          curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.tgz "$NOOK\${PR:+?pr=$PR}"`;
-
 export default function DeployPage() {
   const params = useParams();
   const [data, { refetch }] = createResource(() => params.app, (app) => api<Tokens>(`/api/apps/${app}/tokens`));
   const [fresh, setFresh] = createSignal<{ token: string; info: Token } | null>(null);
-  const [site, setSite] = createSignal(params.app);
+  const [site, setSite] = createSignal("");
   const [err, setErr] = createSignal("");
-  const url = () => (data()?.base ?? "") + (site() || "SITE");
+  const [howto, { refetch: refetchHowto }] = createResource(() => [params.app, site()] as const, ([app, s]) =>
+    api<{ text: string; repo: string; sites: string[] }>(`/api/apps/${app}/instructions?site=${encodeURIComponent(s)}`));
+  const [copied, setCopied] = createSignal(false);
   const selfSigned = () => /:\d+\/api\//.test(data()?.base ?? "");
 
   return (
@@ -105,10 +80,30 @@ export default function DeployPage() {
       </section>
 
       <section class="card stack">
-        <h2>GitHub workflow</h2>
-        <Field label="Site"><input class="input mono" value={site()} onInput={(e) => setSite(e.currentTarget.value.trim())} placeholder="blog or client.com" /></Field>
-        <p class="text-secondary hint">.github/workflows/deploy.yml: pushes to main deploy the site; pull requests deploy a preview and remove it when closed.</p>
-        <pre class="output mono" style={{ "overflow-x": "auto", "white-space": "pre" }}><code>{workflow(url())}</code></pre>
+        <h2>Setup instructions</h2>
+        <p class="text-secondary hint">Everything a repo needs to deploy here: the same text <span class="mono">nook-admin create</span> printed (and <span class="mono">nook-admin instructions {params.app}</span> prints any time).</p>
+        <div class="form-row">
+          <Field label="Site">
+            <input class="input mono" list="deploy-sites" value={site()} placeholder={params.app} onChange={(e) => setSite(e.currentTarget.value.trim())} />
+            <datalist id="deploy-sites"><For each={howto()?.sites}>{(s) => <option value={s} />}</For></datalist>
+          </Field>
+          <form class="form-row" onSubmit={async (e) => {
+            e.preventDefault();
+            setErr("");
+            try {
+              await api(`/api/apps/${params.app}/repo`, { repo: String(new FormData(e.currentTarget).get("repo")).trim() });
+              refetchHowto();
+            } catch (x) { setErr((x as Error).message); }
+          }}>
+            <Field label="GitHub repo"><input class="input mono" name="repo" value={howto()?.repo ?? ""} placeholder="owner/name" /></Field>
+            <button class="btn btn-secondary">Save</button>
+          </form>
+        </div>
+        <div><button class="btn btn-ghost btn-sm" onClick={async () => {
+          await navigator.clipboard.writeText(howto()?.text ?? "");
+          setCopied(true); setTimeout(() => setCopied(false), 1500);
+        }}>{copied() ? "Copied" : "Copy all"}</button></div>
+        <pre class="output mono" style={{ "overflow-x": "auto", "white-space": "pre" }}><code>{howto()?.text}</code></pre>
       </section>
     </div>
   );
