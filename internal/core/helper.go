@@ -22,6 +22,7 @@ import (
 // UpdateHooks lets the updater plug into the helper without an import cycle.
 var UpdateHooks struct {
 	Status func() (any, error)
+	Check  func() (any, error) // ask GitHub now
 	Now    func(out *bytes.Buffer) error
 }
 
@@ -199,6 +200,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return command("nook-admin dashboard-host "+p["host"], func(h *Host) error { return h.SetDashboardHost(p["host"]) })
 	case "setIPAccess":
 		return command("nook-admin ip-access "+p["on"], func(h *Host) error { return h.SetIPAccess(p["on"] == "true") })
+	case "updateCheck":
+		if UpdateHooks.Check == nil {
+			return data(nil, errors.New("updates aren't available"))
+		}
+		return data(UpdateHooks.Check())
 	case "updateStatus":
 		if UpdateHooks.Status == nil {
 			return data(nil, errors.New("updates aren't available"))
