@@ -2,9 +2,9 @@ package core
 
 // The store (#15): install apps from a signed catalog, keep them updated by policy, roll back a broken update.
 //
-//	catalog:   release asset "catalog" of the nook repo: index.json + index.json.sig (ed25519, the same key
-//	           as nook's own releases), built by .github/workflows/catalog.yml from catalog/apps/*.json
-//	installed: /etc/nook/store.json   (app -> id, version, site, policy)
+//	catalogs:  the official one (sparkstonepdx/nook-catalog) and any community ones added on the dashboard,
+//	           each signed with its own pinned key (catalogs.go)
+//	installed: /etc/nook/store.json   (app -> catalog, id, version, site, policy)
 //	packages:  /var/lib/nook/store/APP/VERSION.tgz (root-only; the last two, for rollback)
 //
 // A catalog artifact is downloaded, checked against the sha256 the signed catalog pins, and read in
@@ -70,6 +70,11 @@ type CatalogApp struct {
 	Binary      string              `json:"binary"`          // executable's file name inside the artifact
 	Files       map[string]string   `json:"files,omitempty"` // more files for the site folder (run, config ...)
 	Artifacts   map[string]Artifact `json:"artifacts"`       // by GOARCH
+
+	// Set by nook from the catalog it was read from; whatever a catalog says here is overwritten.
+	Catalog     string `json:"catalog,omitempty"`
+	CatalogName string `json:"catalogName,omitempty"`
+	Official    bool   `json:"official,omitempty"`
 }
 
 type Catalog struct {
@@ -84,7 +89,6 @@ var (
 	sha256RE    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-func catalogCachePath() string   { return filepath.Join(config.WWWDir, "..", "catalog.json") }
 func storeDir(app string) string { return filepath.Join(config.WWWDir, "..", "store", app) }
 
 func (a CatalogApp) check() error {
@@ -140,56 +144,13 @@ func (a CatalogApp) site() string {
 	return a.ID
 }
 
-// FetchCatalog downloads and verifies the catalog, and caches it.
-func FetchCatalog() (*Catalog, error) {
-	base := update.ReleaseDownloadBase() + "/catalog/"
-	data, err := update.Download(base + "index.json")
-	if err != nil {
-		return nil, fmt.Errorf("catalog: %v", err)
+func findCatalogApp(catalog, id string) (CatalogApp, error) {
+	src, ok := catalogSource(catalog)
+	if !ok {
+		return CatalogApp{}, fmt.Errorf("the catalog it came from (%s) was removed", catalog)
 	}
-	sig, err := update.Download(base + "index.json.sig")
-	if err != nil {
-		return nil, fmt.Errorf("catalog signature: %v", err)
-	}
-	if err := update.VerifySigned(data, sig); err != nil {
-		return nil, fmt.Errorf("catalog: %v", err)
-	}
-	var c Catalog
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("catalog: %v", err)
-	}
-	var ok []CatalogApp
-	for _, a := range c.Apps {
-		if err := a.check(); err == nil {
-			ok = append(ok, a)
-		}
-	}
-	c.Apps = ok
-	c.FetchedAt = time.Now().UTC().Format(time.RFC3339)
-	b, _ := json.Marshal(c)
-	os.MkdirAll(filepath.Dir(catalogCachePath()), 0o755)
-	config.WriteAtomic(catalogCachePath(), b, 0o644)
-	return &c, nil
-}
-
-// LoadCatalog returns the cached catalog, fetching it when it's missing or over an hour old.
-func LoadCatalog() (*Catalog, error) {
-	var c Catalog
-	if b, err := os.ReadFile(catalogCachePath()); err == nil && json.Unmarshal(b, &c) == nil {
-		if t, err := time.Parse(time.RFC3339, c.FetchedAt); err == nil && time.Since(t) < time.Hour {
-			return &c, nil
-		}
-	}
-	fresh, err := FetchCatalog()
-	if err != nil && c.Apps != nil {
-		return &c, nil // offline: the last verified copy
-	}
-	return fresh, err
-}
-
-func findCatalogApp(id string) (CatalogApp, error) {
-	c, err := LoadCatalog()
-	if err != nil {
+	c, err := loadFrom(src, false)
+	if c == nil {
 		return CatalogApp{}, err
 	}
 	for _, a := range c.Apps {
@@ -197,13 +158,14 @@ func findCatalogApp(id string) (CatalogApp, error) {
 			return a, nil
 		}
 	}
-	return CatalogApp{}, fmt.Errorf("%q isn't in the catalog", id)
+	return CatalogApp{}, fmt.Errorf("%q isn't in the %s catalog", id, src.Name)
 }
 
 // ---- installed apps ----
 
 type Installed struct {
 	App       string `json:"app"`
+	Catalog   string `json:"catalog,omitempty"` // empty: the official catalog
 	ID        string `json:"id"`
 	Version   string `json:"version"`
 	Site      string `json:"site"`
@@ -401,13 +363,16 @@ func healthy(app, site string, a CatalogApp) error {
 // ---- install / update / remove ----
 
 type InstallOpts struct {
-	ID, App, Site, Policy string
-	Env                   map[string]string
+	Catalog, ID, App, Site, Policy string // Catalog: empty for the official one
+	Env                            map[string]string
 }
 
 // StoreInstall installs a catalog app as a new nook app.
 func (h *Host) StoreInstall(o InstallOpts) (err error) {
-	a, err := findCatalogApp(o.ID)
+	if o.Catalog == "" {
+		o.Catalog = OfficialCatalog
+	}
+	a, err := findCatalogApp(o.Catalog, o.ID)
 	if err != nil {
 		return err
 	}
@@ -442,6 +407,9 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			env[f.Key] = strings.NewReplacer("{site_host}", names.HostOf(o.Site, h.S.BaseDomain), "{site}", o.Site).Replace(v)
 		}
 	}
+	if !a.Official {
+		h.say("from the community catalog %s, not the official one", a.CatalogName)
+	}
 	h.say("downloading %s %s", a.Name, a.Version)
 	pkg, err := pkgFor(a)
 	if err != nil {
@@ -473,7 +441,7 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	savePackage(o.App, a.Version, pkg)
 	m := readInstalled()
 	now := time.Now().UTC().Format(time.RFC3339)
-	m[o.App] = Installed{App: o.App, ID: a.ID, Version: a.Version, Site: o.Site, Policy: o.Policy, Installed: now}
+	m[o.App] = Installed{App: o.App, Catalog: o.Catalog, ID: a.ID, Version: a.Version, Site: o.Site, Policy: o.Policy, Installed: now}
 	if err := writeInstalled(m); err != nil {
 		return err
 	}
@@ -502,7 +470,7 @@ func (h *Host) StoreUpdate(app string, force bool) error {
 	if !ok {
 		return fmt.Errorf("%s wasn't installed from the store", app)
 	}
-	a, err := findCatalogApp(rec.ID)
+	a, err := findCatalogApp(rec.Catalog, rec.ID)
 	if err != nil {
 		return err
 	}
@@ -574,11 +542,14 @@ func storeForget(app string) {
 // StoreCheck refreshes the catalog and, per app policy, updates or notifies. Run nightly. A version that
 // already failed and rolled back isn't retried automatically; you're told about it instead.
 func (h *Host) StoreCheck() error {
-	if _, err := FetchCatalog(); err != nil {
-		return err
+	var errs []string
+	for _, src := range CatalogSources() {
+		if _, err := loadFrom(src, true); err != nil {
+			errs = append(errs, err.Error())
+		}
 	}
 	for app, rec := range readInstalled() {
-		a, err := findCatalogApp(rec.ID)
+		a, err := findCatalogApp(rec.Catalog, rec.ID)
 		if err != nil || !versionNewer(a.Version, rec.Version) {
 			continue
 		}
@@ -602,6 +573,9 @@ func (h *Host) StoreCheck() error {
 			m[app] = r
 			writeInstalled(m)
 		}
+	}
+	if len(errs) > 0 {
+		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -653,43 +627,72 @@ func versionNewer(latest, current string) bool {
 // ---- for the dashboard ----
 
 type StoreView struct {
-	Catalog   []CatalogApp `json:"catalog"`
-	FetchedAt string       `json:"fetchedAt"`
-	Error     string       `json:"error,omitempty"`
-	Installed []StoreRow   `json:"installed"`
+	Catalog   []CatalogApp  `json:"catalog"` // every catalog's apps, official first
+	Catalogs  []CatalogInfo `json:"catalogs"`
+	FetchedAt string        `json:"fetchedAt"` // the official catalog's
+	Error     string        `json:"error,omitempty"`
+	Installed []StoreRow    `json:"installed"`
+}
+
+type CatalogInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Repo        string `json:"repo,omitempty"`
+	URL         string `json:"url"`
+	Official    bool   `json:"official"`
+	Fingerprint string `json:"fingerprint"`
+	Apps        int    `json:"apps"`
+	FetchedAt   string `json:"fetchedAt,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type StoreRow struct {
 	Installed
-	Name      string `json:"name"`
-	Latest    string `json:"latest"`
-	Available bool   `json:"available"`
-	URL       string `json:"url,omitempty"`
+	Name        string `json:"name"`
+	CatalogName string `json:"catalogName"`
+	Official    bool   `json:"official"`
+	Latest      string `json:"latest"`
+	Available   bool   `json:"available"`
+	URL         string `json:"url,omitempty"`
 }
 
 func StoreOverview(refresh bool) StoreView {
-	v := StoreView{Catalog: []CatalogApp{}, Installed: []StoreRow{}}
-	var c *Catalog
-	var err error
-	if refresh {
-		c, err = FetchCatalog()
-	} else {
-		c, err = LoadCatalog()
-	}
-	if err != nil {
-		v.Error = err.Error()
-	}
-	byID := map[string]CatalogApp{}
-	if c != nil {
-		v.Catalog, v.FetchedAt = c.Apps, c.FetchedAt
-		for _, a := range c.Apps {
-			byID[a.ID] = a
+	v := StoreView{Catalog: []CatalogApp{}, Catalogs: []CatalogInfo{}, Installed: []StoreRow{}}
+	byKey := map[string]CatalogApp{}
+	names_ := map[string]string{}
+	for _, src := range CatalogSources() {
+		info := CatalogInfo{ID: src.ID, Name: src.Name, Repo: src.Repo, URL: src.URL, Official: src.Official(), Fingerprint: update.KeyFingerprint(src.Key)}
+		names_[src.ID] = src.Name
+		c, err := loadFrom(src, refresh)
+		if err != nil {
+			info.Error = err.Error()
+			if src.Official() {
+				v.Error = err.Error()
+			}
 		}
+		if c != nil {
+			info.Apps, info.FetchedAt = len(c.Apps), c.FetchedAt
+			if src.Official() {
+				v.FetchedAt = c.FetchedAt
+			}
+			for _, a := range c.Apps {
+				v.Catalog = append(v.Catalog, a)
+				byKey[src.ID+"/"+a.ID] = a
+			}
+		}
+		v.Catalogs = append(v.Catalogs, info)
 	}
 	base := config.Load().BaseDomain
 	for _, rec := range readInstalled() {
-		row := StoreRow{Installed: rec, Name: rec.ID}
-		if a, ok := byID[rec.ID]; ok {
+		cat := rec.Catalog
+		if cat == "" {
+			cat = OfficialCatalog
+		}
+		row := StoreRow{Installed: rec, Name: rec.ID, CatalogName: names_[cat], Official: cat == OfficialCatalog}
+		if row.CatalogName == "" {
+			row.CatalogName = cat + " (removed)"
+		}
+		if a, ok := byKey[cat+"/"+rec.ID]; ok {
 			row.Name, row.Latest, row.Available = a.Name, a.Version, versionNewer(a.Version, rec.Version)
 			if a.kind() == "web" {
 				row.URL = "https://" + names.HostOf(rec.Site, base)

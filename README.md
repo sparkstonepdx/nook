@@ -82,6 +82,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 - **SITE:** `blog` means `blog.<default domain>`. `client.com` means exactly that hostname, which needs a grant.
 - **Responses:** JSON `{app, site, url, live, kind, output}`. A deploy that didn't go live (not granted, reserved or taken) answers `409`, so `curl --fail-with-body` fails the job.
 - **What an upload may contain:** only plain files and folders. Symlinks, devices and paths outside the folder are refused, and the previous build stays up.
+- **Tokens carry the address:** a token looks like `nook_admin.example.com/AbC…`, so the action needs only the secret. Tokens made before nook 1.6 (`nook_AbC…`) still work, with the action's `url` input. A token keeps the address it was made with; if the dashboard moves, make a new one or pass `url`.
 - **Tokens:** make and revoke them on the dashboard's **Deploy** page (it also shows a ready-to-paste workflow) or with `nook-admin token create APP`. A token is shown once; the server keeps only its SHA-256. Wrong tokens are throttled like logins.
 - **How it works:** the dashboard (unprivileged) spools the upload to an unlinked file and hands the open file to the root helper. The helper checks the token and unpacks the file as the app user. Root never opens a path the upload chose.
 
@@ -90,8 +91,7 @@ curl --fail-with-body -sS -H "Authorization: Bearer $NOOK_TOKEN" -F site=@site.t
 ```yaml
 - uses: sparkstonepdx/nook/deploy@v1
   with:
-    url: https://admin.example.com
-    token: ${{ secrets.NOOK_TOKEN }}
+    token: ${{ secrets.NOOK_TOKEN }}   # carries the server's address
     site: myapp        # or a hostname like client.com (needs a grant)
     dir: dist          # an executable "run" inside makes it a running app
     env: |             # optional, from secrets
@@ -180,17 +180,19 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 
 ## Store
 
-The dashboard's **Store** page installs ready-made apps (ntfy to start) from a signed catalog. Each one becomes an ordinary nook app with its own user, folder, limits and firewall rules.
+The dashboard's **Store** page installs ready-made apps from signed catalogs. Each one becomes an ordinary nook app with its own user, folder, limits and firewall rules.
 
-- **Trust:** the catalog is signed with the release key and pins every download's sha256. A bad signature or hash stops the install.
-- **Updates:** each app has a policy: `off`, `notify`, `patch`, `minor` (default) or `all`. The nightly check applies allowed updates and notifies about the rest.
+- **Official catalog:** [sparkstonepdx/nook-catalog](https://github.com/sparkstonepdx/nook-catalog), signed with a key compiled into nook. Its apps show a green **Verified** check.
+- **Community catalogs:** add one under **Catalogs** by its repo (`owner/repo`) or URL. Its key is read when you add it and pinned, so a later key change is refused. Every app from it names the catalog it came from, and installing one says it isn't the official catalog.
+- **Trust:** every catalog pins each download's sha256. A bad signature or hash stops the install.
+- **Updates:** each app has a policy: `off`, `notify`, `patch`, `minor` (default) or `all`. The nightly check applies allowed updates from the catalog the app came from, and notifies about the rest.
 - **Rollback:** after an update nook health-checks the app. If it doesn't come up, nook redeploys the previous version, notifies you, and skips that version from then on.
-- **Removing:** delete the app from the Apps page. Its data goes with it.
-- **Adding apps:** see [catalog/README.md](catalog/README.md). CI resolves each app's GitHub release, pins the hashes and signs the catalog.
+- **Running a catalog:** see the nook-catalog README. Copy the repo, swap in your apps, and run its key script.
 
 ```
 nook-admin store list [--refresh]
-nook-admin store install ID [--app NAME] [--site SITE] [--policy P] [--env K=V]
+nook-admin store catalogs [add OWNER/REPO|URL | rm ID]
+nook-admin store install ID [--catalog C] [--app NAME] [--site SITE] [--policy P] [--env K=V]
 nook-admin store update APP [--force]
 nook-admin store policy APP off|notify|patch|minor|all
 ```

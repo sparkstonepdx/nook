@@ -34,3 +34,21 @@ func TestRejectsOptionLikeFields(t *testing.T) {
 		}
 	}
 }
+
+func TestAPIServer(t *testing.T) {
+	secret := "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde"
+	for tok, want := range map[string]string{
+		"nook_" + secret:                   "",
+		"nook_admin.example.com/" + secret: "admin.example.com",
+		"nook_203.0.113.5:8443/" + secret:  "203.0.113.5:8443",
+	} {
+		if got, ok := APIServer(tok); !ok || got != want {
+			t.Errorf("%s: %q %v", tok, got, ok)
+		}
+	}
+	for _, bad := range []string{"nook_" + secret[:42], "nook_a b/" + secret, "nook_x/y/" + secret, "nook1:abc", "nook_https://x/" + secret} {
+		if _, ok := APIServer(bad); ok {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

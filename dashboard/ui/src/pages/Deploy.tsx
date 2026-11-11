@@ -1,7 +1,7 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { api, say } from "../api";
-import { Field, PageHead } from "../components";
+import { Field, PageHead, TokenBox } from "../components";
 
 type Token = { id: string; app: string; label: string; created: number };
 type Tokens = { tokens: Token[]; base: string };
@@ -31,12 +31,9 @@ export default function DeployPage() {
         <h2>Tokens</h2>
         <div class="stack">
           <Show when={fresh()}>
-            <div class="alert alert-success stack">
-              <span>New token <span class="mono">{fresh()!.info.id}</span>. Copy it now: it isn't shown again. Store it as the repo's <span class="mono">NOOK_TOKEN</span> secret.</span>
-              <div class="field-row">
-                <input class="input mono" readonly value={fresh()!.token} aria-label="Token" onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} />
-                <button class="btn btn-secondary" onClick={() => { navigator.clipboard?.writeText(fresh()!.token); say("Token copied"); }}>Copy</button>
-              </div>
+            <div class="card stack">
+              <p class="cmd-line"><strong>New token</strong> <span class="mono text-secondary">{fresh()!.info.id}</span></p>
+              <TokenBox token={fresh()!.token} repo={howto()?.repo} />
             </div>
           </Show>
           <ul class="list">
@@ -81,7 +78,7 @@ export default function DeployPage() {
           </div>
         </div>
         <div class="stack">
-          <p class="hint">Everything a repo needs to deploy here. <span class="mono">nook-admin instructions {params.app}</span> prints the same.</p>
+          <p class="hint">The workflow and everything else a repo needs, apart from the token above. <span class="mono">nook-admin instructions {params.app}</span> prints them too.</p>
           <form class="card" onSubmit={async (e) => {
             e.preventDefault();
             try {

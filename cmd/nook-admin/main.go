@@ -483,7 +483,7 @@ func instructionsCmd(args []string) {
 }
 
 func storeCmd(h *core.Host, args []string) {
-	usage := fmt.Errorf("usage: nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...] | update APP [--force] | policy APP P | check")
+	usage := fmt.Errorf("usage: nook-admin store [list] | catalogs [add REPO|URL | rm ID] | install ID [--catalog C] [--app NAME] [--site S] [--policy P] [--env K=V ...] | update APP [--force] | policy APP P | check")
 	if len(args) == 0 || args[0] == "list" {
 		v := core.StoreOverview(len(args) > 1 && args[1] == "--refresh")
 		if v.Error != "" {
@@ -491,7 +491,11 @@ func storeCmd(h *core.Host, args []string) {
 		}
 		fmt.Println("Catalog:")
 		for _, a := range v.Catalog {
-			fmt.Printf("  %-14s %-10s %s\n", a.ID, a.Version, a.Description)
+			from := ""
+			if !a.Official {
+				from = " [" + a.CatalogName + "]"
+			}
+			fmt.Printf("  %-14s %-10s %s%s\n", a.ID, a.Version, a.Description, from)
 		}
 		fmt.Println("Installed:")
 		for _, r := range v.Installed {
@@ -507,11 +511,35 @@ func storeCmd(h *core.Host, args []string) {
 		return
 	}
 	switch args[0] {
+	case "catalogs":
+		switch {
+		case len(args) == 1:
+			for _, c := range core.StoreOverview(false).Catalogs {
+				state := fmt.Sprintf("%d apps", c.Apps)
+				if c.Error != "" {
+					state = c.Error
+				}
+				fmt.Printf("  %-24s key %s  %s  %s\n", c.ID, c.Fingerprint, c.URL, state)
+			}
+		case len(args) == 3 && args[1] == "add":
+			s, err := core.AddCatalog(args[2])
+			die(err)
+			fmt.Printf("added %s (key %s). Its apps are listed as community apps, not reviewed by nook.\n", s.Name, update.KeyFingerprint(s.Key))
+		case len(args) == 3 && args[1] == "rm":
+			die(core.RemoveCatalog(args[2]))
+		default:
+			die(usage)
+		}
+		return
 	case "install":
 		o := core.InstallOpts{Env: map[string]string{}}
 		for i := 1; i < len(args); i++ {
 			if i+1 < len(args) {
 				switch args[i] {
+				case "--catalog":
+					o.Catalog = args[i+1]
+					i++
+					continue
 				case "--app":
 					o.App = args[i+1]
 					i++

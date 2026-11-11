@@ -19,12 +19,18 @@ import (
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 func apiMain(tok string) {
 	base := strings.TrimRight(in("URL"), "/")
+	if base == "" { // tokens from nook 1.6 on carry the dashboard's address
+		if addr, _ := token.APIServer(tok); addr != "" {
+			base = "https://" + addr
+		}
+	}
 	if base == "" {
-		fail("this token deploys over HTTPS: set the action's `url` input to the dashboard's address, like https://admin.example.com")
+		fail("this token doesn't say which server it's for (it's from before nook 1.6): set the action's `url` input to the dashboard's address, like https://admin.example.com, or make a new token")
 	}
 	base = strings.TrimSuffix(strings.TrimSuffix(base, "/api/v1/sites"), "/api/v1")
 	if !strings.HasPrefix(base, "https://") {

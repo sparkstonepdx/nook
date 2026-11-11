@@ -5,7 +5,7 @@ inputs:
     description: The NOOK_TOKEN secret (a deploy token from the dashboard's Deploy page or `nook-admin token create`)
     required: true
   url:
-    description: The dashboard's address, like https://admin.example.com (needed for deploy tokens)
+    description: The dashboard's address, like https://admin.example.com. Tokens from nook 1.6 on carry it, so it's only needed for older tokens or to override it
     required: false
   env:
     description: KEY=value lines sent with the deploy (from secrets); they replace this site's "sent by deploys" env

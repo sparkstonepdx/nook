@@ -26,7 +26,7 @@ function Shell(props: ParentProps) {
 function Authed(props: ParentProps) {
   return (
     <Show when={user() !== undefined}>
-      <Show when={user()} fallback={<Navigate href="/login" />}>
+      <Show when={user()} fallback={<Navigate href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} />}>
         <Nav />
         <Page>{props.children}</Page>
       </Show>
@@ -58,6 +58,7 @@ render(() => (
       <Route path="/services" component={Services} />
       <Route path="/store" component={Store} />
       <Route path="/store/install" component={Store} />
+      <Route path="/store/catalogs" component={Store} />
       <Route path="/users" component={Users} />
     </Route>
   </Router>

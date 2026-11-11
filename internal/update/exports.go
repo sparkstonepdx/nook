@@ -2,7 +2,13 @@ package update
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/sha256"
+	_ "embed"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -72,4 +78,35 @@ func TestServer() (string, bool) {
 		return b + "/download", true
 	}
 	return "", false
+}
+
+//go:embed catalog.pub
+var catalogPub string
+
+// OfficialCatalogKey is the public key the official store catalog is signed with (catalog.pub, or the
+// release key while that's empty).
+func OfficialCatalogKey() string {
+	if k := strings.TrimSpace(catalogPub); k != "" {
+		return k
+	}
+	return strings.TrimSpace(signingPub)
+}
+
+// VerifyWith checks a detached base64 ed25519 signature over data with a base64 public key.
+func VerifyWith(pubB64 string, data, sig []byte) error {
+	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(pubB64))
+	if err != nil || len(pub) != ed25519.PublicKeySize {
+		return errors.New("the catalog's public key is malformed")
+	}
+	s, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sig)))
+	if err != nil || !ed25519.Verify(pub, data, s) {
+		return errors.New("signature doesn't match its key: refusing it")
+	}
+	return nil
+}
+
+// KeyFingerprint is a short, readable id for a base64 public key: the first 16 hex characters of its sha256.
+func KeyFingerprint(pubB64 string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(pubB64)))
+	return hex.EncodeToString(sum[:8])
 }

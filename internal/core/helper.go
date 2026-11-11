@@ -17,6 +17,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/rpc"
+	"github.com/sparkstonepdx/nook/internal/update"
 )
 
 // UpdateHooks lets the updater plug into the helper without an import cycle.
@@ -135,13 +136,18 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "domains":
 		return data(h.Domains(), nil)
 	case "createApp":
-		var created string
+		// The dashboard shows the token on its own, with a copy button and the gh command, so the output
+		// here is the rest of the instructions.
+		var tok string
 		r := command("nook-admin create "+p["name"], func(h *Host) error {
-			out, err := h.Create(CreateOpts{Name: p["name"], Memory: p["memory"], CPU: p["cpu"], Tasks: p["tasks"], Repo: p["repo"]})
-			created = out
+			var err error
+			tok, err = h.CreateToken(CreateOpts{Name: p["name"], Memory: p["memory"], CPU: p["cpu"], Tasks: p["tasks"], Repo: p["repo"]})
 			return err
 		})
-		r.Out += created
+		if r.OK {
+			r.Out += InstructionsNoToken(p["name"], "")
+			r.Data, _ = json.Marshal(map[string]string{"token": tok, "repo": AppRepo(p["name"])})
+		}
 		return r
 	case "deleteApp":
 		return command("nook-admin delete "+p["app"], func(h *Host) error { return h.Delete(p["app"], p["confirm"]) })
@@ -214,7 +220,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)
 		}
-		return data(map[string]any{"text": Instructions(p["app"], "", p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
+		return data(map[string]any{"text": InstructionsNoToken(p["app"], p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
 	case "setRepo":
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)
@@ -227,9 +233,24 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "store":
 		return data(StoreOverview(p["refresh"] == "1"), nil)
 	case "storeInstall":
-		return command("nook-admin store install "+p["id"]+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
-			return h.StoreInstall(InstallOpts{ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
+		from := ""
+		if p["catalog"] != "" && p["catalog"] != OfficialCatalog {
+			from = " --catalog " + p["catalog"]
+		}
+		return command("nook-admin store install "+p["id"]+from+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
+			return h.StoreInstall(InstallOpts{Catalog: p["catalog"], ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
 		})
+	case "catalogAdd":
+		s, err := AddCatalog(p["source"])
+		if err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{"id": s.ID, "name": s.Name, "fingerprint": update.KeyFingerprint(s.Key)}, nil)
+	case "catalogRemove":
+		if err := RemoveCatalog(p["id"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{}, nil)
 	case "storeUpdate":
 		return command("nook-admin store update "+p["app"], func(h *Host) error { return h.StoreUpdate(p["app"], p["force"] == "true") })
 	case "storePolicy":

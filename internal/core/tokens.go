@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
-// Deploy tokens: "nook_" + 43 base64url characters (32 random bytes). /etc/nook/tokens (root-only) keeps
-// only their SHA-256, one per line: "hash app created_unix label".
+// Deploy tokens: "nook_" + the dashboard's address + "/" + 43 base64url characters (32 random bytes); see
+// internal/token/api.go. /etc/nook/tokens (root-only) keeps only their SHA-256, one per line:
+// "hash app created_unix label".
 
-var tokenRE = regexp.MustCompile(`^nook_[A-Za-z0-9_-]{43}$`)
+var tokenRE = token.APIRE
 
 var labelRE = regexp.MustCompile(`^[A-Za-z0-9 ._@/:-]{0,40}$`)
 
@@ -99,7 +101,15 @@ func newToken() (string, error) {
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
-	return "nook_" + base64.RawURLEncoding.EncodeToString(raw), nil
+	// the address deploys go to, as DeployBase gives it: the dashboard's hostname, or IP:port before it has one
+	addr := strings.TrimSuffix(strings.TrimPrefix(DeployBase(config.Load()), "https://"), "/api/v1/sites/")
+	if _, ok := token.APIServer("nook_" + addr + "/" + strings.Repeat("A", 43)); !ok {
+		addr = ""
+	}
+	if addr != "" {
+		addr += "/"
+	}
+	return "nook_" + addr + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 // TokenList lists app's tokens (all apps when app is "").

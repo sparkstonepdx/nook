@@ -152,7 +152,10 @@ export function Sheet(props: { open: boolean; title: string; onClose: () => void
       window.removeEventListener("popstate", onPop);
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
-      if (pushed) { pushed = false; history.back(); }
+      // Step back over our own history entry, unless something navigated past it: a link in the sheet
+      // unmounts the page before the router pushes the new URL, so look once that's happened.
+      if (pushed) setTimeout(() => { if (history.state?.sheet) history.back(); });
+      pushed = false;
     });
   });
   const close = () => props.onClose();
@@ -230,3 +233,28 @@ export function PageHead(props: { title: JSX.Element; back?: { href: string; lab
 }
 
 export { useUpdate };
+
+// A deploy token, shown once: the token with its own Copy, and the gh command that stores it in the repo,
+// apart from the setup instructions (which never contain it).
+export function TokenBox(props: { token: string; repo?: string }) {
+  const repo = () => props.repo || "OWNER/REPO";
+  const gh = () => `gh secret set NOOK_TOKEN --repo ${repo()} --body '${props.token}'`;
+  const copy = (text: string, what: string) => { navigator.clipboard?.writeText(text); say(`${what} copied`); };
+  return (
+    <div class="token-box stack">
+      <div class="alert alert-warning"><span>Shown once: the server keeps only its hash. Store it as the repo's <span class="mono">NOOK_TOKEN</span> secret now.</span></div>
+      <Field label="Deploy token">
+        <div class="field-row">
+          <input class="input mono" readonly value={props.token} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} />
+          <button type="button" class="btn btn-secondary" onClick={() => copy(props.token, "Token")}>Copy</button>
+        </div>
+      </Field>
+      <Field label="Or store it with gh" hint={props.repo ? undefined : "Put your repo in place of OWNER/REPO, or set the repo on the Deploy page."}>
+        <div class="field-row">
+          <input class="input mono" readonly value={gh()} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} />
+          <button type="button" class="btn btn-secondary" onClick={() => copy(gh(), "Command")}>Copy</button>
+        </div>
+      </Field>
+    </div>
+  );
+}
