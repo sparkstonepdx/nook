@@ -21,9 +21,11 @@ import (
 // chosen by sites/SITE/nook.json: {"kind": "cron", "schedule": "*/15 * * * *", "timeout": 600}.
 
 type Manifest struct {
-	Kind     string `json:"kind"`
-	Schedule string `json:"schedule,omitempty"`
-	Timeout  int    `json:"timeout,omitempty"` // cron: seconds before a run is killed (default 3600, max 86400)
+	Kind     string                 `json:"kind"`
+	Schedule string                 `json:"schedule,omitempty"`
+	Timeout  int                    `json:"timeout,omitempty"`  // cron: seconds before a run is killed (default 3600, max 86400)
+	Needs    []string               `json:"needs,omitempty"`    // services this site wants bound (#12)
+	Provides map[string]ProvideSpec `json:"provides,omitempty"` // services: interfaces it implements
 	calendar string
 }
 
@@ -39,6 +41,9 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		return m, fmt.Errorf("nook.json: %v", err)
+	}
+	if err := checkServices(&m); err != nil {
+		return m, err
 	}
 	switch m.Kind {
 	case "", "web":

@@ -21,6 +21,7 @@ func FirewallRules(s config.Settings) string {
 			elems = append(elems, fmt.Sprintf("%d . %d", p.Port, u.UID))
 		}
 	}
+	elems = append(elems, bindingFirewall()...)
 	sort.Strings(elems)
 	trusted := []string{"0"}
 	if u, err := user.Lookup("caddy"); err == nil {

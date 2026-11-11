@@ -181,7 +181,7 @@ func (s *Server) routes() []route {
 			if params != nil {
 				req.Params = params(c)
 			}
-			if op == "envApply" {
+			if op == "envApply" || op == "bind" {
 				req.Set, req.Unset = map[string]string{}, []string{}
 				if m, ok := c.body["set"].(map[string]any); ok {
 					for k, v := range m {
@@ -246,6 +246,9 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/sites/:site/:op", false, helper("siteOp", p("app", "site", "op"), true))
 	add("GET", "/api/apps/:app/sites/:site/logs", false, helper("siteLogs", p("app", "site"), false))
 	add("GET", "/api/apps/:app/sync-log", false, helper("syncLog", p("app"), false))
+	add("GET", "/api/services", false, helper("services", nil, false))
+	add("POST", "/api/services/bind", false, helper("bind", p("app", "interface", "provider"), true))
+	add("POST", "/api/services/unbind", false, helper("unbind", p("app", "interface"), true))
 	add("GET", "/api/apps/:app/tokens", false, helper("tokenList", p("app"), false))
 	add("POST", "/api/apps/:app/tokens", false, helper("tokenCreate", p("app", "label"), false))
 	add("POST", "/api/apps/:app/tokens/:id/revoke", false, helper("tokenRevoke", p("app", "id"), false))

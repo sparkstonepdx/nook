@@ -13,8 +13,8 @@ import (
 
 // Env scopes, from general to specific. A running site loads, in order (later wins):
 //
-//	app's own ~/secrets.env  <  app (dashboard)  <  previews of its base site (previews only)
-//	                         <  its deploy env (sent with the deploy)  <  site (dashboard)
+//	app's own ~/secrets.env  <  app (dashboard)  <  service bindings (#12)  <  previews of its base site
+//	(previews only)  <  its deploy env (sent with the deploy)  <  its clients, if it provides a service  <  site
 //
 // Previews never load their base site's own env, so a PR build doesn't get production secrets unless you
 // put them in the app scope or the previews scope.
@@ -51,11 +51,11 @@ func (s Scope) path(app string) string {
 
 // envFiles is the EnvironmentFile list for one site, in load order.
 func envFiles(app, site string) []string {
-	files := []string{filepath.Join(config.EnvDir, app+".user.env"), Scope{Kind: "app"}.path(app)}
+	files := []string{filepath.Join(config.EnvDir, app+".user.env"), Scope{Kind: "app"}.path(app), servicesEnvPath(app)}
 	if base, _, ok := names.PreviewOf(site); ok {
 		files = append(files, Scope{"previews", base}.path(app))
 	}
-	return append(files, Scope{"deploy", site}.path(app), Scope{"site", site}.path(app))
+	return append(files, Scope{"deploy", site}.path(app), providerEnvPath(app, site), Scope{"site", site}.path(app))
 }
 
 // EnvList returns the values in one scope (root-owned files under /etc/nook/env).

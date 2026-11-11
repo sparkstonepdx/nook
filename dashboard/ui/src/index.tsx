@@ -10,6 +10,7 @@ import Invite from "./pages/Invite";
 import Apps from "./pages/Apps";
 import Logs from "./pages/Logs";
 import Domains from "./pages/Domains";
+import Services from "./pages/Services";
 import Users from "./pages/Users";
 import Env from "./pages/Env";
 import Deploy from "./pages/Deploy";
@@ -42,6 +43,7 @@ render(() => (
       <Route path="/apps/:app/env" component={Env} />
       <Route path="/apps/:app/deploy" component={Deploy} />
       <Route path="/domains" component={Domains} />
+      <Route path="/services" component={Services} />
       <Route path="/users" component={Users} />
     </Route>
   </Router>

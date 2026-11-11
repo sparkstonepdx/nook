@@ -40,6 +40,7 @@ var Ops = map[string]bool{
 	"grant": true, "setDefaultDomain": true, "setDashboardHost": true, "setIPAccess": true,
 	"updateStatus": true, "updateNow": true,
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
+	"services": true, "bind": true, "unbind": true,
 }
 
 const maxMessage = 4 << 20
