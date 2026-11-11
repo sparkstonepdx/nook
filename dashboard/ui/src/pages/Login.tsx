@@ -17,14 +17,17 @@ export default function Login() {
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return (
-    <main class="auth card">
-      <h1>nook</h1>
+    <main class="auth">
+      <p class="brand">nook</p>
+      <div class="card">
+      <h1>Log in</h1>
       <form onSubmit={submit}>
         <ErrorAlert error={error()} />
         <Field label="Username"><input class="input" name="user" autocomplete="username" required autofocus /></Field>
         <Field label="Password"><input class="input" name="password" type="password" autocomplete="current-password" required /></Field>
-        <button class="btn btn-primary" disabled={busy()}>Log in</button>
+        <button class="btn" disabled={busy()}>Log in</button>
       </form>
+      </div>
     </main>
   );
 }

@@ -1,0 +1,39 @@
+/* Reference: a reading nook. Linen paper on an oak shelf, indigo cloth-bound books, warm lamplight.
+   Proposal for sign-off (build-docs DECISIONS.md: every app starts from a physical reference).
+   These are @sparkstone/css 4's reference knobs; everything else derives from them. */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2) format("woff2-variations");
+}
+
+@font-face {
+  font-family: "Literata Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 900;
+  src: url(../node_modules/@fontsource-variable/literata/files/literata-latin-wght-normal.woff2) format("woff2-variations");
+}
+
+:root {
+  /* indigo book cloth, on warm linen */
+  --primary: oklch(0.45 0.12 268);
+  --neutral: oklch(0.6 0.02 75);
+
+  --font: "Inter Variable", Inter, system-ui, sans-serif;
+  --display: "Literata Variable", Georgia, serif;
+  --display-weight: 650;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* soft paper corners, a hairline, and a lift like a book standing off the shelf */
+  --radius-box: 0.625rem;
+  --radius-field: 0.5rem;
+  --radius-selector: 0.25rem;
+  --border-width: 1px;
+  --card-shadow: 0 1px 1px oklch(0.3 0.03 60 / 0.05), 0 2px 8px oklch(0.3 0.03 60 / 0.06);
+  --card-pad: var(--space-lg);
+  --card-gap: var(--space-lg);
+}

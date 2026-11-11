@@ -1,7 +1,7 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { A, useParams, useSearchParams } from "@solidjs/router";
 import { api, runCmd } from "../api";
-import { Field } from "../components";
+import { Field, PageHead } from "../components";
 
 type Env = { vars: { key: string; value: string }[]; running: string[]; affected: string[]; scope: string; scopes: string[]; sites: string[] };
 
@@ -39,69 +39,66 @@ export default function EnvPage() {
   const apply = async (title: string, body: { set?: Record<string, string>; unset?: string[] }) => { await runCmd(title, `/api/apps/${params.app}/env`, { ...body, scope: scope() }); refetch(); };
 
   return (
-    <div class="stack">
-      <div class="page-head">
-        <A class="btn btn-ghost btn-sm" href="/">← Apps</A>
-        <h1>{params.app}: environment</h1>
-      </div>
-      <section class="card">
-        <Field label="Scope">
-          <select class="select" value={scope()} onChange={(e) => setSearch({ scope: e.currentTarget.value === "app" ? undefined : e.currentTarget.value })}>
-            <For each={scopes()}>{(s) => <option value={s}>{label(s)}</option>}</For>
-          </select>
-        </Field>
-        <p class="text-secondary hint">
-          {explain[kind()]} Saving restarts the running sites that load it
-          <Show when={data()?.affected.length} fallback=" (none are running right now)"> ({data()!.affected.join(", ")})</Show>.
-          Load order, later wins: the app's own secrets.env, sent by CI, whole app, services, previews, sent by deploys, site.
-          nook sets PORT, HOST, SITE and SITE_HOST itself.
-        </p>
-      </section>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error.message)}</div></Show>
-
-      <section class="card">
-        <div class="table-wrap">
-          <table class="table">
-            <thead><tr><th>Name</th><th>Value</th><th /></tr></thead>
-            <tbody>
-              <For each={data()?.vars} fallback={<tr><td colspan={3} class="text-secondary">No variables yet.</td></tr>}>
-                {(v) => (
-                  <tr>
-                    <td class="mono">{v.key}</td>
-                    <td class="mono env-value">{shown().has(v.key) ? v.value : "••••••••"}</td>
-                    <td><div class="actions">
-                      <button class="btn btn-ghost btn-sm" onClick={() => toggle(v.key)}>{shown().has(v.key) ? "Hide" : "Show"}</button>
-                      <Show when={!["deploy", "ci"].includes(kind())}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
-                    </div></td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+    <>
+      <PageHead title="Environment" back={{ href: "/", label: "Apps" }} detail={params.app} />
+      <section class="section">
+        <div class="card stack">
+          <Field label="Scope">
+            <select class="select" onChange={(e) => setSearch({ scope: e.currentTarget.value === "app" ? undefined : e.currentTarget.value })}>
+              <For each={scopes()}>{(s) => <option value={s} selected={s === scope()}>{label(s)}</option>}</For>
+            </select>
+          </Field>
+          <p class="hint">
+            {explain[kind()]} Saving restarts the running sites that load it
+            <Show when={data()?.affected.length} fallback=" (none are running right now)"> ({data()!.affected.join(", ")})</Show>.
+          </p>
+          <details class="hint">
+            <summary>Load order</summary>
+            Later wins: the app's own secrets.env, sent by CI, whole app, services, previews, sent by deploys, site. nook sets PORT, HOST, SITE and SITE_HOST itself.
+          </details>
         </div>
+      </section>
+      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+
+      <section class="section">
+        <h2>Variables</h2>
+        <ul class="list">
+          <For each={data()?.vars} fallback={<li class="row"><span class="empty">No variables yet.</span></li>}>
+            {(v) => (
+              <li class="row">
+                <span class="row-main"><span class="mono">{v.key}</span><small class="mono env-value">{shown().has(v.key) ? v.value : "••••••••"}</small></span>
+                <span class="row-end">
+                  <button class="btn btn-ghost btn-sm" onClick={() => toggle(v.key)}>{shown().has(v.key) ? "Hide" : "Show"}</button>
+                  <Show when={!["deploy", "ci"].includes(kind())}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
+                </span>
+              </li>
+            )}
+          </For>
+        </ul>
       </section>
 
       <Show when={!["deploy", "ci"].includes(kind())}>
-      <section class="card">
+      <section class="section">
         <h2>Set a variable</h2>
-        <p class="text-secondary hint">Setting an existing name replaces its value.</p>
-        <form class="form-row" style={{ "margin-top": "0.75rem" }} onSubmit={(e) => {
+        <form class="card stack" onSubmit={(e) => {
           e.preventDefault();
           const form = e.currentTarget;
           const f = new FormData(form);
           const key = String(f.get("key")), value = String(f.get("value"));
           apply(`Set ${key}`, { set: { [key]: value } }).then(() => form.reset());
         }}>
-          <Field label="Name"><input class="input mono" name="key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="VAPID_PRIVATE_KEY" autocomplete="off" /></Field>
-          <Field label="Value"><input class="input mono" name="value" type="password" autocomplete="off" placeholder="value" /></Field>
-          <button class="btn btn-primary">Save</button>
+          <div class="field-row">
+            <Field label="Name"><input class="input mono" name="key" required pattern="[A-Za-z_][A-Za-z0-9_]*" placeholder="VAPID_PRIVATE_KEY" autocomplete="off" /></Field>
+            <Field label="Value"><input class="input mono" name="value" type="password" autocomplete="off" placeholder="value" /></Field>
+            <button class="btn">Save</button>
+          </div>
+          <p class="hint">Setting a name that exists replaces its value.</p>
         </form>
       </section>
 
-      <section class="card">
+      <section class="section">
         <h2>Paste several</h2>
-        <p class="text-secondary hint">KEY=value lines, like a .env file. Blank lines and # comments are ignored.</p>
-        <form class="stack" style={{ "margin-top": "0.75rem" }} onSubmit={(e) => {
+        <form class="card stack" onSubmit={(e) => {
           e.preventDefault();
           const form = e.currentTarget;
           const set: Record<string, string> = {};
@@ -111,11 +108,13 @@ export default function EnvPage() {
           }
           if (Object.keys(set).length) apply(`Set ${Object.keys(set).join(", ")}`, { set }).then(() => form.reset());
         }}>
-          <textarea class="textarea mono" name="lines" rows={5} placeholder={"DATABASE_URL=...\nAPI_KEY=..."} autocomplete="off" spellcheck={false} />
-          <div><button class="btn btn-secondary">Save all</button></div>
+          <Field label="Lines" hint="KEY=value, like a .env file. Blank lines and # comments are skipped.">
+            <textarea class="textarea mono" name="lines" rows={5} placeholder={"DATABASE_URL=...\nAPI_KEY=..."} autocomplete="off" spellcheck={false} />
+          </Field>
+          <button class="btn btn-secondary" style={{ "align-self": "flex-start" }}>Save all</button>
         </form>
       </section>
       </Show>
-    </div>
+    </>
   );
 }
