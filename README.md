@@ -44,7 +44,7 @@ This project used to be called app-host. Running `nook-admin install` (or `--upg
 
 ## Updating
 
-- Releases: push a tag like `v1.2.3`; the release workflow builds both binaries for amd64 and arm64, signs `checksums.txt` with ed25519, and publishes a GitHub release. One-time setup: `scripts/setup-release-key.sh`.
+- Releases: **Actions → release → Run workflow**, then pick patch, minor or major (or type a version). It tags main's latest commit, builds both binaries for amd64 and arm64, signs `checksums.txt` with ed25519, publishes a GitHub release and moves `v1`. Pushing a tag like `v1.2.3` does the same. One-time setup: `scripts/setup-release-key.sh`.
 - Servers: `nook-admin update` verifies the signature against the key built into the running binary, swaps both binaries, runs the install step again, and restarts the dashboard. Running sites are not touched.
 - Notifications: a daily check shows "update available" on the dashboard (with an Update button) and in the SSH login message, and posts to `UPDATE_NOTIFY_URL` (ntfy, Discord or Slack) if set in `/etc/nook/update.env`.
 - While the repo is private the server needs a read-only `GITHUB_TOKEN` in `/etc/nook/update.env`.
