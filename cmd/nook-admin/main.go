@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -73,6 +74,10 @@ func main() {
 	update.Version = version
 	core.UpdateHooks.Status = update.CurrentStatus
 	core.UpdateHooks.Now = func(out *bytes.Buffer) error { return update.Apply(out, false) }
+	core.UpdateHooks.Check = func() (any, error) {
+		update.Check(io.Discard, false) // the error is recorded in the status
+		return update.CurrentStatus()
+	}
 	if len(os.Args) < 2 {
 		fmt.Print(usage)
 		os.Exit(2)

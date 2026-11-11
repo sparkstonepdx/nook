@@ -263,6 +263,7 @@ func (s *Server) routes() []route {
 	add("POST", "/api/ip-access", false, helper("setIPAccess", p("on"), true))
 	add("GET", "/api/update", false, helper("updateStatus", nil, false))
 	add("POST", "/api/update", false, helper("updateNow", nil, true))
+	add("POST", "/api/update/check", false, helper("updateCheck", nil, false))
 	return rs
 }
 
