@@ -161,6 +161,8 @@ func (h *Host) syncLocked(app string) error {
 	var published []caddyfile.Site
 	hosts := map[string]bool{}
 	seen, cronSeen := map[string]bool{}, map[string]bool{}
+	svc := appServices{Needs: map[string][]string{}, Provides: map[string]map[string]ProvideSpec{}}
+	svcKeep := false // a manifest couldn't be read: keep the last record rather than forget its services
 	var cronChanged, cronRunNow []string
 	reload := false
 	var restartUnits []string
@@ -202,9 +204,16 @@ func (h *Host) syncLocked(app string) error {
 			if err != nil {
 				h.say("%s: %s: %v; left as it was", app, s, err)
 				seen[s], cronSeen[s] = true, true // keep whatever runs now
+				svcKeep = true
 				continue
 			}
 			man, kind = m, m.Kind
+			if len(m.Needs) > 0 {
+				svc.Needs[s] = m.Needs
+			}
+			if len(m.Provides) > 0 {
+				svc.Provides[s] = m.Provides
+			}
 		}
 		if kind != "cron" && fileExists(filepath.Join("/etc/systemd/system", CronUnit(app, s)+".timer")) {
 			h.stopCron(app, s)
@@ -324,6 +333,18 @@ func (h *Host) syncLocked(app string) error {
 			h.stopUnit(app, s)
 			reload = true
 		}
+	}
+	if !svcKeep && recordServices(app, svc) {
+		// a provider's offer changed: refresh what its consumers see
+		for _, bd := range readBindings() {
+			if pa, _ := splitAppProvider(bd.Provider); pa == app {
+				writeConsumerEnv(bd.App)
+			}
+		}
+		applyFirewall()
+	}
+	for s := range svc.Provides {
+		writeProviderEnv(app, s)
 	}
 	// cron jobs whose folder is gone
 	for _, s := range CronJobs(app) {

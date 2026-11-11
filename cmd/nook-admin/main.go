@@ -46,6 +46,9 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin update [--check]                    install the latest signed release
   nook-admin token create APP [--label L]        a deploy token (shown once) for the deploy API
   nook-admin token list [APP] | rm APP ID
+  nook-admin services [list] | install postgres | drop-db APP
+  nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
+  nook-admin unbind APP SERVICE                  (a database is kept)
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
 
@@ -127,6 +130,18 @@ func main() {
 	case "token":
 		needRoot()
 		tokenCmd(args)
+	case "bind":
+		needRoot()
+		bindCmd(h, args)
+	case "unbind":
+		needRoot()
+		if len(args) != 2 {
+			die(fmt.Errorf("usage: nook-admin unbind APP SERVICE"))
+		}
+		die(h.Unbind(args[0], args[1]))
+	case "services":
+		needRoot()
+		servicesCmd(h, args)
 	case "invite":
 		needRoot()
 		store, err := web.OpenStore(config.WebStateDir)
@@ -343,5 +358,71 @@ func tokenCmd(args []string) {
 		fmt.Println("revoked")
 	default:
 		die(usage)
+	}
+}
+
+func bindCmd(h *core.Host, args []string) {
+	usage := fmt.Errorf("usage: nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]")
+	var pos []string
+	provider := ""
+	as := map[string]string{}
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--provider" && i+1 < len(args):
+			provider = args[i+1]
+			i++
+		case args[i] == "--as" && i+1 < len(args):
+			from, to, ok := strings.Cut(args[i+1], "=")
+			if !ok {
+				die(usage)
+			}
+			as[from] = to
+			i++
+		default:
+			pos = append(pos, args[i])
+		}
+	}
+	if len(pos) != 2 {
+		die(usage)
+	}
+	die(h.Bind(pos[0], pos[1], provider, as))
+}
+
+func servicesCmd(h *core.Host, args []string) {
+	if len(args) == 0 || args[0] == "list" {
+		v := core.ServicesOverview()
+		fmt.Println("Providers:")
+		for _, p := range v.Providers {
+			state := "ready"
+			if !p.Ready {
+				state = p.Note
+			}
+			fmt.Printf("  %-12s %-28s %s\n", p.Interface, p.ID, state)
+		}
+		fmt.Println("Bindings:")
+		for _, b := range v.Bindings {
+			fmt.Printf("  %-16s %-12s from %-28s env %s\n", b.App, b.Interface, b.Provider, strings.Join(b.Env, " "))
+		}
+		if len(v.Requests) > 0 {
+			fmt.Println("Waiting (asked for in nook.json, not bound):")
+			for _, r := range v.Requests {
+				fmt.Printf("  %-16s %-12s (sites: %s)\n", r.App, r.Interface, strings.Join(r.Sites, ", "))
+			}
+		}
+		return
+	}
+	switch {
+	case args[0] == "install" && len(args) == 2 && args[1] == "postgres":
+		die(core.PostgresInstall(h))
+	case args[0] == "drop-db" && len(args) == 2:
+		fmt.Fprintf(os.Stderr, "This deletes database nook-%s and everything in it. Type the app name to confirm: ", args[1])
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if strings.TrimSpace(line) != args[1] {
+			die(fmt.Errorf("not confirmed"))
+		}
+		die(core.PostgresDropDB(args[1]))
+		fmt.Println("dropped")
+	default:
+		die(fmt.Errorf("usage: nook-admin services [list] | install postgres | drop-db APP"))
 	}
 }

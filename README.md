@@ -122,6 +122,36 @@ Env vars and secrets for running apps live on the server under `/etc/nook/env/` 
 - **The app's own `secrets.env`:** if the app's deploys write one into its folder, `nook-admin sync` copies it, reading it as the app user.
 - **Set by nook:** `PORT`, `HOST`, `SITE` and `SITE_HOST`, which can't be overridden.
 
+## Services
+
+Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), and you bind each one to a provider on the dashboard's **Services** page or with `nook-admin bind APP SERVICE`.
+
+- **What the app sees:** only conventional env vars, so it has no nook-specific code and runs the same on Kubernetes with the same vars from Secrets.
+- **Renames:** `--as DATABASE_URL=PG_URL` renames a var for an app that already uses its own names.
+- **Restarts:** binding or unbinding restarts the app's running sites.
+
+| Service | App sees | Providers |
+|---|---|---|
+| `postgres` | `DATABASE_URL` | built in: `nook-admin services install postgres` |
+| `email` | `SMTP_URL` | (coming: the SES gateway) |
+| `alerts` | `ALERT_URL`, `ALERT_TOKEN` | any app that provides it |
+| `analytics` | `ANALYTICS_URL`, `ANALYTICS_TOKEN` | any app that provides it |
+| `s3` | `S3_ENDPOINT`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | any app that provides it |
+
+**Postgres:**
+- **Locked down:** listens on its unix socket only, with peer auth. App `blog` runs as Linux user `nook-blog`, which may log in only as role `nook-blog` and open only database `nook-blog`. No password exists anywhere.
+- **Unbinding keeps the database.** `nook-admin services drop-db APP` deletes it, and asks you to type the app name.
+
+**An app as a provider:**
+- **Declaring it:** a site of kind `service` declares what it implements:
+  ```json
+  {"kind": "service", "provides": {"alerts": {"desc": "posts to Discord", "env": {"ALERT_URL": "{url}/alert", "ALERT_TOKEN": "{token}"}}}}
+  ```
+- **What each binding gets:** `{url}` (`http://127.0.0.1:PORT`), `{host}`, `{port}`, and its own `{token}`.
+- **Who may call it:** the provider learns its callers from `NOOK_CLIENTS` (`{"alerts": {"blog": "<token>"}}`).
+- **Firewall:** opens the provider's port to exactly the bound apps.
+- **Known services:** known names (above) must provide exactly their env names, so providers are interchangeable. Any other name is a new interface that its provider defines.
+
 ## Domains
 
 ![Domains](docs/dashboard-domains.png)
