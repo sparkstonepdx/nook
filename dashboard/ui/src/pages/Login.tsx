@@ -1,10 +1,13 @@
 import { createSignal } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { api, setUser } from "../api";
 import { ErrorAlert, Field } from "../components";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  // back to where the login interrupted: a path on this dashboard only
+  const next = () => { const n = String(params.next || ""); return n.startsWith("/") && !n.startsWith("//") ? n : "/"; };
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
   const submit = async (e: SubmitEvent) => {
@@ -13,7 +16,7 @@ export default function Login() {
     setBusy(true); setError("");
     try {
       const r = await api<{ user: string }>("/api/login", { user: f.get("user"), password: f.get("password") });
-      setUser(r.user); navigate("/", { replace: true });
+      setUser(r.user); navigate(next(), { replace: true });
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return (

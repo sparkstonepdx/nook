@@ -1,5 +1,5 @@
-import { For, Show, createResource, createSignal } from "solid-js";
-import { A, useLocation, useNavigate } from "@solidjs/router";
+import { For, Show, createEffect, createResource, createSignal } from "solid-js";
+import { A, useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { api, runCmd, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge } from "../components";
 
@@ -46,6 +46,34 @@ export default function Store() {
   const [adding, setAdding] = createSignal(false);
   const navigate = useNavigate();
   const row = () => data()?.installed.find((r) => r.app === open());
+
+  // A storefront's "Install on nook" lands here: /store/install?app=ID&catalog=official, or &source=owner/repo
+  // for a community catalog, which is offered for adding first.
+  const [params, setParams] = useSearchParams();
+  const [offer, setOffer] = createSignal<string | null>(null);
+  let handled = false;
+  createEffect(() => {
+    const d = data(), app = params.app as string | undefined;
+    if (!d || !app || handled) return;
+    handled = true;
+    const source = params.source as string | undefined;
+    const cat = source ? d.catalogs.find((c) => c.repo?.toLowerCase() === source.toLowerCase() || c.url === source || c.url === `${source.replace(/\/$/, "")}/`) : d.catalogs.find((c) => c.official);
+    if (!cat) { setOffer(source!); return; }
+    const a = d.catalog.find((x) => x.catalog === cat.id && x.id === app);
+    if (a) setPicked(a);
+    else say(`${app} isn't in ${cat.official ? "the official catalog" : cat.name}`, { kind: "error", detail: "Refresh the catalog, or check the link." });
+    setParams({ app: undefined, catalog: undefined, source: undefined }, { replace: true });
+  });
+  const addOffered = async () => {
+    const source = offer()!;
+    setOffer(null);
+    try {
+      const r = await api<{ name: string; fingerprint: string }>("/api/store/catalogs", { source });
+      say(`Added ${r.name}`, { kind: "success", detail: `Its key is ${r.fingerprint}.` });
+      handled = false;
+      setRefresh(true); refetch();
+    } catch (x) { say("Couldn't add that catalog", { kind: "error", detail: (x as Error).message }); setParams({ app: undefined, source: undefined }, { replace: true }); }
+  };
 
   return (
     <>
@@ -148,6 +176,13 @@ export default function Store() {
         </form>
       </Sheet>
 
+      <Sheet open={!!offer()} title="Add a community catalog?" onClose={() => { setOffer(null); setParams({ app: undefined, source: undefined }, { replace: true }); }}
+        footer={<><button class="btn btn-secondary" onClick={() => { setOffer(null); setParams({ app: undefined, source: undefined }, { replace: true }); }}>Cancel</button><button class="btn" onClick={addOffered}>Add and continue</button></>}>
+        <div class="stack">
+          <p><strong class="mono">{offer()}</strong> isn't one of your catalogs yet. Adding it pins its signing key, then opens the install.</p>
+          <div class="alert alert-warning"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
+        </div>
+      </Sheet>
       <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
       <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} />
     </>
