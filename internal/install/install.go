@@ -18,6 +18,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/core"
 	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/notfound"
 	"github.com/sparkstonepdx/nook/internal/web"
 )
 
@@ -249,6 +250,9 @@ SITE_MAX_BYTES=1073741824
 	caddyRestart := hardenCaddy(o.Out)
 	if !fileExists("/etc/caddy/catchall/index.html") {
 		write("/etc/caddy/catchall/index.html", string(catchallHTML), 0o644)
+	}
+	if err := notfound.Ensure(); err != nil {
+		return fmt.Errorf("default 404 page: %v", err)
 	}
 	write("/etc/caddy/catchall.caddy", catchallCaddy, 0o644)
 	ensureImport("/etc/caddy/catchall.caddy")

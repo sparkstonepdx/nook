@@ -11,11 +11,13 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/notfound"
 	"github.com/sparkstonepdx/nook/internal/rpc"
 	"github.com/sparkstonepdx/nook/internal/update"
 )
@@ -93,7 +95,11 @@ func handleHelper(c *net.UnixConn, webUID int) {
 		json.NewEncoder(c).Encode(rpc.Response{Error: "unknown operation", Status: 404})
 		return
 	}
-	log.Printf("%s: %s %v", req.By, req.Op, req.Params)
+	if req.Op == "notFoundSet" { // the page itself stays out of the log
+		log.Printf("%s: %s (%d bytes)", req.By, req.Op, len(req.Params["html"]))
+	} else {
+		log.Printf("%s: %s %v", req.By, req.Op, req.Params)
+	}
 	if req.Op == "deploy" {
 		json.NewEncoder(c).Encode(DispatchDeploy(req, file))
 		return
@@ -205,6 +211,21 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return command("nook-admin default-domain "+p["domain"], func(h *Host) error { return h.SetDefaultDomain(p["domain"]) })
 	case "setDashboardHost":
 		return command("nook-admin dashboard-host "+p["host"], func(h *Host) error { return h.SetDashboardHost(p["host"]) })
+	case "notFoundGet":
+		html, custom, err := notfound.Read()
+		return data(map[string]any{"html": html, "custom": custom, "max": notfound.Max}, err)
+	case "notFoundSet":
+		what := "write " + filepath.Join(notfound.Dir, "404.html")
+		if strings.TrimSpace(p["html"]) == "" {
+			what = "restore the default " + filepath.Join(notfound.Dir, "404.html")
+		}
+		return command(what, func(h *Host) error {
+			if err := notfound.Write(p["html"]); err != nil {
+				return err
+			}
+			h.say("Saved the 404 page; static sites without their own 404.html show it now.")
+			return nil
+		})
 	case "setIPAccess":
 		return command("nook-admin ip-access "+p["on"], func(h *Host) error { return h.SetIPAccess(p["on"] == "true") })
 	case "updateCheck":

@@ -37,7 +37,7 @@ type Response struct {
 var Ops = map[string]bool{
 	"overview": true, "domains": true, "createApp": true, "deleteApp": true, "syncApp": true, "syncAll": true,
 	"reloadCaddy": true, "siteOp": true, "siteLogs": true, "syncLog": true, "envGet": true, "envApply": true,
-	"grant": true, "setDefaultDomain": true, "setDashboardHost": true, "setIPAccess": true,
+	"grant": true, "setDefaultDomain": true, "setDashboardHost": true, "setIPAccess": true, "notFoundGet": true, "notFoundSet": true,
 	"updateStatus": true, "updateNow": true, "updateCheck": true,
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
 	"services": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "ciEnv": true,

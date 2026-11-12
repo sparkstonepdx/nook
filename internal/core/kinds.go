@@ -20,6 +20,8 @@ import (
 //	cron     run on a schedule (systemd timer); no port, no hostname
 //
 // chosen by sites/SITE/nook.json: {"kind": "cron", "schedule": "*/15 * * * *", "timeout": 600}.
+//
+// A static site (no run) reads nook.json too, for {"cors": true} only.
 
 type Manifest struct {
 	Kind     string                 `json:"kind"`
@@ -28,6 +30,7 @@ type Manifest struct {
 	Needs    []string               `json:"needs,omitempty"`    // services this site wants bound (#12)
 	Provides map[string]ProvideSpec `json:"provides,omitempty"` // services: interfaces it implements
 	Health   string                 `json:"health,omitempty"`   // web and service: a path that answers under 400 when it's working
+	CORS     bool                   `json:"cors,omitempty"`     // static: any origin may read its files (Access-Control-Allow-Origin: *)
 	calendar string
 }
 

@@ -4,7 +4,11 @@ package caddyfile
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sparkstonepdx/nook/internal/notfound"
 )
+
+// A static site's misses get its own 404.html, or else the server-wide one (package notfound).
 
 // Site is one published hostname: a reverse proxy when Port > 0, otherwise static files from Root.
 type Site struct {
@@ -15,6 +19,8 @@ type Site struct {
 	// (Version is the site folder's inode, which changes on every atomic swap).
 	Folder  string
 	Version string
+	// CORS lets any origin read a static site's files (nook.json {"cors": true}).
+	CORS bool
 }
 
 const redirectMark = " { # redirect"
@@ -30,7 +36,11 @@ func Render(source string, sites []Site, redirects [][2]string) string {
 		if s.Port > 0 {
 			fmt.Fprintf(&b, "%s {\n\treverse_proxy 127.0.0.1:%d\n}\n", s.Host, s.Port)
 		} else {
-			fmt.Fprintf(&b, "%s {\n\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server\n\thandle_errors {\n\t\trewrite * /404.html\n\t\tfile_server\n\t}\n}\n", s.Host, s.Root)
+			cors := ""
+			if s.CORS {
+				cors = "\theader Access-Control-Allow-Origin *\n"
+			}
+			fmt.Fprintf(&b, "%s {\n%s\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server {\n\t\tprecompressed gzip\n\t}\n\thandle_errors {\n\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html\n\t\t\tfile_server {\n\t\t\t\tprecompressed gzip\n\t\t\t}\n\t\t}\n\t\thandle {\n\t\t\troot * %s\n\t\t\trewrite * /404.html\n\t\t\tfile_server\n\t\t}\n\t}\n}\n", s.Host, cors, s.Root, notfound.Dir)
 		}
 	}
 	for _, r := range redirects {

@@ -14,11 +14,25 @@ func TestRoundTrip(t *testing.T) {
 	if strings.Join(live, ",") != "api.x.com,x.com" || strings.Join(red, ",") != "www.x.com" {
 		t.Fatalf("live=%v red=%v\n%s", live, red, text)
 	}
-	if strings.Contains(text, "handle_errors {\n\t\trewrite") == false {
-		t.Fatal("static block")
+	if !strings.Contains(text, "\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html") || !strings.Contains(text, "\t\thandle {\n\t\t\troot * /etc/caddy/nook-404\n") {
+		t.Fatalf("static block: own 404.html first, then the server's:\n%s", text)
 	}
 	out, found := WithoutRedirect(text, "www.x.com")
 	if !found || strings.Contains(out, "www.x.com") || !strings.Contains(out, "x.com {") {
 		t.Fatalf("WithoutRedirect:\n%s", out)
+	}
+}
+
+func TestRenderCORS(t *testing.T) {
+	text := Render("app", []Site{{Host: "a.test", Root: "/w/a", CORS: true}, {Host: "b.test", Root: "/w/b"}, {Host: "c.test", Port: 9000, CORS: true}}, nil)
+	a := text[strings.Index(text, "a.test {"):strings.Index(text, "b.test {")]
+	if !strings.Contains(a, "\theader Access-Control-Allow-Origin *\n") {
+		t.Fatalf("static site with cors has no header:\n%s", a)
+	}
+	if n := strings.Count(text, "Access-Control-Allow-Origin"); n != 1 {
+		t.Fatalf("want the header only on a.test, got %d:\n%s", n, text)
+	}
+	if live, _ := Hosts(text); len(live) != 3 {
+		t.Fatalf("Hosts after cors: %v", live)
 	}
 }
