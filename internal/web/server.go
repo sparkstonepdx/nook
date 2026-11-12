@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/notfound"
 	"github.com/sparkstonepdx/nook/internal/rpc"
 )
 
@@ -273,6 +274,8 @@ func (s *Server) routes() []route {
 	add("POST", "/api/default-domain", false, helper("setDefaultDomain", p("domain"), true))
 	add("POST", "/api/dashboard-host", false, helper("setDashboardHost", p("host"), true))
 	add("POST", "/api/ip-access", false, helper("setIPAccess", p("on"), true))
+	add("GET", "/api/not-found", false, helper("notFoundGet", nil, false))
+	add("POST", "/api/not-found", false, helper("notFoundSet", p("html"), true))
 	add("GET", "/api/update", false, helper("updateStatus", nil, false))
 	add("POST", "/api/update", false, helper("updateNow", nil, true))
 	add("POST", "/api/update/check", false, helper("updateCheck", nil, false))
@@ -406,8 +409,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 415, map[string]string{"error": "expected application/json"})
 			return
 		}
-		b, err := io.ReadAll(io.LimitReader(r.Body, 20001))
-		if err != nil || len(b) > 20000 {
+		// JSON bodies are small, but the 404 page can be a whole HTML file (notfound.Max, plus JSON escaping)
+		limit := int64(20000)
+		if r.URL.Path == "/api/not-found" {
+			limit = 2*notfound.Max + 4096
+		}
+		b, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+		if err != nil || int64(len(b)) > limit {
 			writeJSON(w, 413, map[string]string{"error": "too big"})
 			return
 		}

@@ -94,6 +94,8 @@ export default function DomainsPage() {
           </form>
         </section>
 
+        <NotFoundPage />
+
         <Sheet open={allowing()} title="Allow a domain" onClose={() => setAllowing(false)}
           footer={<><button class="btn btn-secondary" onClick={() => setAllowing(false)}>Cancel</button><button class="btn" type="submit" form="allow">Allow</button></>}>
           <form id="allow" onSubmit={(e) => {
@@ -115,5 +117,39 @@ export default function DomainsPage() {
         </Sheet>
       </>)}</Show>
     </>
+  );
+}
+
+type NotFound = { html: string; custom: boolean; max: number };
+
+// The server's 404 page: what a static site without its own 404.html shows for a path it doesn't have.
+function NotFoundPage() {
+  const [page, { refetch }] = createResource(() => api<NotFound>("/api/not-found"));
+  const [draft, setDraft] = createSignal<string | null>(null);
+  const text = () => draft() ?? page()?.html ?? "";
+  const tooBig = () => new Blob([text()]).size > (page()?.max ?? Infinity);
+  const save = async (html: string, title: string) => {
+    await runCmd(title, "/api/not-found", { html });
+    setDraft(null);
+    refetch();
+  };
+
+  return (
+    <section class="section">
+      <h2>404 page <Show when={page()}>{(p) => <StatusBadge ok={!p().custom}>{p().custom ? "edited" : "default"}</StatusBadge>}</Show></h2>
+      <Show when={page.error}><div class="note note-bad">{String(page.error!.message)}</div></Show>
+      <form class="card stack" onSubmit={(e) => { e.preventDefault(); save(text(), "Saved the 404 page"); }}>
+        <Field label="HTML" hint={`Shown by static sites that don't have their own 404.html. One self-contained file, up to ${Math.round((page()?.max ?? 0) / 1024)} KB: inline any styles and images. Takes effect right away: open a missing path on any static site to see it.`}>
+          <textarea class="textarea mono" rows={14} spellcheck={false} autocomplete="off" value={text()} onInput={(e) => setDraft(e.currentTarget.value)} />
+        </Field>
+        <Show when={tooBig()}><div class="note note-bad">Too big: keep it under {Math.round((page()?.max ?? 0) / 1024)} KB.</div></Show>
+        <div class="field-row">
+          <button class="btn btn-secondary" disabled={draft() === null || tooBig()}>Save</button>
+          <Show when={page()?.custom}>
+            <button type="button" class="btn btn-ghost" onClick={() => window.confirm("Put the default 404 page back? Your edits are lost.") && save("", "Restored the default 404 page")}>Restore default</button>
+          </Show>
+        </div>
+      </form>
+    </section>
   );
 }
