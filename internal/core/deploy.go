@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/envfile"
@@ -48,6 +49,9 @@ type DeployResult struct {
 	Live   bool   `json:"live"`
 	Kind   string `json:"kind,omitempty"`
 	Output string `json:"output"`
+	// set when the site declares a health path: whether it answered healthy after the deploy
+	Health  string `json:"health,omitempty"`
+	Healthy *bool  `json:"healthy,omitempty"`
 }
 
 func deployFail(status int, format string, a ...any) rpc.Response {
@@ -103,6 +107,19 @@ func DispatchDeploy(req *rpc.Request, file *os.File) rpc.Response {
 	}
 	if res.Kind == "cron" || res.Kind == "service" {
 		res.URL = "" // no hostname
+	}
+	if err == nil && (res.Kind == "web" || res.Kind == "service") {
+		if path := SiteHealthPath(app, name); path != "" {
+			res.Health = path
+			herr := waitHealthy(app, name, path, res.Kind == "web", 60*time.Second)
+			ok := herr == nil
+			res.Healthy = &ok
+			if ok {
+				res.Output += "\nhealthy: " + path + " answered"
+			} else {
+				res.Output += "\nNOT healthy after 60 s: " + herr.Error() + ". Check its logs on the dashboard."
+			}
+		}
 	}
 	var ee *exec.ExitError
 	if err != nil && !(errors.As(err, &ee) && ee.ExitCode() == 2) {

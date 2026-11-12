@@ -125,8 +125,10 @@ func apiMain(tok string) {
 	fmt.Printf("$ POST %s/api/v1/sites/%s%s (%d files, %d KB)\n", base, site, q, files, size/1024)
 	code, b = call("POST", "/api/v1/sites/"+site+q, body, mw.FormDataContentType())
 	var res struct {
-		Output string `json:"output"`
-		URL    string `json:"url"`
+		Output  string `json:"output"`
+		URL     string `json:"url"`
+		Health  string `json:"health"`
+		Healthy *bool  `json:"healthy"`
 	}
 	json.Unmarshal(b, &res)
 	switch {
@@ -140,6 +142,9 @@ func apiMain(tok string) {
 	}
 	if res.URL != "" {
 		url = res.URL
+	}
+	if res.Healthy != nil && !*res.Healthy {
+		fail("%s is deployed but isn't healthy: %s didn't answer under 400 within 60 s. Its logs are on the dashboard.", host, res.Health)
 	}
 	waitHTTPS(url)
 	appendFile("GITHUB_OUTPUT", "url="+url)

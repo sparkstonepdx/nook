@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -26,6 +27,7 @@ type Manifest struct {
 	Timeout  int                    `json:"timeout,omitempty"`  // cron: seconds before a run is killed (default 3600, max 86400)
 	Needs    []string               `json:"needs,omitempty"`    // services this site wants bound (#12)
 	Provides map[string]ProvideSpec `json:"provides,omitempty"` // services: interfaces it implements
+	Health   string                 `json:"health,omitempty"`   // web and service: a path that answers under 400 when it's working
 	calendar string
 }
 
@@ -44,6 +46,9 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if err := checkServices(&m); err != nil {
 		return m, err
+	}
+	if m.Health != "" && !healthPathRE.MatchString(m.Health) {
+		return m, fmt.Errorf("nook.json: health must be a path like /healthz, not %q", m.Health)
 	}
 	switch m.Kind {
 	case "", "web":
@@ -69,6 +74,8 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	return m, nil
 }
+
+var healthPathRE = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,199}$`)
 
 func CronUnit(app, site string) string { return "nook-cron-" + app + "--" + site }
 

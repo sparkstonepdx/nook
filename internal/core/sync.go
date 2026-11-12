@@ -244,7 +244,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port)
+			changed, err := h.writeUnit(u, s, "", port, man.Health)
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -281,7 +281,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port)
+			changed, err := h.writeUnit(u, s, host, port, man.Health)
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -481,7 +481,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -489,10 +489,14 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int) (bool, error) 
 	if host == "" { // a service: no hostname
 		desc, siteHost = site+" (service)", ""
 	}
+	healthLine := ""
+	if health != "" { // read back by the dashboard and the deploy API (SiteHealth)
+		healthLine = "X-Nook-Health=" + health + "\n"
+	}
 	text := fmt.Sprintf(`[Unit]
 Description=%[3]s (app %[1]s)
 After=nook-firewall.service
-
+%[10]s
 [Service]
 User=nook-%[1]s
 Group=nook-%[1]s
@@ -510,7 +514,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, fmt.Sprintf("SocketBindAllow=tcp:%d\nSocketBindDeny=any\n", port)))
+		sandbox(u.Home, app, fmt.Sprintf("SocketBindAllow=tcp:%d\nSocketBindDeny=any\n", port)), healthLine)
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil

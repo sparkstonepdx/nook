@@ -3,7 +3,7 @@ import { A } from "@solidjs/router";
 import { api, runCmd, setResult, type CmdResult } from "../api";
 import { StatusBadge, Field, PageHead, Sheet, TokenBox } from "../components";
 
-type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string };
+type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][] };
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
@@ -17,6 +17,7 @@ function siteAlert(s: Site) {
   if (s.kind === "cron" && (s.ActiveState === "active" || s.ActiveState === "activating")) return <StatusBadge warn>running</StatusBadge>;
   if (s.kind === "cron" && s.last && s.last !== "n/a" && s.result !== "success") return <StatusBadge ok={false}>{s.result}</StatusBadge>;
   if (s.running && s.ActiveState === "failed") return <StatusBadge ok={false}>failed</StatusBadge>;
+  if (s.healthy === false) return <StatusBadge ok={false} title={s.healthError}>unhealthy</StatusBadge>;
   if (s.running && s.ActiveState && s.ActiveState !== "active") return <StatusBadge warn>{s.ActiveState}</StatusBadge>;
   return null;
 }
@@ -171,6 +172,7 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
             <dl class="facts">
               <Show when={s().kind === "cron"}><dt>Schedule</dt><dd class="mono">{s().schedule}</dd><dt>Next</dt><dd>{s().next && s().next !== "n/a" ? s().next : "not scheduled"}</dd><dt>Last run</dt><dd>{s().last && s().last !== "n/a" ? `${s().last} (${s().result})` : "never"}</dd></Show>
               <Show when={s().running}><dt>State</dt><dd>{s().ActiveState} · {s().SubState}</dd><Show when={s().MainPID && s().MainPID !== "0"}><dt>PID</dt><dd class="mono">{s().MainPID}</dd></Show><dt>Restarts</dt><dd>{s().NRestarts || 0}</dd></Show>
+              <Show when={s().health}><dt>Health</dt><dd><span class="mono">{s().health}</span> · <Show when={s().healthy !== false} fallback={<span class="danger-text">{(s().healthError || "not answering").replace(`${s().health} `, "")}</span>}>{s().healthy ? "answering" : "not checked"}</Show></dd></Show>
               <Show when={s().port}><dt>Port</dt><dd class="mono">{s().port}</dd></Show>
               <Show when={mb(s().MemoryCurrent)}><dt>Memory</dt><dd>{mb(s().MemoryCurrent)}</dd></Show>
               <dt>Folder</dt><dd class="mono">sites/{s().name}</dd>
