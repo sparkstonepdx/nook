@@ -16,6 +16,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/names"
 	"github.com/sparkstonepdx/nook/internal/precompress"
+	"github.com/sparkstonepdx/nook/internal/redirects"
 	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
@@ -313,7 +314,8 @@ func (h *Host) syncLocked(app string) error {
 			if err != nil {
 				h.say("%s: %s: %v; published without cors", app, s, err)
 			}
-			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS})
+			rules := readRules(root, func(why string) { h.say("%s: %s: _redirects %s, skipped", app, s, why) })
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS, Rules: rules})
 		}
 	}
 	if sites != nil {
@@ -458,6 +460,29 @@ func (h *Host) importUserEnv(u *AppUser) bool {
 
 // snapshot makes the root-owned copy Caddy serves. `nook internal-pack` runs as the app user and resolves
 // symlinks with the app's own permissions; root only unpacks plain files and folders.
+// readRules reads _redirects from a site's published copy (root-owned: tarx unpacked it, and it refuses links).
+func readRules(root string, skipped func(string)) []redirects.Rule {
+	p := filepath.Join(root, "_redirects")
+	fi, err := os.Lstat(p)
+	if err != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
+	if fi.Size() > redirects.MaxBytes {
+		skipped(fmt.Sprintf("is over %d KB", redirects.MaxBytes>>10))
+		return nil
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		skipped(err.Error())
+		return nil
+	}
+	rules, why := redirects.Parse(string(b))
+	for _, w := range why {
+		skipped(w)
+	}
+	return rules
+}
+
 func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	app := u.Name
 	dst := filepath.Join(config.WWWDir, app, site)

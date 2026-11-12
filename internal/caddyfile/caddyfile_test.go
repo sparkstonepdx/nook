@@ -3,6 +3,8 @@ package caddyfile
 import (
 	"strings"
 	"testing"
+
+	"github.com/sparkstonepdx/nook/internal/redirects"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -34,5 +36,25 @@ func TestRenderCORS(t *testing.T) {
 	}
 	if live, _ := Hosts(text); len(live) != 3 {
 		t.Fatalf("Hosts after cors: %v", live)
+	}
+}
+
+func TestRenderRules(t *testing.T) {
+	rules, _ := redirects.Parse("/sync /sync.html 200\n/blog/:slug /posts/:slug 302\n/forced /x 301!\n")
+	text := Render("app", []Site{{Host: "a.test", Root: "/w/a", Rules: rules}, {Host: "b.test", Root: "/w/b"}}, nil)
+	want := "a.test {\n\troot * /w/a\n\thandle /_redirects {\n\t\terror 404\n\t}\n" +
+		"\t@nook_r0 {\n\t\tpath_regexp nook_r0 `^/sync/?$`\n\t\tnot file\n\t}\n\thandle @nook_r0 {\n\t\trewrite * /sync.html\n\t\tfile_server {\n\t\t\tprecompressed gzip\n\t\t}\n\t}\n" +
+		"\t@nook_r1 {\n\t\tpath_regexp nook_r1 `^/blog/(?P<slug>[^/]+)/?$`\n\t\tnot file\n\t}\n\thandle @nook_r1 {\n\t\tredir /posts/{re.nook_r1.slug} 302\n\t}\n" +
+		"\t@nook_r2 {\n\t\tpath_regexp nook_r2 `^/forced/?$`\n\t}\n\thandle @nook_r2 {\n\t\tredir /x 301\n\t}\n" +
+		"\thandle {\n\t\ttry_files {path} {path}/ /200.html\n\t\tfile_server {\n\t\t\tprecompressed gzip\n\t\t}\n\t}\n\thandle_errors {"
+	if !strings.Contains(text, want) {
+		t.Fatalf("got:\n%s", text)
+	}
+	b := text[strings.Index(text, "b.test {"):]
+	if !strings.Contains(b, "\thandle /_redirects {\n\t\terror 404\n\t}\n\ttry_files {path} {path}/ /200.html\n\tfile_server {") {
+		t.Fatalf("site without rules:\n%s", b)
+	}
+	if live, _ := Hosts(text); strings.Join(live, ",") != "a.test,b.test" {
+		t.Fatalf("Hosts: %v", live)
 	}
 }

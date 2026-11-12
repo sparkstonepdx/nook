@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/notfound"
+	"github.com/sparkstonepdx/nook/internal/redirects"
 )
 
 // A static site's misses get its own 404.html, or else the server-wide one (package notfound).
@@ -21,6 +22,8 @@ type Site struct {
 	Version string
 	// CORS lets any origin read a static site's files (nook.json {"cors": true}).
 	CORS bool
+	// Rules are the static site's _redirects, in order.
+	Rules []redirects.Rule
 }
 
 const redirectMark = " { # redirect"
@@ -36,17 +39,47 @@ func Render(source string, sites []Site, redirects [][2]string) string {
 		if s.Port > 0 {
 			fmt.Fprintf(&b, "%s {\n\treverse_proxy 127.0.0.1:%d\n}\n", s.Host, s.Port)
 		} else {
-			cors := ""
-			if s.CORS {
-				cors = "\theader Access-Control-Allow-Origin *\n"
-			}
-			fmt.Fprintf(&b, "%s {\n%s\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server {\n\t\tprecompressed gzip\n\t}\n\thandle_errors {\n\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html\n\t\t\tfile_server {\n\t\t\t\tprecompressed gzip\n\t\t\t}\n\t\t}\n\t\thandle {\n\t\t\troot * %s\n\t\t\trewrite * /404.html\n\t\t\tfile_server\n\t\t}\n\t}\n}\n", s.Host, cors, s.Root, notfound.Dir)
+			static(&b, s)
 		}
 	}
 	for _, r := range redirects {
 		fmt.Fprintf(&b, "%s%s\n\tredir https://%s{uri} permanent\n}\n", r[0], redirectMark, r[1])
 	}
 	return b.String()
+}
+
+const serve = "file_server {\n\t\tprecompressed gzip\n\t}"
+
+// static writes a static site's block. With _redirects rules, each is a handle in file order (Caddy keeps named
+// matchers in the order written, and the first match wins, as on Netlify), then the usual files in a last handle.
+func static(b *strings.Builder, s Site) {
+	fmt.Fprintf(b, "%s {\n", s.Host)
+	if s.CORS {
+		b.WriteString("\theader Access-Control-Allow-Origin *\n")
+	}
+	fmt.Fprintf(b, "\troot * %s\n", s.Root)
+	// the rules file is settings, not content
+	b.WriteString("\thandle /_redirects {\n\t\terror 404\n\t}\n")
+	if len(s.Rules) == 0 {
+		b.WriteString("\ttry_files {path} {path}/ /200.html\n\t" + serve + "\n")
+	} else {
+		for i, r := range s.Rules {
+			m := fmt.Sprintf("nook_r%d", i)
+			fmt.Fprintf(b, "\t@%s {\n\t\tpath_regexp %s `%s`\n", m, m, r.Regexp)
+			if !r.Force {
+				b.WriteString("\t\tnot file\n")
+			}
+			fmt.Fprintf(b, "\t}\n\thandle @%s {\n", m)
+			if r.Redirect() {
+				fmt.Fprintf(b, "\t\tredir %s %d\n", r.Target(m), r.Status)
+			} else {
+				fmt.Fprintf(b, "\t\trewrite * %s\n\t\t%s\n", r.Target(m), strings.ReplaceAll(serve, "\n", "\n\t"))
+			}
+			b.WriteString("\t}\n")
+		}
+		b.WriteString("\thandle {\n\t\ttry_files {path} {path}/ /200.html\n\t\t" + strings.ReplaceAll(serve, "\n", "\n\t") + "\n\t}\n")
+	}
+	fmt.Fprintf(b, "\thandle_errors {\n\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html\n\t\t\tfile_server {\n\t\t\t\tprecompressed gzip\n\t\t\t}\n\t\t}\n\t\thandle {\n\t\t\troot * %s\n\t\t\trewrite * /404.html\n\t\t\tfile_server\n\t\t}\n\t}\n}\n", notfound.Dir)
 }
 
 // Hosts returns the hostnames a generated file serves for real, and the ones it only redirects.
