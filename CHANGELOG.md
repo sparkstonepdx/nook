@@ -1,5 +1,12 @@
 # nook
 
+## 1.10.0
+
+### Minor Changes
+
+- 92b615a: Static sites can opt in to CORS: `{"cors": true}` in the site's `nook.json` adds `Access-Control-Allow-Origin: *`.
+- bd9f20b: Static sites are served gzip-compressed: text files get a `.gz` copy when published, and Caddy sends it to browsers that accept gzip.
+
 ## 1.9.1
 
 ### Patch Changes
