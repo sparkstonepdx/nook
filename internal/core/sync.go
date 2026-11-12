@@ -477,6 +477,8 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 		os.RemoveAll(tmp)
 		return fmt.Errorf("couldn't copy the site (%v); kept the previous copy", err)
 	}
+	// nook.json is settings, not content: it stays in the app's folder and is never served
+	os.Remove(filepath.Join(tmp, "nook.json"))
 	os.RemoveAll(dst + ".old")
 	os.Rename(dst, dst+".old")
 	if err := os.Rename(tmp, dst); err != nil {
