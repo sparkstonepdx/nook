@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/andybalholm/brotli"
 )
 
 func TestDir(t *testing.T) {
@@ -25,36 +23,30 @@ func TestDir(t *testing.T) {
 	write("index.html", big)
 	write("assets/app.js", big)
 	write("assets/app.js.gz", "stale sidecar")
-	write("assets/app.js.br", "stale sidecar")
 	write("small.css", "a{}")
 	write("logo.png", big)
 	write("data.tar.gz", "a download")
 
 	n, err := Dir(root)
-	if err != nil || n != 4 {
+	if err != nil || n != 2 {
 		t.Fatalf("n=%d err=%v", n, err)
 	}
 	for _, name := range []string{"index.html", "assets/app.js"} {
-		gz, err := os.ReadFile(filepath.Join(root, name+".gz"))
+		f, err := os.Open(filepath.Join(root, name+".gz"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		r, err := gzip.NewReader(bytes.NewReader(gz))
+		r, err := gzip.NewReader(f)
 		if err != nil {
 			t.Fatal(name, err)
 		}
-		if got, _ := io.ReadAll(r); !bytes.Equal(got, []byte(big)) {
+		got, _ := io.ReadAll(r)
+		f.Close()
+		if !bytes.Equal(got, []byte(big)) {
 			t.Fatalf("%s.gz doesn't match the file", name)
 		}
-		br, err := os.ReadFile(filepath.Join(root, name+".br"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, _ := io.ReadAll(brotli.NewReader(bytes.NewReader(br))); !bytes.Equal(got, []byte(big)) {
-			t.Fatalf("%s.br doesn't match the file", name)
-		}
 	}
-	for _, name := range []string{"small.css.gz", "small.css.br", "logo.png.gz", "logo.png.br"} {
+	for _, name := range []string{"small.css.gz", "logo.png.gz"} {
 		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
 			t.Fatalf("%s shouldn't exist", name)
 		}

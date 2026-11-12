@@ -36,7 +36,7 @@ func Render(source string, sites []Site, redirects [][2]string) string {
 			if s.CORS {
 				cors = "\theader Access-Control-Allow-Origin *\n"
 			}
-			fmt.Fprintf(&b, "%s {\n%s\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server {\n\t\tprecompressed br gzip\n\t}\n\thandle_errors {\n\t\trewrite * /404.html\n\t\tfile_server {\n\t\t\tprecompressed br gzip\n\t\t}\n\t}\n}\n", s.Host, cors, s.Root)
+			fmt.Fprintf(&b, "%s {\n%s\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server {\n\t\tprecompressed gzip\n\t}\n\thandle_errors {\n\t\trewrite * /404.html\n\t\tfile_server {\n\t\t\tprecompressed gzip\n\t\t}\n\t}\n}\n", s.Host, cors, s.Root)
 		}
 	}
 	for _, r := range redirects {
