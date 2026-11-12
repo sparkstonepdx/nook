@@ -1,5 +1,11 @@
 # nook
 
+## 1.9.1
+
+### Patch Changes
+
+- 6c62c06: Sheets stay open while the page refreshes in the background. Typing an app's name to delete it no longer closes the Manage sheet every 10 seconds.
+
 ## 1.9.0
 
 ### Minor Changes
