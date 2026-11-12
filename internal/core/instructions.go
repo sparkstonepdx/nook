@@ -128,6 +128,8 @@ The API, for other CI or by hand:
   + nook.json {"kind": "cron",        runs on a schedule, no port
       "schedule": "*/15 * * * *"}
   + nook.json {"needs": ["postgres"]} asks for a shared service (see 5)
+  + nook.json {"health": "/healthz"}  a path that answers under 400 when it works: checked after each
+                                      deploy (a failing one fails the job) and on the dashboard
 
 Site names: "%[2]s" is %[1]s; a hostname like client.com needs a grant (dashboard → Domains).
 Keep data in $HOME/data (it survives deploys); running sites get $PORT, $SITE and $SITE_HOST.

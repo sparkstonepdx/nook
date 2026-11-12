@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -276,6 +275,9 @@ func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
 	if len(a.Needs) > 0 {
 		man["needs"] = a.Needs
 	}
+	if a.Health != "" && a.kind() != "cron" { // so the dashboard checks it too
+		man["health"] = a.Health
+	}
 	manJSON, _ := json.MarshalIndent(man, "", "  ")
 	files := map[string][]byte{a.Binary: bin, "nook.json": manJSON}
 	for n, body := range a.Files {
@@ -351,37 +353,20 @@ func healthy(app, site string, a CatalogApp) error {
 	if a.kind() == "cron" {
 		return nil
 	}
-	deadline := time.Now().Add(60 * time.Second)
-	c := &http.Client{Timeout: 3 * time.Second}
-	for time.Now().Before(deadline) {
-		time.Sleep(2 * time.Second)
-		port := PortOf(app, site)
-		if port == 0 {
-			continue
-		}
-		if a.Health == "" {
+	if a.Health == "" {
+		deadline := time.Now().Add(60 * time.Second)
+		for time.Now().Before(deadline) {
+			time.Sleep(2 * time.Second)
 			if UnitProps(UnitName(app, site), "ActiveState")["ActiveState"] == "active" {
 				return nil
 			}
-			continue
 		}
-		req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d%s", port, a.Health), nil)
-		if a.kind() == "web" { // as Caddy sends it: apps that route by hostname (GoatCounter) need it
-			req.Host = names.HostOf(site, config.Load().BaseDomain)
-			req.Header.Set("X-Forwarded-Proto", "https")
-		}
-		resp, err := c.Do(req)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode < 400 {
-				return nil
-			}
-		}
+		return fmt.Errorf("%s didn't stay running", site)
 	}
-	if a.Health != "" {
-		return fmt.Errorf("%s didn't answer on %s within 60 s", site, a.Health)
+	if err := waitHealthy(app, site, a.Health, a.kind() == "web", 60*time.Second); err != nil {
+		return fmt.Errorf("%s isn't healthy after 60 s: %v", site, err)
 	}
-	return fmt.Errorf("%s didn't stay running", site)
+	return nil
 }
 
 // ---- install / update / remove ----

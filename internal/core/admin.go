@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/sparkstonepdx/nook/internal/caddyfile"
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -190,6 +192,9 @@ type SiteInfo struct {
 	Next     string `json:"next,omitempty"`     // cron: next run
 	Last     string `json:"last,omitempty"`     // cron: last run
 	Result   string `json:"result,omitempty"`   // cron: last result (success, exit-code, timeout ...)
+	Health   string `json:"health,omitempty"`   // the health path it declares
+	Healthy  *bool  `json:"healthy,omitempty"`  // and whether it answered just now
+	Problem  string `json:"healthError,omitempty"`
 }
 
 type AppInfo struct {
@@ -264,6 +269,7 @@ func (h *Host) Overview() map[string]any {
 					}
 					p := UnitProps(UnitName(a, s), "ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts")
 					si.Active, si.Sub, si.PID, si.Memory, si.Restarts = p["ActiveState"], p["SubState"], p["MainPID"], p["MemoryCurrent"], p["NRestarts"]
+					si.Health = SiteHealthPath(a, s)
 				}
 				if port := PortOf(a, s); port > 0 {
 					si.Port = strconv.Itoa(port)
@@ -277,6 +283,7 @@ func (h *Host) Overview() map[string]any {
 	if apps == nil {
 		apps = []AppInfo{}
 	}
+	checkHealth(apps)
 	free, _ := Run("free", "-m")
 	df, _ := Run("df", "-h", "/", "/srv")
 	caddy := UnitProps("caddy.service", "ActiveState")["ActiveState"]
@@ -354,3 +361,28 @@ func SyncLog(app string) (string, error) {
 }
 
 var _ = syscall.O_NOFOLLOW
+
+// checkHealth asks every running site that declares a health path, all at once, so a slow one costs the
+// dashboard at most two seconds.
+func checkHealth(apps []AppInfo) {
+	var wg sync.WaitGroup
+	for i := range apps {
+		for j := range apps[i].Sites {
+			si := &apps[i].Sites[j]
+			if si.Health == "" || si.Active != "active" {
+				continue
+			}
+			wg.Add(1)
+			go func(app string) {
+				defer wg.Done()
+				err := probeHealth(app, si.Name, si.Health, si.Kind == "web", 2*time.Second)
+				ok := err == nil
+				si.Healthy = &ok
+				if err != nil {
+					si.Problem = err.Error()
+				}
+			}(apps[i].Name)
+		}
+	}
+	wg.Wait()
+}
