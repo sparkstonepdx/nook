@@ -20,6 +20,9 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -o /tmp/nook-admin ./cmd/nook-admin
           CGO_ENABLED=0 go build -trimpath -o /tmp/nook ./cmd/nook
           CGO_ENABLED=0 go build -trimpath -o /tmp/deploy-action ./cmd/deploy-action
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Dashboard UI build is committed and current
         working-directory: dashboard/ui
         run: |
