@@ -29,7 +29,7 @@ type source struct {
 		GitHub  string            `json:"github"`  // owner/repo
 		Tag     string            `json:"tag"`     // pin a release; default: the latest
 		Assets  map[string]string `json:"assets"`  // GOARCH -> regexp for the asset name
-		Format  string            `json:"format"`  // tar.gz, gz or raw
+		Format  string            `json:"format"`  // tar.gz, zip, gz or raw
 		Version string            `json:"version"` // regexp with one group to take the version from the tag (default: the tag)
 	} `json:"source"`
 }

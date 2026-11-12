@@ -14,6 +14,7 @@ package core
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -49,7 +50,7 @@ type EnvField struct {
 type Artifact struct {
 	URL    string `json:"url"`
 	SHA256 string `json:"sha256"`
-	Format string `json:"format"` // tar.gz, gz (one gzipped file) or raw
+	Format string `json:"format"` // tar.gz, zip, gz (one gzipped file) or raw
 }
 
 type CatalogApp struct {
@@ -106,7 +107,7 @@ func (a CatalogApp) check() error {
 	for arch, art := range a.Artifacts {
 		test, isTest := update.TestServer() // UPDATE_API (root-set, for tests) may serve plain http
 		okURL := strings.HasPrefix(art.URL, "https://") || (isTest && strings.HasPrefix(art.URL, test))
-		if !okURL || !sha256RE.MatchString(art.SHA256) || (art.Format != "tar.gz" && art.Format != "gz" && art.Format != "raw") {
+		if !okURL || !sha256RE.MatchString(art.SHA256) || !artifactFormats[art.Format] {
 			return fmt.Errorf("catalog entry %s/%s: bad artifact", a.ID, arch)
 		}
 	}
@@ -216,8 +217,26 @@ func pkgFor(a CatalogApp) ([]byte, error) {
 }
 
 // extractBinary reads the executable out of the artifact in memory.
+var artifactFormats = map[string]bool{"tar.gz": true, "zip": true, "gz": true, "raw": true}
+
 func extractBinary(data []byte, format, name string) ([]byte, error) {
 	switch format {
+	case "zip":
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range zr.File {
+			if f.Mode().IsRegular() && path.Base(f.Name) == name {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				defer rc.Close()
+				return io.ReadAll(io.LimitReader(rc, 500<<20))
+			}
+		}
+		return nil, fmt.Errorf("no %s in the archive", name)
 	case "raw":
 		return data, nil
 	case "gz":
@@ -346,7 +365,12 @@ func healthy(app, site string, a CatalogApp) error {
 			}
 			continue
 		}
-		resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d%s", port, a.Health))
+		req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d%s", port, a.Health), nil)
+		if a.kind() == "web" { // as Caddy sends it: apps that route by hostname (GoatCounter) need it
+			req.Host = names.HostOf(site, config.Load().BaseDomain)
+			req.Header.Set("X-Forwarded-Proto", "https")
+		}
+		resp, err := c.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode < 400 {
