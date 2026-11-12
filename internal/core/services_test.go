@@ -16,7 +16,6 @@ func TestCheckServices(t *testing.T) {
 	bad := []Manifest{
 		{Kind: "web", Needs: []string{"Postgres!"}},
 		{Kind: "web", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"ALERT_URL": "x", "ALERT_TOKEN": "y"}}}}, // only services provide
-		{Kind: "service", Provides: map[string]ProvideSpec{"postgres": {Env: map[string]string{"DATABASE_URL": "x"}}}},            // built-in name
 		{Kind: "service", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"HOOK": "{url}"}}}},                  // known interface, wrong names
 		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"PORT": "{port}"}}}},                      // reserved name
 		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"X_URL": "a\nExecStart=/bin/sh"}}}},       // newline

@@ -8,7 +8,7 @@ type Binding = { app: string; interface: string; provider: string; as?: Record<s
 type Request = { app: string; interface: string; sites: string[] };
 type View = { apps: string[]; interfaces: Iface[]; providers: Provider[]; bindings: Binding[]; requests: Request[] };
 
-const label = (id: string) => (id === "postgres" ? "PostgreSQL (built in)" : id.replace(/^app:/, ""));
+const label = (id: string) => id.replace(/^app:/, "");
 
 // "DATABASE_URL=PG_URL, X=Y" -> { DATABASE_URL: "PG_URL", X: "Y" }
 const parseAs = (s: string) => {
@@ -76,7 +76,7 @@ export default function Services() {
                 <span class="row-end">
                   <Show when={!b.ready}><StatusBadge ok={false} title="The provider isn't running or no longer offers this">unavailable</StatusBadge></Show>
                   <button class="btn btn-ghost btn-sm" onClick={async () => {
-                    if (!window.confirm(`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.${b.provider === "postgres" ? " The database itself is kept." : ""}`)) return;
+                    if (!window.confirm(`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.`)) return;
                     await runCmd(`Unbound ${b.app} from ${b.interface}`, "/api/services/unbind", { app: b.app, interface: b.interface });
                     refetch();
                   }}>Unbind</button>

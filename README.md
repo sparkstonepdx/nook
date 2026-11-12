@@ -163,15 +163,11 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 
 | Service | App sees | Providers |
 |---|---|---|
-| `postgres` | `DATABASE_URL` | built in: `nook-admin services install postgres` |
+| `postgres` | `DATABASE_URL` | any app that provides it |
 | `email` | `SMTP_URL` | (coming: the SES gateway) |
 | `alerts` | `ALERT_URL`, `ALERT_TOKEN` | any app that provides it |
 | `analytics` | `ANALYTICS_URL`, `ANALYTICS_TOKEN` | any app that provides it |
 | `s3` | `S3_ENDPOINT`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | any app that provides it |
-
-**Postgres:**
-- **Locked down:** listens on its unix socket only, with peer auth. App `blog` runs as Linux user `nook-blog`, which may log in only as role `nook-blog` and open only database `nook-blog`. No password exists anywhere.
-- **Unbinding keeps the database.** `nook-admin services drop-db APP` deletes it, and asks you to type the app name.
 
 **An app as a provider:**
 - **Declaring it:** a site of kind `service` declares what it implements:
