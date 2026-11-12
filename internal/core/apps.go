@@ -10,6 +10,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/token"
 )
 
 var (
@@ -102,7 +103,7 @@ func (h *Host) CreateToken(o CreateOpts) (string, error) {
 		return "", err
 	}
 	for _, f := range strings.Fields(out) {
-		if strings.HasPrefix(f, "nook_") {
+		if token.IsAPI(f) {
 			return f, nil
 		}
 	}

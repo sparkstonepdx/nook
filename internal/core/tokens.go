@@ -17,7 +17,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/token"
 )
 
-// Deploy tokens: "nook_" + the dashboard's address + "/" + 43 base64url characters (32 random bytes); see
+// Deploy tokens: "nook:" + the dashboard's address + "/" + 43 base64url characters (32 random bytes); see
 // internal/token/api.go. /etc/nook/tokens (root-only) keeps only their SHA-256, one per line:
 // "hash app created_unix label".
 
@@ -103,13 +103,11 @@ func newToken() (string, error) {
 	}
 	// the address deploys go to, as DeployBase gives it: the dashboard's hostname, or IP:port before it has one
 	addr := strings.TrimSuffix(strings.TrimPrefix(DeployBase(config.Load()), "https://"), "/api/v1/sites/")
-	if _, ok := token.APIServer("nook_" + addr + "/" + strings.Repeat("A", 43)); !ok {
-		addr = ""
+	secret := base64.RawURLEncoding.EncodeToString(raw)
+	if _, ok := token.APIServer("nook:" + addr + "/" + secret); ok {
+		return "nook:" + addr + "/" + secret, nil
 	}
-	if addr != "" {
-		addr += "/"
-	}
-	return "nook_" + addr + base64.RawURLEncoding.EncodeToString(raw), nil
+	return "nook_" + secret, nil // no usable address: the older form, used with the action's url
 }
 
 // TokenList lists app's tokens (all apps when app is "").
