@@ -22,3 +22,17 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("WithoutRedirect:\n%s", out)
 	}
 }
+
+func TestRenderCORS(t *testing.T) {
+	text := Render("app", []Site{{Host: "a.test", Root: "/w/a", CORS: true}, {Host: "b.test", Root: "/w/b"}, {Host: "c.test", Port: 9000, CORS: true}}, nil)
+	a := text[strings.Index(text, "a.test {"):strings.Index(text, "b.test {")]
+	if !strings.Contains(a, "\theader Access-Control-Allow-Origin *\n") {
+		t.Fatalf("static site with cors has no header:\n%s", a)
+	}
+	if n := strings.Count(text, "Access-Control-Allow-Origin"); n != 1 {
+		t.Fatalf("want the header only on a.test, got %d:\n%s", n, text)
+	}
+	if live, _ := Hosts(text); len(live) != 3 {
+		t.Fatalf("Hosts after cors: %v", live)
+	}
+}

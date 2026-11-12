@@ -15,6 +15,8 @@ type Site struct {
 	// (Version is the site folder's inode, which changes on every atomic swap).
 	Folder  string
 	Version string
+	// CORS lets any origin read a static site's files (nook.json {"cors": true}).
+	CORS bool
 }
 
 const redirectMark = " { # redirect"
@@ -30,7 +32,11 @@ func Render(source string, sites []Site, redirects [][2]string) string {
 		if s.Port > 0 {
 			fmt.Fprintf(&b, "%s {\n\treverse_proxy 127.0.0.1:%d\n}\n", s.Host, s.Port)
 		} else {
-			fmt.Fprintf(&b, "%s {\n\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server\n\thandle_errors {\n\t\trewrite * /404.html\n\t\tfile_server\n\t}\n}\n", s.Host, s.Root)
+			cors := ""
+			if s.CORS {
+				cors = "\theader Access-Control-Allow-Origin *\n"
+			}
+			fmt.Fprintf(&b, "%s {\n%s\troot * %s\n\ttry_files {path} {path}/ /200.html\n\tfile_server\n\thandle_errors {\n\t\trewrite * /404.html\n\t\tfile_server\n\t}\n}\n", s.Host, cors, s.Root)
 		}
 	}
 	for _, r := range redirects {

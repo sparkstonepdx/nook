@@ -19,6 +19,7 @@ Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. 
 - **Schedules** can be 5-field cron, `@daily`-style shorthands, or a systemd calendar expression. Cron's "day of month OR day of week" combination is refused rather than silently changed.
 - **What every kind gets:** all three get the same env scopes, logs and sandbox.
 - **Health checks:** a web site or service can name a path that answers under 400 when it's working: `{"health": "/healthz"}`. After a deploy, nook waits up to 60 s for it, and the deploy API reports `healthy`; the action fails the job if it isn't. The dashboard asks it every time it loads, with a 2 s limit, and shows **unhealthy** with the reason on that site. It's asked on the site's port with its hostname, as Caddy sends it.
+- **CORS for static sites:** a static site (no `run`) with `{"cors": true}` in its `nook.json` answers with `Access-Control-Allow-Origin: *`, so pages on any domain can fetch its files (a config file other sites read, say). Off by default. The `nook.json` is published with the site like any other file. Running sites set their own headers.
 - **Cron jobs:** a run that's still going after `timeout` (default 1 hour) is stopped. Runs missed while the server was down happen at the next boot. The dashboard shows the last result and the next run, and **Run now** (or `nook site restart NAME`) runs one immediately.
 
 Two static Go binaries, no runtime dependencies:

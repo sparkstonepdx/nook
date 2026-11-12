@@ -307,7 +307,12 @@ func (h *Host) syncLocked(app string) error {
 					continue
 				}
 			}
-			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10)})
+			// static sites read nook.json only for cors; a bad file publishes the site without it
+			m, err := u.readManifest(s)
+			if err != nil {
+				h.say("%s: %s: %v; published without cors", app, s, err)
+			}
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS})
 		}
 	}
 	if sites != nil {
