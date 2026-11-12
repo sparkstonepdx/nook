@@ -23,7 +23,7 @@ export default function DomainsPage() {
       <PageHead title="Domains" detail={data()?.baseDomain}>
         <button class="btn" onClick={() => setAllowing(true)}>Allow a domain</button>
       </PageHead>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
       <Show when={data()}>{(d) => (<>
         <section class="section">
           <h2>What each app may use</h2>

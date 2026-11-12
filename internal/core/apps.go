@@ -22,6 +22,46 @@ var (
 
 type CreateOpts struct{ Name, Memory, CPU, Tasks, Repo string }
 
+// SetLimits changes an app's memory, CPU and task limits: the slice file for good, and the running slice
+// at once, so nothing restarts. An empty value keeps the current one.
+func (h *Host) SetLimits(app, memory, cpu, tasks string) error {
+	if _, err := LookupApp(app); err != nil {
+		return err
+	}
+	if (memory != "" && !memRE.MatchString(memory)) || (cpu != "" && !cpuRE.MatchString(cpu)) || (tasks != "" && !numRE.MatchString(tasks)) {
+		return fmt.Errorf("memory like 512M or 2G, cpu like 50%% (100%% is one core), tasks a number")
+	}
+	unlock, err := Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	path := filepath.Join("/etc/systemd/system", "nook-"+app+".slice")
+	cur := map[string]string{"MemoryMax": h.S.MemoryMax, "CPUQuota": h.S.CPUQuota, "TasksMax": h.S.TasksMax}
+	if b, err := os.ReadFile(path); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if k, v, ok := strings.Cut(l, "="); ok {
+				if _, known := cur[k]; known {
+					cur[k] = strings.TrimSpace(v)
+				}
+			}
+		}
+	}
+	for k, v := range map[string]string{"MemoryMax": memory, "CPUQuota": cpu, "TasksMax": tasks} {
+		if v != "" {
+			cur[k] = v
+		}
+	}
+	slice := fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=%s\n", app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])
+	if err := config.WriteAtomic(path, []byte(slice), 0o644); err != nil {
+		return err
+	}
+	systemctl("daemon-reload")
+	systemctl("set-property", "--runtime", "nook-"+app+".slice", "MemoryMax="+cur["MemoryMax"], "CPUQuota="+cur["CPUQuota"], "TasksMax="+cur["TasksMax"])
+	h.say("%s: memory %s, cpu %s, tasks %s", app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])
+	return nil
+}
+
 // Create makes the user, folders, limits, deploy key and grant, and returns what to paste into GitHub.
 func (h *Host) Create(o CreateOpts) (string, error) {
 	if o.Memory == "" {

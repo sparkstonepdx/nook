@@ -35,6 +35,8 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin install [--domain D] [--ip IP]     set up or upgrade this box
   nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
   nook-admin delete NAME                         asks you to type the name
+  nook-admin limits NAME [--memory 512M] [--cpu 100%] [--tasks 256]   change an app's limits (no restart)
+  nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
   nook-admin grant add|rm APP domain|sub|host NAME
@@ -138,6 +140,39 @@ func main() {
 	case "token":
 		needRoot()
 		tokenCmd(args)
+	case "limits":
+		needRoot()
+		if len(args) < 2 {
+			die(fmt.Errorf("usage: nook-admin limits NAME [--memory 512M] [--cpu 100%%] [--tasks 256]"))
+		}
+		var mem, cpu, tasks string
+		for i := 2; i+1 < len(args); i += 2 {
+			switch args[i] {
+			case "--memory":
+				mem = args[i+1]
+			case "--cpu":
+				cpu = args[i+1]
+			case "--tasks":
+				tasks = args[i+1]
+			default:
+				die(fmt.Errorf("unknown option %s", args[i]))
+			}
+		}
+		die(h.SetLimits(args[1], mem, cpu, tasks))
+	case "headroom":
+		needRoot()
+		rng := "24h"
+		if len(args) > 1 {
+			rng = args[1]
+		}
+		v := core.Headroom(rng)
+		fmt.Println(v.Summary)
+		for _, r := range v.Resources {
+			fmt.Printf("  %-7s %-6s %-18s %s\n", r.Name, r.Status, r.Figure, r.Detail)
+		}
+		for _, a := range v.Advice {
+			fmt.Printf("  * %s: %s\n", a.Title, a.Detail)
+		}
 	case "instructions":
 		needRoot()
 		instructionsCmd(args)

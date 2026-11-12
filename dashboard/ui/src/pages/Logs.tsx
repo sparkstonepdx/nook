@@ -20,7 +20,7 @@ export default function Logs() {
       <PageHead title={isSite() ? "Logs" : "Sync log"} back={{ href: "/", label: "Apps" }} detail={isSite() ? data()?.host || params.site : params.app}>
         <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>Refresh</button>
       </PageHead>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
       <Show when={isSite() && data()?.status}><pre class="output"><Ansi text={data()!.status} /></pre></Show>
       <pre ref={pre} class="output log"><Show when={data()} fallback="Loading…"><Ansi text={data()!.log} /></Show></pre>
     </div>

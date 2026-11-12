@@ -218,7 +218,17 @@ Any hostname that points here but isn't a site (or the dashboard) gets a plain 4
 
 Over `https://`, an unknown hostname fails the TLS handshake instead, because Caddy only has certificates for names it serves.
 
-## Commands
+## Headroom
+
+The Server section of the dashboard (and `nook-admin headroom`) says whether this server has room to spare and, if not, what to upgrade.
+
+- **Samples:** every 5 minutes the helper records memory, swap, pressure stall (PSI) for memory, CPU and IO, each filesystem's use, and each app's memory, CPU time and OOM kills. Kept 30 days in `/var/lib/nook/stats/samples.jsonl`.
+- **Memory:** tight when programs wait for memory 10% of a minute, under 5% is free, or over half of swap is used; watch at 2% or under 15% free. Advice: add RAM.
+- **CPU:** tight when programs wait for CPU 25% of the time in over a quarter of the day's samples; watch at 10%. Advice: more or faster cores.
+- **Disk:** tight under 10% free, under 14 days to full at the current rate, or under 5% of inodes free; watch at 20%, 60 days or 15%. Advice: more storage.
+- **Apps:** an app killed for hitting its own memory limit, or using over 90% of it, gets "raise its limit" rather than "add RAM".
+- **Notifications:** a push when the overall status changes.
+
 
 Root (`nook-admin`):
 
@@ -229,6 +239,8 @@ nook-admin delete NAME
 nook-admin sync NAME | --all
 nook-admin grant list [APP] | grant add|rm APP domain|sub|host NAME
 nook-admin env list|set|unset NAME ...
+nook-admin limits NAME [--memory 512M] [--cpu 100%] [--tasks 512]
+nook-admin headroom
 nook-admin invite
 nook-admin update [--check]
 ```
@@ -253,7 +265,7 @@ nook site logs SITE [N]
 | `/srv/nook/<app>/secrets.env` | optional env vars written by the app's own deploys; `nook-admin env` values override them |
 | `/var/log/nook/<app>/<site>.log` | output of running sites (root-owned, app-readable, rotated hourly at 10 MB) |
 
-Running sites listen on `127.0.0.1:$PORT` and also get `$SITE`, `$SITE_HOST`, `$HOME`. Ports come from 20000–29999. Everything one app runs shares a systemd slice (default 256M memory, 50% CPU, 256 tasks; set per app at creation).
+Running sites listen on `127.0.0.1:$PORT` and also get `$SITE`, `$SITE_HOST`, `$HOME`. Ports come from 20000–29999. Everything one app runs shares a systemd slice (default 256M memory, 50% CPU, 256 tasks; set at creation, change any time with Manage → Limits or `nook-admin limits`, no restart).
 
 ## Security model
 

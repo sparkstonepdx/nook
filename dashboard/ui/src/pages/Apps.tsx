@@ -2,6 +2,7 @@ import { For, Show, createResource, createSignal, onCleanup } from "solid-js";
 import { A } from "@solidjs/router";
 import { api, runCmd, setResult, type CmdResult } from "../api";
 import { StatusBadge, Field, PageHead, Sheet, TokenBox } from "../components";
+import Server from "./Server";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][] };
@@ -60,6 +61,7 @@ export default function Apps() {
   const [creating, setCreating] = createSignal(false);
   const [site, setSite] = createSignal<{ app: string; name: string } | null>(null);
   const [manage, setManage] = createSignal<string | null>(null);
+  const [limits, setLimits] = createSignal<string | null>(null);
   const appOf = (name: string | null | undefined) => data()?.apps.find((a) => a.name === name);
   const siteOf = () => { const s = site(); return s ? appOf(s.app)?.sites.find((x) => x.name === s.name) : undefined; };
 
@@ -68,14 +70,14 @@ export default function Apps() {
       <PageHead title="Apps" detail={data()?.baseDomain}>
         <button class="btn" onClick={() => setCreating(true)}>New app</button>
       </PageHead>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
 
       <For each={data()?.apps} fallback={<Show when={data()}><p class="empty">No apps yet.</p></Show>}>
         {(app) => (
           <section class="section">
             <div class="page-head">
               <h2>{app.name}</h2>
-              <span class="text-secondary">{mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {app.cpu || "?"}</span>
+              <span class="text-secondary">{mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</span>
               <Show when={app.watcher !== "active"}><StatusBadge ok={false} title="The watcher deploys new folders in sites/">watcher {app.watcher}</StatusBadge></Show>
               <div class="page-actions">
                 <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd(`Synced ${app.name}`, `/api/apps/${app.name}/sync`))}>Sync</button>
@@ -99,22 +101,13 @@ export default function Apps() {
       </For>
 
       <Show when={data()}>
-        <section class="section">
-          <div class="page-head">
-            <h2>Server</h2>
-            <StatusBadge ok={data()!.system.caddy === "active"}>caddy {data()!.system.caddy}</StatusBadge>
-            <div class="page-actions">
-              <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd("Synced all apps", "/api/sync-all"))}>Sync all</button>
-              <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd("Reloaded Caddy", "/api/caddy/reload"))}>Reload Caddy</button>
-            </div>
-          </div>
-          <pre class="output">{data()!.system.free}{"\n"}{data()!.system.df}</pre>
-        </section>
+        <Server caddy={data()!.system.caddy} onLimits={(a) => setLimits(a)} after={after} />
       </Show>
 
       <Show when={data()}>{(d) => <NewApp open={creating()} defaults={d().defaults} onClose={() => setCreating(false)} onDone={() => refetch()} />}</Show>
       <SiteSheet app={site()?.app ?? ""} site={siteOf()} onClose={() => setSite(null)} after={after} />
-      <ManageSheet app={appOf(manage())} onClose={() => setManage(null)} after={after} />
+      <ManageSheet app={appOf(manage())} onClose={() => setManage(null)} after={after} onLimits={(a) => { setManage(null); setLimits(a); }} />
+      <LimitsSheet app={appOf(limits())} onClose={() => setLimits(null)} after={after} />
     </>
   );
 }
@@ -167,7 +160,7 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
           <div class="stack">
             <p class="cmd-line">{siteBadge(s())} <span class="text-secondary">{kindTitle[s().kind]}</span></p>
             <Show when={s().host && !s().live}>
-              <div class="alert alert-error">Sync skipped this hostname: it isn't allowed for {props.app}, it's reserved, or another app has it. Sync shows which.</div>
+              <div class="note note-bad">Sync skipped this hostname: it isn't allowed for {props.app}, it's reserved, or another app has it. Sync shows which.</div>
             </Show>
             <dl class="facts">
               <Show when={s().kind === "cron"}><dt>Schedule</dt><dd class="mono">{s().schedule}</dd><dt>Next</dt><dd>{s().next && s().next !== "n/a" ? s().next : "not scheduled"}</dd><dt>Last run</dt><dd>{s().last && s().last !== "n/a" ? `${s().last} (${s().result})` : "never"}</dd></Show>
@@ -196,7 +189,7 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
   );
 }
 
-function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promise<unknown>) => void }) {
+function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promise<unknown>) => void; onLimits: (app: string) => void }) {
   const [confirm, setConfirm] = createSignal("");
   const a = () => props.app!;
   return (
@@ -207,6 +200,7 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             <li><A class="row" href={`/apps/${a().name}/env`}><span class="row-main"><span>Environment</span><small>Secrets and settings its sites load</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
             <li><A class="row" href={`/apps/${a().name}/deploy`}><span class="row-main"><span>Deploy</span><small>Tokens and the setup for its repo</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
             <li><A class="row" href={`/apps/${a().name}/sync-log`}><span class="row-main"><span>Sync log</span><small>What the last syncs did</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
+            <li><button class="row" onClick={() => props.onLimits(a().name)}><span class="row-main"><span>Limits</span><small>{a().memoryMax || "?"} memory · {cpuPct(a().cpu)} CPU</small></span><span class="row-end"><span class="chev">›</span></span></button></li>
             <li><A class="row" href="/domains"><span class="row-main"><span>Domains</span><small>{a().grants.length ? a().grants.map(([, k, n]) => grantLabel(k, n)).join(", ") : "Nothing allowed yet"}</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
           </ul>
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
@@ -219,6 +213,40 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             <button class="btn danger-fill delete" disabled={confirm() !== a().name}>Delete {a().name}</button>
           </form>
         </div>
+      </Show>
+    </Sheet>
+  );
+}
+
+// "1s" per second of CPU time = 100%: systemd reports CPUQuotaPerSecUSec as "500ms", "1s", "2s" or "infinity"
+const cpuPct = (q: string) => {
+  const m = /^([\d.]+)(ms|s)$/.exec(q || "");
+  if (!m) return q === "infinity" ? "no limit" : q || "?";
+  return `${Math.round(Number(m[1]) * (m[2] === "s" ? 100 : 0.1))}%`;
+};
+
+// An app's memory, CPU and process limits. The running slice changes at once; nothing restarts.
+function LimitsSheet(props: { app?: App; onClose: () => void; after: (p?: Promise<unknown>) => void }) {
+  return (
+    <Sheet open={!!props.app} title={props.app ? `${props.app.name}'s limits` : ""} onClose={props.onClose}
+      footer={<><button class="btn btn-secondary" onClick={props.onClose}>Cancel</button><button class="btn" type="submit" form="limits">Save</button></>}>
+      <Show when={props.app}>
+        {(a) => (
+          <form id="limits" onSubmit={(e) => {
+            e.preventDefault();
+            const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
+            const name = a().name;
+            props.onClose();
+            props.after(runCmd(`Changed ${name}'s limits`, `/api/apps/${name}/limits`, f));
+          }}>
+            <p class="hint">{mb(a().memory) ? `Using ${mb(a().memory)} now. ` : ""}Changes apply at once, without restarting it.</p>
+            <div class="field-row">
+              <Field label="Memory" hint="512M, 2G"><input class="input" name="memory" value={/^\d+[KMG]$/.test(a().memoryMax || "") ? a().memoryMax : ""} placeholder="keep" pattern="\d+[KMG]" /></Field>
+              <Field label="CPU" hint="100% is one core"><input class="input" name="cpu" value={/^\d+%$/.test(cpuPct(a().cpu)) ? cpuPct(a().cpu) : ""} placeholder="keep" pattern="\d+%" /></Field>
+            </div>
+            <Field label="Processes and threads" hint="Empty fields keep what's set now."><input class="input" name="tasks" placeholder="keep" pattern="\d+" /></Field>
+          </form>
+        )}
       </Show>
     </Sheet>
   );

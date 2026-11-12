@@ -81,7 +81,7 @@ export default function Store() {
         <button class="btn btn-ghost btn-sm" onClick={() => { setRefresh(true); refetch(); }}>Refresh catalog</button>
       </PageHead>
       <p class="lede">Each app installs as its own nook app, with its own user, folder and limits. Updates roll back by themselves if the new version doesn't come up.</p>
-      <Show when={data.error || data()?.error}><div class="alert alert-error">{String(data.error?.message ?? data()?.error)}</div></Show>
+      <Show when={data.error || data()?.error}><div class="note note-bad">{String(data.error?.message ?? data()?.error)}</div></Show>
 
       <nav class="tabs" role="tablist">
         <A href="/store" end class="tab" activeClass="tab-active" role="tab">Installed<Show when={data()?.installed.length}> ({data()!.installed.length})</Show></A>
@@ -171,7 +171,7 @@ export default function Store() {
             setRefresh(true); refetch();
           } catch (x) { say("Couldn't add that catalog", { kind: "error", detail: (x as Error).message }); }
         }}>
-          <div class="alert alert-warning">nook doesn't review community catalogs. An app from one runs as its own user like any other, but only add catalogs from people you trust.</div>
+          <div class="note note-warn">nook doesn't review community catalogs. An app from one runs as its own user like any other, but only add catalogs from people you trust.</div>
           <Field label="GitHub repo or URL" hint="A repo publishes its catalog to its dist branch. A URL is where index.json, index.json.sig and catalog.pub are."><input class="input mono" name="source" required placeholder="owner/nook-catalog" autocomplete="off" /></Field>
         </form>
       </Sheet>
@@ -180,7 +180,7 @@ export default function Store() {
         footer={<><button class="btn btn-secondary" onClick={() => { setOffer(null); setParams({ app: undefined, source: undefined }, { replace: true }); }}>Cancel</button><button class="btn" onClick={addOffered}>Add and continue</button></>}>
         <div class="stack">
           <p><strong class="mono">{offer()}</strong> isn't one of your catalogs yet. Adding it pins its signing key, then opens the install.</p>
-          <div class="alert alert-warning"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
+          <div class="note note-warn"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
         </div>
       </Sheet>
       <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
@@ -201,7 +201,7 @@ function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => v
               <dt>Version</dt><dd class="mono">{r().version}<Show when={r().available}> · {r().latest} available</Show></dd>
               <dt>Site</dt><dd><Show when={r().url} fallback={<span class="mono">{r().site}</span>}><a class="link" href={r().url} target="_blank" rel="noopener">{r().site}</a></Show></dd>
             </dl>
-            <Show when={r().lastError}><div class="alert alert-error">The last update didn't come up, so it was rolled back: {r().lastError}</div></Show>
+            <Show when={r().lastError}><div class="note note-bad">The last update didn't come up, so it was rolled back: {r().lastError}</div></Show>
             <Field label="Updates" hint={policyHint[r().policy]}>
               <select class="select" onChange={async (e) => {
                 const p = e.currentTarget.value;
@@ -243,7 +243,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             if (r.ok) props.onDone();
           }}>
             <Show when={a().official} fallback={
-              <div class="alert alert-warning"><span>From the community catalog <strong>{a().catalogName}</strong>, not the official one. nook doesn't review it, so install it only if you trust whoever runs that catalog.</span></div>
+              <div class="note note-warn"><span>From the community catalog <strong>{a().catalogName}</strong>, not the official one. nook doesn't review it, so install it only if you trust whoever runs that catalog.</span></div>
             }>
               <p class="cmd-line"><Origin official name="" /> <span class="hint">From the official nook catalog.</span></p>
             </Show>
