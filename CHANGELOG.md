@@ -1,5 +1,14 @@
 # nook
 
+## 1.6.1
+
+### Patch Changes
+
+- b72519b: Trust the official catalog's signing key (sparkstonepdx/nook-catalog), so the Store lists its apps.
+- 988d49f: Deleting an app that was only partly created or deleted removes what is left of it instead of failing with "no app named".
+- 41f6bf1: Logs and command output show terminal colours (ANSI codes) as styled text instead of raw codes like [2m.
+- bee5fcc: New deploy tokens read `nook:admin.example.com/…`, so the address is easy to see. Tokens from 1.6 (`nook_admin.example.com/…`) and older ones keep working.
+
 ## 1.6.0
 
 ### Minor Changes
