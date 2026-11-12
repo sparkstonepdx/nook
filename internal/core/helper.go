@@ -233,6 +233,9 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(map[string]any{}, nil)
 	case "store":
 		return data(StoreOverview(p["refresh"] == "1"), nil)
+	case "storeImage":
+		t, b, err := StoreImage(p["catalog"], p["sha"])
+		return data(map[string]any{"type": t, "data": b}, err)
 	case "headroom":
 		return data(Headroom(p["range"]), nil)
 	case "setLimits":

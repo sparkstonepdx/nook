@@ -141,3 +141,14 @@ details summary { position: relative; padding-block: var(--space-xs); }
 .note > span { min-width: 0; }
 .update-banner { margin-bottom: var(--space-xl); }
 .update-banner::before { background: var(--accent-text); }
+
+/* Store: app icons, detail page, screenshots */
+.app-coin { flex: none; display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: var(--radius-field); background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-weight: var(--display-weight); font-size: var(--text-lg); object-fit: cover; }
+img.app-coin { background: var(--surface-2, transparent); }
+.app-coin.big { width: 4rem; height: 4rem; font-size: var(--text-xl); border-radius: var(--radius-box); }
+.app-title { display: inline-flex; align-items: center; gap: var(--space-md); }
+.gallery { list-style: none; margin: var(--space-lg) calc(-1 * var(--space-md)); padding: 0 var(--space-md) var(--space-sm); display: flex; gap: var(--space-md); overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; }
+.gallery li { flex: none; scroll-snap-align: start; }
+/* --ar is the image's own width/height, so a phone-width cap shrinks it rather than letterboxing it */
+.gallery img { --h: 15rem; display: block; width: min(85vw, calc(var(--h) * var(--ar, 1.6))); height: auto; aspect-ratio: var(--ar, 1.6); border-radius: var(--radius-box); border: 1px solid var(--border); }
+@media (min-width: 48rem) { .gallery img { --h: 20rem; } }

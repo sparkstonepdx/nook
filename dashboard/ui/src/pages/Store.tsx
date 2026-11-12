@@ -1,10 +1,11 @@
 import { For, Show, createEffect, createResource, createSignal } from "solid-js";
-import { A, useLocation, useNavigate, useSearchParams } from "@solidjs/router";
+import { A, useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { api, runCmd, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge } from "../components";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
-type CatalogApp = { id: string; name: string; description: string; homepage?: string; license?: string; version: string; kind?: string; site?: string; needs?: string[]; env?: EnvField[]; catalog: string; catalogName: string; official?: boolean };
+type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
+type CatalogApp = { id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
 type Row = { app: string; id: string; name: string; version: string; latest: string; available: boolean; site: string; policy: string; url?: string; lastError?: string; catalog?: string; catalogName: string; official: boolean };
 type CatalogInfo = { id: string; name: string; repo?: string; url: string; official: boolean; fingerprint: string; apps: number; fetchedAt?: string; error?: string };
 type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[] };
@@ -14,6 +15,18 @@ export function Origin(props: { official?: boolean; name: string }) {
   return (
     <Show when={props.official} fallback={<span class="badge badge-warning" title={`From the community catalog ${props.name}. nook doesn't review it.`}>{props.name}</span>}>
       <span class="badge badge-success verified" title="From the official nook catalog"><span aria-hidden="true">✓</span> Verified</span>
+    </Show>
+  );
+}
+
+// Catalog images come through the helper, which checks them against the hash the signed index pins.
+const imageURL = (a: CatalogApp, i: Image) => `/api/store/image/${encodeURIComponent(a.catalog)}/${i.sha256}`;
+const appPath = (a: CatalogApp) => `/store/apps/${encodeURIComponent(a.catalog)}/${encodeURIComponent(a.id)}`;
+
+function AppIcon(props: { app: CatalogApp; big?: boolean }) {
+  return (
+    <Show when={props.app.icon} fallback={<span class="app-coin" classList={{ big: props.big }} aria-hidden="true">{props.app.name.slice(0, 1)}</span>}>
+      {(i) => <img class="app-coin" classList={{ big: props.big }} src={imageURL(props.app, i())} alt="" width={props.big ? 64 : 44} height={props.big ? 64 : 44} />}
     </Show>
   );
 }
@@ -42,6 +55,8 @@ export default function Store() {
   const installedIDs = () => new Set((data()?.installed ?? []).map((r) => `${r.catalog || "official"}/${r.id}`));
   const loc = useLocation();
   const browsing = () => loc.pathname.startsWith("/store/install");
+  const route = useParams();
+  const detail = () => loc.pathname.startsWith("/store/apps/") ? data()?.catalog.find((a) => a.catalog === route.catalog && a.id === route.id) : undefined;
   const managing = () => loc.pathname.startsWith("/store/catalogs");
   const [adding, setAdding] = createSignal(false);
   const navigate = useNavigate();
@@ -76,6 +91,14 @@ export default function Store() {
   };
 
   return (
+    <Show when={!loc.pathname.startsWith("/store/apps/")} fallback={
+      <Show when={detail()} fallback={<Show when={data()}><PageHead title="Not in your catalogs" back={{ href: "/store/install", label: "Install" }} /><p class="lede">Refresh the catalog, or check the link.</p></Show>}>
+        {(a) => <>
+          <AppDetail app={a()} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
+          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
+        </>}
+      </Show>
+    }>
     <>
       <PageHead title="Store">
         <button class="btn btn-ghost btn-sm" onClick={() => { setRefresh(true); refetch(); }}>Refresh catalog</button>
@@ -114,14 +137,14 @@ export default function Store() {
         <ul class="list">
           <For each={data()?.catalog} fallback={<Show when={data()}><li class="row"><span class="empty">The catalog is empty.</span></li></Show>}>
             {(a) => (
-              <li class="row">
+              <li><A class="row" href={appPath(a)}>
+                <AppIcon app={a} />
                 <span class="row-main">
-                  <span>{a.name} <span class="mono text-secondary">{a.version}</span> <Origin official={a.official} name={a.catalogName} /></span>
+                  <span>{a.name} <Origin official={a.official} name={a.catalogName} /></span>
                   <small>{a.description}</small>
-                  <small>{a.kind ?? "web"}<Show when={a.license}> · {a.license}</Show><Show when={a.needs?.length}> · needs {a.needs!.join(", ")}</Show><Show when={a.homepage}> · <a class="link" href={a.homepage} target="_blank" rel="noopener">homepage</a></Show></small>
                 </span>
-                <span class="row-end"><button class="btn btn-sm" onClick={() => setPicked(a)}>{installedIDs().has(`${a.catalog}/${a.id}`) ? "Add another" : "Install"}</button></span>
-              </li>
+                <span class="row-end"><Show when={installedIDs().has(`${a.catalog}/${a.id}`)}><span class="badge">Installed</span></Show><span class="chev">›</span></span>
+              </A></li>
             )}
           </For>
         </ul>
@@ -186,6 +209,57 @@ export default function Store() {
       <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
       <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} />
     </>
+    </Show>
+  );
+}
+
+const kindLabel: Record<string, string> = { web: "A website at its own address", service: "A service other apps use", cron: "Runs on a schedule" };
+
+function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () => void }) {
+  const a = () => props.app;
+  const arches = () => Object.keys(a().artifacts ?? {}).join(", ");
+  return (
+    <>
+      <PageHead title={<span class="app-title"><AppIcon app={a()} big />{a().name}</span>} back={{ href: "/store/install", label: "Install" }}>
+        <button class="btn" onClick={props.onInstall}>{props.installed ? "Add another" : "Install"}</button>
+      </PageHead>
+      <p class="cmd-line"><Origin official={a().official} name={a().catalogName} /> <span class="mono text-secondary">{a().version}</span></p>
+      <p class="lede">{a().description}</p>
+      <Show when={a().screenshots?.length}>
+        <ul class="gallery" aria-label="Screenshots">
+          <For each={a().screenshots}>
+            {(i) => <li><a href={imageURL(a(), i)} target="_blank" rel="noopener"><img src={imageURL(a(), i)} alt={i.alt ?? ""} width={i.width} height={i.height} style={i.width && i.height ? { "--ar": `${i.width} / ${i.height}` } : undefined} loading="lazy" /></a></li>}
+          </For>
+        </ul>
+      </Show>
+      <section class="section">
+        <h2>Details</h2>
+        <dl class="facts card">
+          <dt>Kind</dt><dd>{kindLabel[a().kind || "web"]}</dd>
+          <Show when={a().license}><dt>License</dt><dd>{a().license}</dd></Show>
+          <Show when={a().memory}><dt>Memory</dt><dd>up to {a().memory}</dd></Show>
+          <Show when={arches()}><dt>Runs on</dt><dd>{arches()}</dd></Show>
+          <Show when={a().needs?.length}><dt>Needs</dt><dd>{a().needs!.join(", ")}</dd></Show>
+        </dl>
+      </section>
+      <Show when={a().env?.length}>
+        <section class="section">
+          <h2>It asks for</h2>
+          <ul class="list">
+            <For each={a().env}>{(f) => <li class="row"><span class="row-main"><span class="mono">{f.key}</span><small>{f.desc}<Show when={f.default}> · default <span class="mono">{f.default}</span></Show></small></span></li>}</For>
+          </ul>
+        </section>
+      </Show>
+      <Show when={a().homepage || a().repo}>
+        <section class="section">
+          <h2>The original</h2>
+          <ul class="list">
+            <Show when={a().homepage}><li><a class="row" href={a().homepage} target="_blank" rel="noopener"><span class="row-main"><span>Homepage</span><small class="mono">{a().homepage!.replace(/^https:\/\//, "")}</small></span><span class="row-end"><span class="chev">↗</span></span></a></li></Show>
+            <Show when={a().repo}><li><a class="row" href={a().repo} target="_blank" rel="noopener"><span class="row-main"><span>Source code</span><small class="mono">{a().repo!.replace(/^https:\/\//, "")}</small></span><span class="row-end"><span class="chev">↗</span></span></a></li></Show>
+          </ul>
+        </section>
+      </Show>
+    </>
   );
 }
 
@@ -249,7 +323,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             </Show>
             <p class="hint">{a().description} Version <span class="mono">{a().version}</span>.</p>
             <div class="field-row">
-              <Field label="App name"><input class="input mono" name="app" value={props.taken.has(a().id) ? `${a().id}-2` : a().id} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
+              <Field label="App name"><input class="input mono" name="app" value={props.taken.has(`${a().catalog}/${a().id}`) ? `${a().id}-2` : a().id} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
               <Field label="Site"><input class="input mono" name="site" value={a().site ?? a().id} required /></Field>
             </div>
             <p class="hint">{a().kind === "cron" || a().kind === "service" ? "It runs without a hostname." : "A subdomain, or a hostname the app is allowed."}</p>
