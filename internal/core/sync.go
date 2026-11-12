@@ -15,6 +15,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/envfile"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/precompress"
 	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
@@ -307,7 +308,12 @@ func (h *Host) syncLocked(app string) error {
 					continue
 				}
 			}
-			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10)})
+			// static sites read nook.json only for cors; a bad file publishes the site without it
+			m, err := u.readManifest(s)
+			if err != nil {
+				h.say("%s: %s: %v; published without cors", app, s, err)
+			}
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS})
 		}
 	}
 	if sites != nil {
@@ -471,6 +477,12 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	if err := tarx.Extract(bytes.NewReader(data), tmp, h.S.SiteMaxBytes); err != nil {
 		os.RemoveAll(tmp)
 		return fmt.Errorf("couldn't copy the site (%v); kept the previous copy", err)
+	}
+	// nook.json is settings, not content: it stays in the app's folder and is never served
+	os.Remove(filepath.Join(tmp, "nook.json"))
+	// gzip sidecars, so Caddy serves text files compressed without compressing them on each request
+	if _, err := precompress.Dir(tmp); err != nil {
+		h.say("%s: %s: compressing: %v; served as they are where it failed", app, site, err)
 	}
 	os.RemoveAll(dst + ".old")
 	os.Rename(dst, dst+".old")
