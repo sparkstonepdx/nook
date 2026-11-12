@@ -15,6 +15,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/envfile"
 	"github.com/sparkstonepdx/nook/internal/grants"
 	"github.com/sparkstonepdx/nook/internal/names"
+	"github.com/sparkstonepdx/nook/internal/precompress"
 	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
@@ -479,6 +480,10 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	}
 	// nook.json is settings, not content: it stays in the app's folder and is never served
 	os.Remove(filepath.Join(tmp, "nook.json"))
+	// gzip sidecars, so Caddy serves text files compressed without compressing them on each request
+	if _, err := precompress.Dir(tmp); err != nil {
+		h.say("%s: %s: compressing: %v; served as they are where it failed", app, site, err)
+	}
 	os.RemoveAll(dst + ".old")
 	os.Rename(dst, dst+".old")
 	if err := os.Rename(tmp, dst); err != nil {
