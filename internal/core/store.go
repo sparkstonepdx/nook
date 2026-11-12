@@ -57,6 +57,9 @@ type CatalogApp struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Homepage    string              `json:"homepage,omitempty"`
+	Repo        string              `json:"repo,omitempty"` // the original project's source, set by catalog-build from source.github
+	Icon        *Image              `json:"icon,omitempty"`
+	Screenshots []Image             `json:"screenshots,omitempty"`
 	License     string              `json:"license,omitempty"`
 	Version     string              `json:"version"`
 	Kind        string              `json:"kind,omitempty"` // web (default), service, cron
@@ -75,6 +78,30 @@ type CatalogApp struct {
 	Catalog     string `json:"catalog,omitempty"`
 	CatalogName string `json:"catalogName,omitempty"`
 	Official    bool   `json:"official,omitempty"`
+}
+
+// Image is a picture in the catalog repo, published next to index.json and pinned by its hash. Servers
+// fetch it only through the helper, which checks the hash, so the dashboard shows it from its own origin.
+type Image struct {
+	Path   string `json:"path"` // relative to the catalog's base URL: images/<app>/<file>.png
+	SHA256 string `json:"sha256"`
+	Alt    string `json:"alt,omitempty"`
+	Width  int    `json:"width,omitempty"`
+	Height int    `json:"height,omitempty"`
+}
+
+const (
+	MaxImageBytes  = 1 << 20
+	MaxScreenshots = 6
+)
+
+var imagePathRE = regexp.MustCompile(`^images/[a-z0-9-]+/[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}\.(png|jpe?g)$`)
+
+func (i Image) check() error {
+	if !imagePathRE.MatchString(i.Path) || !sha256RE.MatchString(i.SHA256) || len(i.Alt) > 300 || i.Width < 0 || i.Height < 0 {
+		return fmt.Errorf("bad image %q", i.Path)
+	}
+	return nil
 }
 
 type Catalog struct {
@@ -108,6 +135,22 @@ func (a CatalogApp) check() error {
 		okURL := strings.HasPrefix(art.URL, "https://") || (isTest && strings.HasPrefix(art.URL, test))
 		if !okURL || !sha256RE.MatchString(art.SHA256) || !artifactFormats[art.Format] {
 			return fmt.Errorf("catalog entry %s/%s: bad artifact", a.ID, arch)
+		}
+	}
+	if a.Repo != "" && !strings.HasPrefix(a.Repo, "https://") {
+		return fmt.Errorf("catalog entry %s: repo must be an https URL", a.ID)
+	}
+	if a.Icon != nil {
+		if err := a.Icon.check(); err != nil {
+			return fmt.Errorf("catalog entry %s: %v", a.ID, err)
+		}
+	}
+	if len(a.Screenshots) > MaxScreenshots {
+		return fmt.Errorf("catalog entry %s: at most %d screenshots", a.ID, MaxScreenshots)
+	}
+	for _, i := range a.Screenshots {
+		if err := i.check(); err != nil {
+			return fmt.Errorf("catalog entry %s: %v", a.ID, err)
 		}
 	}
 	if a.Site != "" && !names.Site(a.Site) {

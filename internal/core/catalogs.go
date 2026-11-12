@@ -9,8 +9,11 @@ package core
 // https://raw.githubusercontent.com/owner/repo/dist/.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -216,4 +219,66 @@ func loadFrom(s CatalogSource, refresh bool) (*Catalog, error) {
 		return &c, err // the last verified copy, with the error to show
 	}
 	return fresh, err
+}
+
+// StoreImage returns a catalog image by hash, for the dashboard. Only images a catalog lists can be fetched,
+// each is checked against its pinned hash, and the verified copy is kept, named by its hash.
+func StoreImage(catalog, sum string) (string, []byte, error) {
+	if !sha256RE.MatchString(sum) {
+		return "", nil, fmt.Errorf("bad image")
+	}
+	dir := filepath.Join(catalogCacheDir(), "images")
+	cached := filepath.Join(dir, sum)
+	if b, err := os.ReadFile(cached); err == nil {
+		return imageType(b)
+	}
+	src, ok := catalogSource(catalog)
+	if !ok {
+		return "", nil, fmt.Errorf("no catalog %q", catalog)
+	}
+	c, _ := loadFrom(src, false)
+	if c == nil {
+		return "", nil, fmt.Errorf("couldn't read the %s catalog", src.Name)
+	}
+	path := ""
+	for _, a := range c.Apps {
+		for _, i := range append(a.Screenshots, derefImage(a.Icon)...) {
+			if i.SHA256 == sum {
+				path = i.Path
+			}
+		}
+	}
+	if path == "" {
+		return "", nil, fmt.Errorf("the %s catalog has no such image", src.Name)
+	}
+	b, err := update.Download(src.URL + path)
+	if err != nil {
+		return "", nil, err
+	}
+	got := sha256.Sum256(b)
+	if len(b) > MaxImageBytes || hex.EncodeToString(got[:]) != sum {
+		return "", nil, fmt.Errorf("%s doesn't match the hash the catalog pinned", path)
+	}
+	ctype, b, err := imageType(b)
+	if err != nil {
+		return "", nil, err
+	}
+	os.MkdirAll(dir, 0o755)
+	config.WriteAtomic(cached, b, 0o644)
+	return ctype, b, nil
+}
+
+func derefImage(i *Image) []Image {
+	if i == nil {
+		return nil
+	}
+	return []Image{*i}
+}
+
+func imageType(b []byte) (string, []byte, error) {
+	switch t := http.DetectContentType(b); t {
+	case "image/png", "image/jpeg":
+		return t, b, nil
+	}
+	return "", nil, fmt.Errorf("not a PNG or JPEG")
 }

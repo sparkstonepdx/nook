@@ -74,6 +74,11 @@ func (c *ctx) str(k string) string {
 	return ""
 }
 
+type image struct {
+	Type string
+	Data []byte
+}
+
 type route struct {
 	method string
 	re     *regexp.Regexp
@@ -256,6 +261,23 @@ func (s *Server) routes() []route {
 	add("GET", "/api/apps/:app/instructions", false, helper("instructions", p("app", "site"), false))
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
 	add("GET", "/api/store", false, helper("store", p("refresh"), false))
+	add("GET", "/api/store/image/:catalog/:sha", false, func(c *ctx) (any, error) {
+		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "storeImage", By: c.me, Params: map[string]string{"catalog": c.params["catalog"], "sha": c.params["sha"]}}, time.Minute)
+		if err != nil {
+			return nil, fail(502, err.Error())
+		}
+		if resp.Error != "" {
+			return nil, fail(404, resp.Error)
+		}
+		var img struct {
+			Type string `json:"type"`
+			Data []byte `json:"data"`
+		}
+		if json.Unmarshal(resp.Data, &img) != nil || (img.Type != "image/png" && img.Type != "image/jpeg") {
+			return nil, fail(502, "bad image")
+		}
+		return image(img), nil
+	})
 	add("POST", "/api/store/install", false, helper("storeInstall", p("catalog", "id", "app", "site", "policy"), true))
 	add("POST", "/api/store/catalogs", false, helper("catalogAdd", p("source"), false))
 	add("POST", "/api/store/catalogs/:id/remove", false, helper("catalogRemove", p("id"), false))
@@ -449,6 +471,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
 			}
+			return
+		}
+		if img, ok := res.(image); ok {
+			// named by its hash, so it never changes; private: only for logged-in users
+			w.Header().Set("Content-Type", img.Type)
+			w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+			w.WriteHeader(200)
+			w.Write(img.Data)
 			return
 		}
 		if raw, ok := res.(json.RawMessage); ok {

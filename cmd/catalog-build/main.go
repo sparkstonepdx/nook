@@ -1,16 +1,21 @@
 // catalog-build turns a catalog repo's apps/*.json into the store's index.json: for each app it finds the
 // release (the latest, or a pinned tag) on GitHub, picks the asset for each architecture by pattern,
-// downloads it and pins its sha256. Catalog repos (sparkstonepdx/nook-catalog, and community ones copied
+// downloads it and pins its sha256. Icons and screenshots (images/<app>/*.png or .jpg in the repo) are
+// pinned the same way. Catalog repos (sparkstonepdx/nook-catalog, and community ones copied
 // from it) run it from their workflow, then sign and publish the index to their dist branch.
 //
 //	go run github.com/sparkstonepdx/nook/cmd/catalog-build@latest apps > index.json   (GITHUB_TOKEN raises the API rate limit)
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"os"
@@ -62,6 +67,25 @@ func get(url string, accept string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 500<<20))
 }
 
+// pin reads an image from the catalog repo (paths are relative to the repo root, the apps folder's parent)
+// and fills in its hash and size. The workflow publishes images/ to dist next to index.json.
+func pin(root string, img *core.Image) error {
+	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(img.Path)))
+	if err != nil {
+		return err
+	}
+	if len(b) > core.MaxImageBytes {
+		return fmt.Errorf("%s: %d KB, keep images under %d KB", img.Path, len(b)>>10, core.MaxImageBytes>>10)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("%s: %v (PNG or JPEG only)", img.Path, err)
+	}
+	sum := sha256.Sum256(b)
+	img.SHA256, img.Width, img.Height = hex.EncodeToString(sum[:]), cfg.Width, cfg.Height
+	return nil
+}
+
 func build(path string) (core.CatalogApp, error) {
 	var s source
 	b, err := os.ReadFile(path)
@@ -74,6 +98,23 @@ func build(path string) (core.CatalogApp, error) {
 	a := s.CatalogApp
 	if s.Source.GitHub == "" || len(s.Source.Assets) == 0 {
 		return a, fmt.Errorf("%s: source.github and source.assets are required", path)
+	}
+	if a.Repo == "" {
+		a.Repo = "https://github.com/" + s.Source.GitHub
+	}
+	root := filepath.Dir(filepath.Dir(path))
+	if a.Icon != nil {
+		if err := pin(root, a.Icon); err != nil {
+			return a, fmt.Errorf("%s: icon: %v", path, err)
+		}
+	}
+	for i := range a.Screenshots {
+		if a.Screenshots[i].Alt == "" {
+			return a, fmt.Errorf("%s: screenshot %s needs alt text", path, a.Screenshots[i].Path)
+		}
+		if err := pin(root, &a.Screenshots[i]); err != nil {
+			return a, fmt.Errorf("%s: screenshot: %v", path, err)
+		}
 	}
 	url := "https://api.github.com/repos/" + s.Source.GitHub + "/releases/latest"
 	if s.Source.Tag != "" {

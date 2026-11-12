@@ -125,3 +125,36 @@ func TestExtractZip(t *testing.T) {
 		t.Log("a path's base name matches, but nothing is ever written to that path") // the binary is only ever read into memory
 	}
 }
+
+func TestCatalogImages(t *testing.T) {
+	sum := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	base := CatalogApp{ID: "thing", Name: "Thing", Version: "v1", Binary: "thing"}
+	ok := base
+	ok.Repo = "https://github.com/x/thing"
+	ok.Icon = &Image{Path: "images/thing/icon.png", SHA256: sum}
+	ok.Screenshots = []Image{{Path: "images/thing/home.jpg", SHA256: sum, Alt: "The home page", Width: 1280, Height: 800}}
+	if err := ok.check(); err != nil {
+		t.Fatal(err)
+	}
+	bad := []func(a *CatalogApp){
+		func(a *CatalogApp) { a.Icon = &Image{Path: "images/../etc/passwd.png", SHA256: sum} },
+		func(a *CatalogApp) { a.Icon = &Image{Path: "/images/thing/icon.png", SHA256: sum} },
+		func(a *CatalogApp) { a.Icon = &Image{Path: "images/thing/icon.svg", SHA256: sum} },
+		func(a *CatalogApp) { a.Icon = &Image{Path: "images/thing/icon.png", SHA256: "abc"} },
+		func(a *CatalogApp) { a.Screenshots = make([]Image, MaxScreenshots+1) },
+		func(a *CatalogApp) { a.Repo = "javascript:alert(1)" },
+	}
+	for i, f := range bad {
+		a := base
+		f(&a)
+		if a.check() == nil {
+			t.Errorf("case %d passed", i)
+		}
+	}
+	if _, _, err := imageType([]byte("<svg onload=x>")); err == nil {
+		t.Error("svg served as an image")
+	}
+	if _, _, err := StoreImage("official", "../../etc/passwd"); err == nil {
+		t.Error("bad hash accepted")
+	}
+}
