@@ -1,5 +1,5 @@
 import { A, useNavigate } from "@solidjs/router";
-import { For, Show, createEffect, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
+import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Ansi } from "./ansi";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
@@ -141,8 +141,11 @@ let sheetIds = 0;
 export function Sheet(props: { open: boolean; title: string; onClose: () => void; wide?: boolean; footer?: JSX.Element; children: JSX.Element }) {
   let opened = 0;
   let pushed = false;
+  // Only open/closed matters: `open={!!props.app}` would otherwise rerun this (and step Back, closing the
+  // sheet) every time the page refreshes its data and hands over a new object.
+  const open = createMemo(() => !!props.open);
   createEffect(() => {
-    if (!props.open) return;
+    if (!open()) return;
     opened = Date.now();
     const id = ++sheetIds; // this sheet's own history entry, so another sheet's Back step never closes it
     history.pushState({ ...history.state, sheet: id }, "");
