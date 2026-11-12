@@ -14,8 +14,8 @@ func TestRoundTrip(t *testing.T) {
 	if strings.Join(live, ",") != "api.x.com,x.com" || strings.Join(red, ",") != "www.x.com" {
 		t.Fatalf("live=%v red=%v\n%s", live, red, text)
 	}
-	if strings.Contains(text, "handle_errors {\n\t\trewrite") == false {
-		t.Fatal("static block")
+	if !strings.Contains(text, "\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html") || !strings.Contains(text, "\t\thandle {\n\t\t\troot * /etc/caddy/nook-404\n") {
+		t.Fatalf("static block: own 404.html first, then the server's:\n%s", text)
 	}
 	out, found := WithoutRedirect(text, "www.x.com")
 	if !found || strings.Contains(out, "www.x.com") || !strings.Contains(out, "x.com {") {
