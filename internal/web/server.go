@@ -242,6 +242,8 @@ func (s *Server) routes() []route {
 		}
 	}
 	add("GET", "/api/overview", false, helper("overview", nil, false))
+	add("GET", "/api/headroom", false, helper("headroom", p("range"), false))
+	add("POST", "/api/apps/:app/limits", false, helper("setLimits", p("app", "memory", "cpu", "tasks"), true))
 	add("POST", "/api/apps", false, helper("createApp", p("name", "memory", "cpu", "tasks", "repo"), true))
 	add("POST", "/api/apps/:app/delete", false, helper("deleteApp", p("app", "confirm"), true))
 	add("POST", "/api/apps/:app/sync", false, helper("syncApp", p("app"), true))

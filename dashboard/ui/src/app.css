@@ -92,3 +92,52 @@ details summary { position: relative; padding-block: var(--space-xs); }
 .row-main .text-error { color: var(--bad); }
 .token-box .label { margin: 0; } .token-box .field-row .input { flex: 1; }
 .danger-text { color: var(--bad); }
+
+/* Server: headroom */
+.server-summary { display: flex; align-items: baseline; gap: var(--space-sm); margin: 0; font-size: var(--text-lg); line-height: 1.35; }
+.status-dot { flex: none; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--good); transform: translateY(-0.05em); }
+.status-watch { background: var(--warn); }
+.status-tight { background: var(--bad); }
+.status-learning { background: var(--muted); }
+.advice .row { align-items: flex-start; }
+.advice .status-dot { margin-top: 0.45em; }
+.meter-row { display: grid; grid-template-columns: 4.5rem 1fr auto; column-gap: var(--space-md); }
+.meter-figure .badge { margin-inline-start: var(--space-xs); }
+.meter-name { font-weight: 600; }
+.meter-figure { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; text-align: end; }
+.meter { display: block; height: 0.5rem; border-radius: 999px; background: color-mix(in oklch, var(--accent-text) 16%, var(--surface)); overflow: hidden; }
+.meter > span { display: block; height: 100%; border-radius: 999px; background: var(--accent-text); }
+.meter-watch { background: color-mix(in oklch, var(--warn) 18%, var(--surface)); }
+.meter-watch > span { background: var(--warn); }
+.meter-tight { background: color-mix(in oklch, var(--bad) 16%, var(--surface)); }
+.meter-tight > span { background: var(--bad); }
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); margin-top: var(--space-sm); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-field); background: var(--fill); }
+.seg button { position: relative; min-height: 2rem; padding: 0 var(--space-md); border: 0; border-radius: calc(var(--radius-field) - 2px); background: none; color: var(--muted); font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; }
+.seg button::after { content: ""; position: absolute; inset: min(0px, (100% - var(--tap)) / 2) 0; }
+.seg button.on { background: var(--surface); color: var(--ink); box-shadow: var(--card-shadow); }
+.charts { display: grid; gap: var(--card-gap); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); transition: opacity var(--duration-change); }
+.charts.loading { opacity: 0.55; }
+.chart { margin: 0; padding: var(--space-md) var(--card-pad) var(--space-sm); background: var(--surface); border: var(--border-width) solid var(--line); border-radius: var(--radius-box); box-shadow: var(--card-shadow); }
+.chart figcaption { display: flex; align-items: baseline; gap: var(--space-sm); margin-bottom: var(--space-xs); color: var(--muted); font-size: var(--text-sm); }
+.chart figcaption strong { color: var(--ink); font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
+.chart figcaption small { margin-inline-start: auto; }
+.chart svg { display: block; width: 100%; overflow: visible; touch-action: pan-y; cursor: crosshair; }
+.chart .grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .tick { fill: var(--muted); font-size: 11px; text-anchor: end; font-variant-numeric: tabular-nums; }
+.chart .tick.start { text-anchor: start; }
+.chart .area { fill: color-mix(in oklch, var(--accent-text) 14%, transparent); }
+.chart .line { fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.chart .crosshair { stroke: var(--muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart .dot { fill: var(--accent-text); stroke: var(--surface); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.chart-table summary { color: var(--muted); font-size: var(--text-sm); cursor: pointer; }
+.chart-table .num { font-variant-numeric: tabular-nums; text-align: end; }
+
+/* Notes: a line of text led by a status dot, not a box (warnings and errors read as text) */
+.note { display: flex; align-items: baseline; gap: var(--space-sm); margin: 0; color: var(--ink); line-height: 1.45; }
+.note::before { content: ""; flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent-text); transform: translateY(-0.1em); }
+.note-warn::before { background: var(--warn); }
+.note-bad::before { background: var(--bad); }
+.note > span { min-width: 0; }
+.update-banner { margin-bottom: var(--space-xl); }
+.update-banner::before { background: var(--accent-text); }

@@ -58,7 +58,7 @@ export default function EnvPage() {
           </details>
         </div>
       </section>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
 
       <section class="section">
         <h2>Variables</h2>

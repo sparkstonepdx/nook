@@ -30,7 +30,7 @@ function useUpdate() {
 export function UpdateBanner(props: { s: () => UpdateStatus | null | undefined }) {
   return (
     <Show when={props.s()?.available}>
-      <div class="alert update-banner">
+      <div class="note update-banner">
         <span>nook <strong>{props.s()!.latest}</strong> is ready to install.</span>
         <span class="page-actions">
           <a class="btn btn-ghost btn-sm" href={props.s()!.url} target="_blank" rel="noopener">What's new</a>
@@ -136,13 +136,16 @@ export function Notices() {
 
 // A sheet slides up from the bottom (centred from 700px). It closes with ×, Escape, Back, or a tap on the
 // backdrop after the first 400 ms. Swipe-to-close is @sparkstone/kit's, which needs Solid 2.
+let sheetIds = 0;
+
 export function Sheet(props: { open: boolean; title: string; onClose: () => void; wide?: boolean; footer?: JSX.Element; children: JSX.Element }) {
   let opened = 0;
   let pushed = false;
   createEffect(() => {
     if (!props.open) return;
     opened = Date.now();
-    history.pushState({ ...history.state, sheet: true }, "");
+    const id = ++sheetIds; // this sheet's own history entry, so another sheet's Back step never closes it
+    history.pushState({ ...history.state, sheet: id }, "");
     pushed = true;
     const onPop = () => { pushed = false; props.onClose(); };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
@@ -155,7 +158,7 @@ export function Sheet(props: { open: boolean; title: string; onClose: () => void
       document.body.style.overflow = "";
       // Step back over our own history entry, unless something navigated past it: a link in the sheet
       // unmounts the page before the router pushes the new URL, so look once that's happened.
-      if (pushed) setTimeout(() => { if (history.state?.sheet) history.back(); });
+      if (pushed) setTimeout(() => { if (history.state?.sheet === id) history.back(); });
       pushed = false;
     });
   });
@@ -189,7 +192,7 @@ export function ResultSheet() {
       <Show when={result()}>
         {(r) => (
           <div class="stack">
-            <Show when={r().warning}><div class="alert alert-warning">{r().warning}</div></Show>
+            <Show when={r().warning}><div class="note note-warn">{r().warning}</div></Show>
             <Show when={r().cmd}>
               <p class="cmd-line"><code>$ {r().cmd}</code> <StatusBadge ok={r().ok}>exit {r().code}</StatusBadge></p>
             </Show>
@@ -218,7 +221,7 @@ export function Field(props: { label: string; children: JSX.Element; hint?: stri
 }
 
 export function ErrorAlert(props: { error?: string }) {
-  return <Show when={props.error}><div class="alert alert-error" role="alert">{props.error}</div></Show>;
+  return <Show when={props.error}><div class="note note-bad" role="alert">{props.error}</div></Show>;
 }
 
 // The head of a page: an optional way back, the title, a muted detail, and the page's actions at the end.
@@ -243,7 +246,7 @@ export function TokenBox(props: { token: string; repo?: string }) {
   const copy = (text: string, what: string) => { navigator.clipboard?.writeText(text); say(`${what} copied`); };
   return (
     <div class="token-box stack">
-      <div class="alert alert-warning"><span>Shown once: the server keeps only its hash. Store it as the repo's <span class="mono">NOOK_TOKEN</span> secret now.</span></div>
+      <div class="note note-warn"><span>Shown once: the server keeps only its hash. Store it as the repo's <span class="mono">NOOK_TOKEN</span> secret now.</span></div>
       <Field label="Deploy token">
         <div class="field-row">
           <input class="input mono" readonly value={props.token} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} />

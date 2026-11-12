@@ -22,9 +22,9 @@ export default function DeployPage() {
         Any CI deploys with one HTTPS request: POST the folder as a .tar.gz to the site's URL with a deploy token.
         Add <span class="mono">?pr=N</span> for a preview, and <span class="mono">-F "env.KEY=value"</span> to send that site's env.
       </p>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
       <Show when={selfSigned()}>
-        <div class="alert alert-warning">The dashboard has no address yet, so deploys would go to the IP's self-signed certificate, which curl refuses. Set one on the Domains page.</div>
+        <div class="note note-warn">The dashboard has no address yet, so deploys would go to the IP's self-signed certificate, which curl refuses. Set one on the Domains page.</div>
       </Show>
 
       <section class="section">

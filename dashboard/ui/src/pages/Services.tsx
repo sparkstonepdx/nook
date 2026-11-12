@@ -36,7 +36,7 @@ export default function Services() {
         <button class="btn" onClick={() => setBinding(true)}>Bind an app</button>
       </PageHead>
       <p class="lede">Apps ask for services in their <span class="mono">nook.json</span>, and you pick who provides them. An app only sees ordinary env vars like <span class="mono">DATABASE_URL</span>, so it runs the same anywhere.</p>
-      <Show when={data.error}><div class="alert alert-error">{String(data.error!.message)}</div></Show>
+      <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
 
       <Show when={data()?.requests.length}>
         <section class="section">

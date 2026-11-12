@@ -47,6 +47,7 @@ func ServeHelper() error {
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
 	log.Printf("helper listening on %s", config.HelperSocket)
+	go RunSampler()
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -232,6 +233,10 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(map[string]any{}, nil)
 	case "store":
 		return data(StoreOverview(p["refresh"] == "1"), nil)
+	case "headroom":
+		return data(Headroom(p["range"]), nil)
+	case "setLimits":
+		return command("nook-admin limits "+p["app"], func(h *Host) error { return h.SetLimits(p["app"], p["memory"], p["cpu"], p["tasks"]) })
 	case "storeInstall":
 		from := ""
 		if p["catalog"] != "" && p["catalog"] != OfficialCatalog {
