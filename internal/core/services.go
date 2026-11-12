@@ -4,8 +4,7 @@ package core
 // to a provider; the app sees only conventional env vars. Interfaces fix the env names, providers fill the
 // values, and a binding may rename them for an app that uses its own names.
 //
-//	providers: "postgres"            built in (unix socket + peer auth: no password exists)
-//	           "app:APP/SITE"        an app's service site whose nook.json says "provides": {"alerts": {...}}
+//	providers: "app:APP/SITE"        an app's service site whose nook.json says "provides": {"alerts": {...}}
 //	state:     /etc/nook/bindings.json, /etc/nook/state/APP.services.json (needs/provides seen by sync)
 //	env:       /etc/nook/env/APP/services.env (consumer, read-only scope), .../APP/provider/SITE.env (provider)
 
@@ -68,7 +67,7 @@ func checkServices(m *Manifest) error {
 		return fmt.Errorf("nook.json: only a service (\"kind\": \"service\") can provide services")
 	}
 	for name, spec := range m.Provides {
-		if !ifaceRE.MatchString(name) || name == "postgres" {
+		if !ifaceRE.MatchString(name) {
 			return fmt.Errorf("nook.json: bad or reserved interface name %q in provides", name)
 		}
 		if len(spec.Env) == 0 || len(spec.Env) > 20 {
@@ -141,7 +140,7 @@ func recordServices(app string, a appServices) bool {
 type Binding struct {
 	App       string            `json:"app"`       // consumer
 	Interface string            `json:"interface"` // e.g. postgres, alerts
-	Provider  string            `json:"provider"`  // "postgres" or "app:APP/SITE"
+	Provider  string            `json:"provider"`  // "app:APP/SITE"
 	As        map[string]string `json:"as,omitempty"`
 	Token     string            `json:"token,omitempty"`
 	Created   int64             `json:"created"`
@@ -181,9 +180,6 @@ type Provider struct {
 // Providers lists every provider available now.
 func Providers() []Provider {
 	var out []Provider
-	pg := Provider{ID: "postgres", Interface: "postgres", Desc: "PostgreSQL on this server (unix socket, peer auth)"}
-	pg.Ready, pg.Note = postgresReady()
-	out = append(out, pg)
 	for _, app := range Apps() {
 		for site, offers := range readAppServices(app).Provides {
 			port := PortOf(app, site)
@@ -273,16 +269,9 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 		}
 	}
 	b := Binding{App: app, Interface: iface, Provider: providerID, As: as, Created: time.Now().Unix()}
-	if providerID == "postgres" {
-		if err := postgresProvision(app); err != nil {
-			unlock()
-			return err
-		}
-	} else {
-		raw := make([]byte, 24)
-		rand.Read(raw)
-		b.Token = base64.RawURLEncoding.EncodeToString(raw)
-	}
+	raw := make([]byte, 24)
+	rand.Read(raw)
+	b.Token = base64.RawURLEncoding.EncodeToString(raw)
 	if err := writeBindings(append(keep, b)); err != nil {
 		unlock()
 		return err
@@ -318,9 +307,6 @@ func (h *Host) Unbind(app, iface string) error {
 		return err
 	}
 	h.say("unbound %s from %s (%s)", app, iface, gone.Provider)
-	if gone.Provider == "postgres" {
-		h.say("its database nook-%s is kept; drop it with: nook-admin services drop-db %s", app, app)
-	}
 	papp, psite := splitAppProvider(gone.Provider)
 	return h.applyBindings(app, papp, psite)
 }
@@ -394,10 +380,6 @@ func writeConsumerEnv(app string) error {
 // bindingValues fills in a binding's env (before renames).
 func bindingValues(b Binding) map[string]string {
 	out := map[string]string{}
-	if b.Provider == "postgres" {
-		out["DATABASE_URL"] = "postgresql://nook-" + b.App + "@/nook-" + b.App + "?host=/run/postgresql"
-		return out
-	}
 	papp, psite := splitAppProvider(b.Provider)
 	spec, ok := readAppServices(papp).Provides[psite][b.Interface]
 	if !ok {

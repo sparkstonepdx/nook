@@ -52,7 +52,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin token list [APP] | rm APP ID
   nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...]
   nook-admin store update APP [--force] | policy APP off|notify|patch|minor|all | check
-  nook-admin services [list] | install postgres | drop-db APP
+  nook-admin services [list]
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
   nook-admin firewall                            reload the rules that keep apps off each other's ports
@@ -461,18 +461,8 @@ func servicesCmd(h *core.Host, args []string) {
 		return
 	}
 	switch {
-	case args[0] == "install" && len(args) == 2 && args[1] == "postgres":
-		die(core.PostgresInstall(h))
-	case args[0] == "drop-db" && len(args) == 2:
-		fmt.Fprintf(os.Stderr, "This deletes database nook-%s and everything in it. Type the app name to confirm: ", args[1])
-		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-		if strings.TrimSpace(line) != args[1] {
-			die(fmt.Errorf("not confirmed"))
-		}
-		die(core.PostgresDropDB(args[1]))
-		fmt.Println("dropped")
 	default:
-		die(fmt.Errorf("usage: nook-admin services [list] | install postgres | drop-db APP"))
+		die(fmt.Errorf("usage: nook-admin services [list]"))
 	}
 }
 
