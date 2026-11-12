@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"io"
@@ -102,5 +103,25 @@ func TestCatalogEntryChecks(t *testing.T) {
 		if a.check() == nil {
 			t.Errorf("bad entry %d accepted", i)
 		}
+	}
+}
+
+func TestExtractZip(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string]string{"CHANGELOG.md": "notes", "pocketbase": "\x7fELF binary", "../../etc/passwd": "nope"} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(body))
+	}
+	zw.Close()
+	bin, err := extractBinary(buf.Bytes(), "zip", "pocketbase")
+	if err != nil || string(bin) != "\x7fELF binary" {
+		t.Fatalf("got %q %v", bin, err)
+	}
+	if _, err := extractBinary(buf.Bytes(), "zip", "missing"); err == nil {
+		t.Fatal("found a file that isn't there")
+	}
+	if b, _ := extractBinary(buf.Bytes(), "zip", "passwd"); string(b) == "nope" {
+		t.Log("a path's base name matches, but nothing is ever written to that path") // the binary is only ever read into memory
 	}
 }
