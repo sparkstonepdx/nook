@@ -45,7 +45,7 @@ type event struct {
 }
 
 func main() {
-	if raw := in("TOKEN"); strings.HasPrefix(raw, "nook_") {
+	if raw := in("TOKEN"); token.IsAPI(raw) {
 		apiMain(raw)
 		return
 	}

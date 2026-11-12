@@ -11,7 +11,7 @@ func TestInstructionsNoToken(t *testing.T) {
 		t.Fatal("full instructions lost the token section")
 	}
 	rest := InstructionsNoToken("blog", "")
-	if strings.Contains(rest, "Deploy token") || strings.Contains(rest, "nook_") {
+	if strings.Contains(rest, "Deploy token") || strings.Contains(rest, "nook_") || strings.Contains(rest, "nook:") {
 		t.Fatalf("token section left in:\n%s", rest)
 	}
 	if !strings.Contains(rest, "1. Workflow") || !strings.Contains(rest, "4. Shared services") {

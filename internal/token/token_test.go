@@ -40,13 +40,15 @@ func TestAPIServer(t *testing.T) {
 	for tok, want := range map[string]string{
 		"nook_" + secret:                   "",
 		"nook_admin.example.com/" + secret: "admin.example.com",
+		"nook:admin.example.com/" + secret: "admin.example.com",
+		"nook:203.0.113.5:8443/" + secret:  "203.0.113.5:8443",
 		"nook_203.0.113.5:8443/" + secret:  "203.0.113.5:8443",
 	} {
 		if got, ok := APIServer(tok); !ok || got != want {
 			t.Errorf("%s: %q %v", tok, got, ok)
 		}
 	}
-	for _, bad := range []string{"nook_" + secret[:42], "nook_a b/" + secret, "nook_x/y/" + secret, "nook1:abc", "nook_https://x/" + secret} {
+	for _, bad := range []string{"nook_" + secret[:42], "nook_a b/" + secret, "nook_x/y/" + secret, "nook1:abc", "nook_https://x/" + secret, "nook:" + secret, "nook:x/y/" + secret} {
 		if _, ok := APIServer(bad); ok {
 			t.Errorf("accepted %q", bad)
 		}
