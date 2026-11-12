@@ -1,5 +1,11 @@
 # nook
 
+## 1.11.0
+
+### Minor Changes
+
+- cab6b5c: A server-wide 404 page for static sites without their own `404.html`, edited on the dashboard's Domains page.
+
 ## 1.10.0
 
 ### Minor Changes
