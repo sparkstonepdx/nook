@@ -69,7 +69,7 @@ form.stack > .label, .sheet-body .label { margin-bottom: 0; }
 .card > form, .card.stack > .field-row { margin: 0; }
 .instructions { white-space: pre; overflow-x: auto; max-height: none; }
 details.hint summary { cursor: pointer; }
-.auth > .brand { display: block; text-align: center; font-size: var(--text-xl); margin-bottom: var(--space-lg); }
+.auth > .brand { display: flex; justify-content: center; font-size: var(--text-xl); margin-bottom: var(--space-lg); }
 
 /* fixes from the first screenshots */
 .auth .card h1 { margin: 0 0 var(--space-lg); }
@@ -152,3 +152,8 @@ img.app-coin { background: var(--surface-2, transparent); }
 /* --ar is the image's own width/height, so a phone-width cap shrinks it rather than letterboxing it */
 .gallery img { --h: 15rem; display: block; width: min(85vw, calc(var(--h) * var(--ar, 1.6))); height: auto; aspect-ratio: var(--ar, 1.6); border-radius: var(--radius-box); border: 1px solid var(--border); }
 @media (min-width: 48rem) { .gallery img { --h: 20rem; } }
+
+/* the logo: proposal, pending Adam's sign-off (amber #e0a43a is new) */
+.brand-lockup { display: inline-flex; align-items: center; gap: 0.3em; }
+.brand-mark { width: 1.15em; height: 1.15em; color: var(--accent-text); transform: translateY(-0.04em); }
+.brand-tile { fill: #e0a43a; }

@@ -1,7 +1,7 @@
 import { Show, createResource, createSignal } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { api, setUser } from "../api";
-import { ErrorAlert, Field } from "../components";
+import { ErrorAlert, Field, Logo } from "../components";
 
 export default function Invite() {
   const navigate = useNavigate();
@@ -21,7 +21,7 @@ export default function Invite() {
   };
   return (
     <main class="auth">
-      <p class="brand">nook</p>
+      <p class="brand"><Logo /></p>
       <div class="card">
       <h1>Create your login</h1>
       <Show when={!check.loading}>
