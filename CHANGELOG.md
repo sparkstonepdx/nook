@@ -1,5 +1,11 @@
 # nook
 
+## 1.14.1
+
+### Patch Changes
+
+- 9f7aa4f: nook has a logo: an arch with an app inside. It's in the dashboard header, the login and invite pages, and the favicon. The files are in `docs/logo/`.
+
 ## 1.14.0
 
 ### Minor Changes
