@@ -284,6 +284,7 @@ func (s *Server) routes() []route {
 	add("POST", "/api/store/:app/update", false, helper("storeUpdate", p("app", "force"), true))
 	add("POST", "/api/store/:app/policy", false, helper("storePolicy", p("app", "policy"), false))
 	add("GET", "/api/services", false, helper("services", nil, false))
+	add("GET", "/api/subduction", false, helper("subduction", nil, false))
 	add("POST", "/api/services/bind", false, helper("bind", p("app", "interface", "provider"), true))
 	add("POST", "/api/services/unbind", false, helper("unbind", p("app", "interface"), true))
 	add("GET", "/api/apps/:app/tokens", false, helper("tokenList", p("app"), false))

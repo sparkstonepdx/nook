@@ -52,6 +52,7 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 - Build: `SUBDUCTION=1 sh setup-server.sh`, then `./extras/subduction-app.sh` (re-run to upgrade).
 - Data: `/srv/nook/subduction/data/subduction`, key `/srv/nook/subduction/data/subduction.key` (**back this up**)
 - Logs: `tail -f /var/log/nook/subduction/subduction.log`
+- Keyhive identity: the dashboard's Server section (or `nook-admin subduction`) shows the address, peer id and contact card apps need, each with a Copy. The script makes the card (`data/subduction-card.json`) from the key when Node is installed; it's the JSON card that subduction_cli 0.22 and automerge-repo-keyhive 0.7 use (set `KEYHIVE_VERSION` to make another).
 
 ## System
 

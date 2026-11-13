@@ -55,6 +55,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin services [list]
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
+  nook-admin subduction                          the Subduction server's URL, peer id and Keyhive contact card
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
 
@@ -191,6 +192,19 @@ func main() {
 	case "services":
 		needRoot()
 		servicesCmd(h, args)
+	case "subduction":
+		needRoot()
+		id := core.Subduction()
+		if !id.Installed {
+			die(fmt.Errorf("no Subduction app on this server (extras/subduction-app.sh sets one up)"))
+		}
+		fmt.Printf("SUBDUCTION_URL=%s\nSYNC_SERVER_PEER_ID=%s\n", id.URL, id.PeerID)
+		if id.Card != "" {
+			fmt.Printf("SYNC_SERVER_CONTACT_CARD=%s\n", id.Card)
+		}
+		if id.Problem != "" {
+			fmt.Fprintln(os.Stderr, id.Problem)
+		}
 	case "invite":
 		needRoot()
 		store, err := web.OpenStore(config.WebStateDir)
