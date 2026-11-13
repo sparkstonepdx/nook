@@ -157,3 +157,20 @@ img.app-coin { background: var(--surface-2, transparent); }
 .brand-lockup { display: inline-flex; align-items: center; gap: 0.3em; }
 .brand-mark { width: 1.15em; height: 1.15em; color: var(--accent-text); transform: translateY(-0.04em); }
 .brand-tile { fill: #e0a43a; }
+
+/* Apps: one row per app, open to see its sites */
+.apps-tools { display: flex; justify-content: flex-end; margin: calc(-1 * var(--space-sm)) 0 var(--space-xs); }
+.apps > li { display: block; }
+.app-row .app-name { font-family: var(--display); font-weight: var(--display-weight); font-size: var(--text-lg); }
+.app-chev { flex: none; width: 1rem; color: var(--muted); font-size: var(--text-lg); transition: transform 150ms ease; }
+.app-open > .app-row .app-chev { transform: rotate(90deg); }
+.app-body { padding: 0 var(--space-md) var(--space-md) calc(var(--space-md) + 1rem + var(--space-sm)); display: grid; gap: var(--space-sm); }
+.app-body > .list { margin: 0; }
+.app-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+@media (prefers-reduced-motion: reduce) { .app-chev { transition: none; } }
+
+/* the install ask: the app icon beside the words */
+.install-ask { align-items: flex-start; }
+.install-ask > img { flex: none; border-radius: var(--radius-field); }
+.install-ask .notice-text > small { display: block; }
+.install-ask .notice-actions { margin-top: var(--space-sm); display: flex; flex-wrap: wrap; gap: var(--space-sm); }

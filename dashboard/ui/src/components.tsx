@@ -2,6 +2,8 @@ import { A, useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Ansi } from "./ansi";
+import { askLater, install, installPrompt, isAndroid, isIOS, markInstalled, shouldAskInstall } from "./install";
+import { applyUpdate, updateReady } from "./update";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 
 type UpdateStatus = { current: string; latest: string; available: boolean; url: string; notes: string; checkedAt: string; error?: string };
@@ -115,10 +117,51 @@ function Dock(props: { children: JSX.Element }) {
   return <div ref={el} class="dock phone-only">{props.children}</div>;
 }
 
+// Install the dashboard: build-docs' InstallAsk, low on the screen with the other notices.
+function InstallAsk() {
+  const [how, setHow] = createSignal(false);
+  return (
+    <Show when={user() && shouldAskInstall()}>
+      <li class="notice install-ask">
+        <img src="/icon-192.png" alt="" width="44" height="44" />
+        <span class="notice-text">
+          <strong>Install nook</strong>
+          <small>Open your server from your home screen or dock, like any other app.</small>
+          <Show when={how()}>
+            <Show when={isIOS()} fallback={<small>Open your browser's menu, then tap <b>Install app</b> or <b>Add to Home screen</b>.</small>}>
+              <small>In Safari, tap <b>Share</b>, then <b>Add to Home Screen</b>.</small>
+            </Show>
+          </Show>
+          <span class="notice-actions">
+            <Show when={installPrompt()} fallback={<Show when={(isIOS() || isAndroid()) && !how()}><button class="btn btn-sm" onClick={() => setHow(true)}>Show me how</button></Show>}>
+              <button class="btn btn-sm" onClick={() => void install()}>Install</button>
+            </Show>
+            <Show when={how()}><button class="btn btn-sm btn-secondary" onClick={() => { markInstalled(); askLater(); }}>It's installed</button></Show>
+            <button class="btn btn-sm btn-ghost" onClick={askLater}>Not now</button>
+          </span>
+        </span>
+      </li>
+    </Show>
+  );
+}
+
+// A newer dashboard is on the server (nook updated itself while this page was open).
+export function ReloadBanner() {
+  return (
+    <Show when={updateReady()}>
+      <div class="note update-banner">
+        <span>This page is from an older version of nook.</span>
+        <span class="page-actions"><button class="btn btn-sm" onClick={() => void applyUpdate()}>Reload</button></span>
+      </div>
+    </Show>
+  );
+}
+
 export function Notices() {
   return (
     <Portal>
       <ul class="notices" aria-live="polite">
+        <InstallAsk />
         <For each={notices()}>
           {(n) => (
             <li class={`notice${n.kind ? ` notice-${n.kind}` : ""}`} onClick={() => dismiss(n.id)}>
