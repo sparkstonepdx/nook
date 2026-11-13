@@ -83,7 +83,7 @@ export function Nav() {
   return (
     <>
       <header class="navbar navbar-flush top-bar">
-        <A href="/" class="brand">nook</A>
+        <A href="/" class="brand"><Logo /></A>
         <nav class="menubar wide-only" aria-label="Sections">
           <For each={links}>{(l) => <A href={l.href} end={l.end} class="nav-link" activeClass="nav-active">{l.label}</A>}</For>
         </nav>
@@ -137,6 +137,16 @@ export function Notices() {
 // A sheet slides up from the bottom (centred from 700px). It closes with ×, Escape, Back, or a tap on the
 // backdrop after the first 400 ms. Swipe-to-close is @sparkstone/kit's, which needs Solid 2.
 let sheetIds = 0;
+
+// The mark: an arch with an app inside. The window is a hole, so it sits on any background.
+export function Logo() {
+  return (
+    <span class="brand-lockup">
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M12 60V30a20 20 0 0 1 40 0v30Z M19 32a5 5 0 0 1 5-5h16a5 5 0 0 1 5 5v16a5 5 0 0 1-5 5H24a5 5 0 0 1-5-5Z" fill="currentColor" fill-rule="evenodd" /><rect x="25.5" y="33.5" width="13" height="13" rx="3" class="brand-tile" /></svg>
+      nook
+    </span>
+  );
+}
 
 export function Sheet(props: { open: boolean; title: string; onClose: () => void; wide?: boolean; footer?: JSX.Element; children: JSX.Element }) {
   let opened = 0;

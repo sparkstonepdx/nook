@@ -1,3 +1,5 @@
+<img src="docs/logo/icon.svg" width="72" height="72" alt="">
+
 # nook
 
 Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. Each repo gets an isolated app (its own Linux user and folder); every folder in its `sites/` is a live site, named by its hostname.
