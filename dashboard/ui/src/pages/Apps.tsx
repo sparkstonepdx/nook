@@ -23,6 +23,21 @@ function siteAlert(s: Site) {
   return null;
 }
 
+// A problem worth opening the app for (not "running" or "activating", which pass by themselves).
+function siteIssue(s: Site) {
+  return (s.host && !s.live) || (s.kind === "cron" && s.last && s.last !== "n/a" && s.result !== "success" && s.ActiveState !== "active" && s.ActiveState !== "activating")
+    || (s.running && s.ActiveState === "failed") || s.healthy === false;
+}
+
+// Which apps are open, per browser: a convenience, so a failed read just means all closed.
+const OPEN_KEY = "nook-open-apps";
+function readOpen(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || "[]")); } catch { return new Set(); }
+}
+function writeOpen(v: Set<string>) {
+  try { localStorage.setItem(OPEN_KEY, JSON.stringify([...v])); } catch { /* storage off */ }
+}
+
 // What a site is doing, in one badge.
 function siteBadge(s: Site) {
   if (s.host && !s.live) return <StatusBadge ok={false}>not live</StatusBadge>;
@@ -63,6 +78,11 @@ export default function Apps() {
   const [manage, setManage] = createSignal<string | null>(null);
   const [limits, setLimits] = createSignal<string | null>(null);
   const appOf = (name: string | null | undefined) => data()?.apps.find((a) => a.name === name);
+  const [open, setOpen] = createSignal(readOpen());
+  const isOpen = (name: string) => open().has(name) || data()?.apps.length === 1;
+  const toggle = (name: string) => { const v = new Set(open()); v.has(name) ? v.delete(name) : v.add(name); setOpen(v); writeOpen(v); };
+  const allOpen = () => !!data()?.apps.length && data()!.apps.every((a) => open().has(a.name));
+  const setAll = (on: boolean) => { const v = new Set(on ? data()?.apps.map((a) => a.name) : []); setOpen(v); writeOpen(v); };
   const siteOf = () => { const s = site(); return s ? appOf(s.app)?.sites.find((x) => x.name === s.name) : undefined; };
 
   return (
@@ -72,33 +92,51 @@ export default function Apps() {
       </PageHead>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
 
-      <For each={data()?.apps} fallback={<Show when={data()}><p class="empty">No apps yet.</p></Show>}>
-        {(app) => (
-          <section class="section">
-            <div class="page-head">
-              <h2>{app.name}</h2>
-              <span class="text-secondary">{mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</span>
-              <Show when={app.watcher !== "active"}><StatusBadge ok={false} title="The watcher deploys new folders in sites/">watcher {app.watcher}</StatusBadge></Show>
-              <div class="page-actions">
-                <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd(`Synced ${app.name}`, `/api/apps/${app.name}/sync`))}>Sync</button>
-                <button class="btn btn-secondary btn-sm" onClick={() => setManage(app.name)}>Manage</button>
-              </div>
-            </div>
-            <Show when={app.sites.length} fallback={<p class="empty">No sites yet. <A class="link" href={`/apps/${app.name}/deploy`}>How to deploy</A></p>}>
-              <ul class="list">
-                <For each={app.sites}>
-                  {(s) => (
-                    <li><button class="row" onClick={() => setSite({ app: app.name, name: s.name })} title={kindTitle[s.kind]}>
-                      <span class="row-main"><span class={s.host ? "" : "mono"}>{s.host || s.name}</span><small>{siteDetail(s)}</small></span>
-                      <span class="row-end">{siteAlert(s)}<span class="chev">›</span></span>
-                    </button></li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </section>
-        )}
-      </For>
+      <Show when={(data()?.apps.length ?? 0) > 1}>
+        <div class="apps-tools"><button class="btn btn-ghost btn-sm" onClick={() => setAll(!allOpen())}>{allOpen() ? "Collapse all" : "Expand all"}</button></div>
+      </Show>
+      <Show when={data()?.apps.length} fallback={<Show when={data()}><p class="empty">No apps yet.</p></Show>}>
+        <ul class="list apps">
+          <For each={data()!.apps}>
+            {(app) => {
+              const issues = () => app.sites.filter(siteIssue).length + (app.watcher !== "active" ? 1 : 0);
+              return (
+                <li classList={{ "app-open": isOpen(app.name) }}>
+                  <button class="row app-row" aria-expanded={isOpen(app.name)} aria-controls={`app-${app.name}`} onClick={() => toggle(app.name)}>
+                    <span class="app-chev" aria-hidden="true">›</span>
+                    <span class="row-main">
+                      <span class="app-name">{app.name}</span>
+                      <small>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</small>
+                    </span>
+                    <span class="row-end"><Show when={issues()}><StatusBadge ok={false}>{issues()} {issues() === 1 ? "problem" : "problems"}</StatusBadge></Show></span>
+                  </button>
+                  <Show when={isOpen(app.name)}>
+                    <div class="app-body" id={`app-${app.name}`}>
+                      <Show when={app.watcher !== "active"}><div class="note note-bad">The watcher is {app.watcher}, so new folders in sites/ won't deploy. Sync restarts it.</div></Show>
+                      <Show when={app.sites.length} fallback={<p class="empty">No sites yet. <A class="link" href={`/apps/${app.name}/deploy`}>How to deploy</A></p>}>
+                        <ul class="list">
+                          <For each={app.sites}>
+                            {(s) => (
+                              <li><button class="row" onClick={() => setSite({ app: app.name, name: s.name })} title={kindTitle[s.kind]}>
+                                <span class="row-main"><span class={s.host ? "" : "mono"}>{s.host || s.name}</span><small>{siteDetail(s)}</small></span>
+                                <span class="row-end">{siteAlert(s)}<span class="chev">›</span></span>
+                              </button></li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                      <div class="app-actions">
+                        <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd(`Synced ${app.name}`, `/api/apps/${app.name}/sync`))}>Sync</button>
+                        <button class="btn btn-secondary btn-sm" onClick={() => setManage(app.name)}>Manage</button>
+                      </div>
+                    </div>
+                  </Show>
+                </li>
+              );
+            }}
+          </For>
+        </ul>
+      </Show>
 
       <Show when={data()}>
         <Server caddy={data()!.system.caddy} onLimits={(a) => setLimits(a)} after={after} />

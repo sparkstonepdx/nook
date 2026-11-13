@@ -5,7 +5,9 @@ import "@sparkstone/css";
 import "./tokens.css";
 import "./app.css";
 import { api, user, setUser } from "./api";
-import { Nav, Notices, ResultSheet, UpdateBanner, UpdateFooter, useUpdate } from "./components";
+import { Nav, Notices, ReloadBanner, ResultSheet, UpdateBanner, UpdateFooter, useUpdate } from "./components";
+import { setupInstall } from "./install";
+import { watchForUpdates } from "./update";
 import Login from "./pages/Login";
 import Invite from "./pages/Invite";
 import Apps from "./pages/Apps";
@@ -38,11 +40,14 @@ function Page(props: ParentProps) {
   const { s, mutate } = useUpdate();
   return (
     <div class="dock-space">
-      <main class="container page"><UpdateBanner s={s} />{props.children}</main>
+      <main class="container page"><ReloadBanner /><UpdateBanner s={s} />{props.children}</main>
       <UpdateFooter s={s} mutate={mutate} />
     </div>
   );
 }
+
+setupInstall();
+watchForUpdates();
 
 render(() => (
   <Router root={Shell}>
