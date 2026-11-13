@@ -30,6 +30,24 @@ if ! asu test -s "$H/data/subduction.key"; then
   echo "$msg"
 fi
 
+echo "==> Keyhive contact card"
+# Apps need the card to add this server to their docs as a relay; the dashboard shows it. Made from the key with
+# @keyhive/keyhive in a throwaway folder, as the app user, so only the public card is written.
+KEYHIVE="${KEYHIVE_VERSION:-0.4.0-alpha.1}"
+if command -v node >/dev/null && command -v npm >/dev/null; then
+  W=$(asu mktemp -d)
+  install -o "$U" -m 644 "$(dirname "$0")/subduction-card.mjs" "$W/card.mjs"
+  if asu sh -c 'cd "$1" && npm install --silent --no-audit --no-fund "@keyhive/keyhive@$2" >/dev/null 2>&1 && node card.mjs "$3" > card.json && [ -s card.json ] && umask 022 && cp card.json "$4"' \
+      sh "$W" "$KEYHIVE" "$H/data/subduction.key" "$H/data/subduction-card.json"; then
+    echo "saved to $H/data/subduction-card.json (keyhive $KEYHIVE)"
+  else
+    echo "couldn't make the card; the dashboard says so. Re-run once node can reach npm."
+  fi
+  rm -rf "$W"
+else
+  echo "skipped: no node here. Install Node and re-run to show the card in the dashboard."
+fi
+
 echo "==> retire the standalone service (if any)"
 if [ -f /etc/systemd/system/subduction.service ]; then
   systemctl disable --now subduction >/dev/null 2>&1 || true

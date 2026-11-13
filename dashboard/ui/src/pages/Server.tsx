@@ -1,11 +1,12 @@
 import { For, Show, createMemo, createResource, createSignal, onCleanup } from "solid-js";
-import { api, runCmd } from "../api";
-import { StatusBadge } from "../components";
+import { api, runCmd, say } from "../api";
+import { Field, StatusBadge } from "../components";
 
 type Resource = { name: string; status: "ok" | "watch" | "tight"; used: number; figure: string; detail: string };
 type Advice = { level: "watch" | "tight"; title: string; detail: string; app?: string };
 type Point = { t: number; v: number };
 type Series = { name: string; unit: string; points: Point[]; max: number };
+type SubductionId = { installed: boolean; url?: string; peerId?: string; peerIdHex?: string; card?: string; problem?: string };
 type Headroom = { status: "ok" | "watch" | "tight" | "learning"; summary: string; resources: Resource[]; advice: Advice[]; series: Series[]; since?: number; samples: number };
 
 const statusWord = { ok: "plenty", watch: "watch", tight: "tight" } as const;
@@ -82,7 +83,42 @@ export default function Server(props: { caddy: string; onLimits: (app: string) =
           </div>
         )}
       </Show>
+      <Subduction />
     </section>
+  );
+}
+
+// What an app needs to reach this server's Subduction relay with Keyhive: its address, its peer id and its
+// contact card, each with its own Copy. Only shown when the subduction app is installed.
+function Subduction() {
+  const [id] = createResource(() => api<SubductionId>("/api/subduction").catch(() => undefined));
+  const copy = (text: string, what: string) => { navigator.clipboard?.writeText(text); say(`${what} copied`); };
+  const env = (v: SubductionId) =>
+    [`SUBDUCTION_URL=${v.url}`, `SYNC_SERVER_PEER_ID=${v.peerId}`, v.card && `SYNC_SERVER_CONTACT_CARD=${v.card}`].filter(Boolean).join("\n");
+  const line = (label: string, value: string, what: string, hint?: string) => (
+    <Field label={label} hint={hint}>
+      <div class="field-row">
+        <input class="input mono" readonly value={value} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)} />
+        <button type="button" class="btn btn-secondary" onClick={() => copy(value, what)}>Copy</button>
+      </div>
+    </Field>
+  );
+  return (
+    <Show when={id()?.installed && id()}>
+      {(v) => (
+        <div class="stack subduction-id">
+          <div class="chart-head">
+            <span class="eyebrow">Subduction</span>
+            <button type="button" class="btn btn-secondary btn-sm" onClick={() => copy(env(v()), "Settings")}>Copy all</button>
+          </div>
+          {line("Address", v().url!, "Address")}
+          {line("Peer id", v().peerId!, "Peer id", "The server's public key, base64. Apps set it as SYNC_SERVER_PEER_ID.")}
+          <Show when={v().card} fallback={<div class="note note-warn"><span>{v().problem}</span></div>}>
+            {line("Keyhive contact card", v().card!, "Contact card", "Apps set it as SYNC_SERVER_CONTACT_CARD, to add the server to a doc as a relay.")}
+          </Show>
+        </div>
+      )}
+    </Show>
   );
 }
 

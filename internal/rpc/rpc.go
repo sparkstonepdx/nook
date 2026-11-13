@@ -40,7 +40,7 @@ var Ops = map[string]bool{
 	"grant": true, "setDefaultDomain": true, "setDashboardHost": true, "setIPAccess": true, "notFoundGet": true, "notFoundSet": true,
 	"updateStatus": true, "updateNow": true, "updateCheck": true,
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
-	"services": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "ciEnv": true,
+	"services": true, "subduction": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "ciEnv": true,
 	"store": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "headroom": true, "setLimits": true, "catalogRemove": true, "storeImage": true,
 }
 
