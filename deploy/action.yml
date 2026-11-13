@@ -42,7 +42,7 @@ runs:
       run: |
         if command -v go >/dev/null 2>&1; then echo "need=false" >> "$GITHUB_OUTPUT"; else echo "need=true" >> "$GITHUB_OUTPUT"; fi
     - if: steps.go.outputs.need == 'true'
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version-file: ${{ github.action_path }}/../go.mod
         cache: false
