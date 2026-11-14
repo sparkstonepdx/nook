@@ -55,11 +55,16 @@ export function UpdateFooter(props: { s: () => UpdateStatus | null | undefined; 
     } catch (e) { say("Couldn't check for updates", { kind: "error", detail: (e as Error).message }); }
     setChecking(false);
   };
+  // the version serving this page, not just the one the update installed: if they differ, the restart didn't take
+  const [running] = createResource(() => api<{ version: string }>("/api/version").then((r) => r.version).catch(() => ""));
   return (
     <footer class="update-footer">
       <Show when={props.s()} fallback={<span>nook</span>}>
         {(s) => (<>
-          <span>nook <span class="mono">{s().current}</span></span>
+          <span>nook <span class="mono">{running() || s().current}</span></span>
+          <Show when={running() && s().current && running() !== s().current && running() !== "dev"}>
+            <span class="text-error" title="The update installed, but the dashboard's process hasn't restarted onto it. The next daily check restarts it.">{s().current} installed, not running yet</span>
+          </Show>
           <Show when={!s().error} fallback={<span class="text-error" title={s().error}>update check failed</span>}>
             <span>{s().available ? `${s().latest} is ready` : s().checkedAt ? `up to date, checked ${ago(s().checkedAt)}` : "not checked yet"}</span>
           </Show>

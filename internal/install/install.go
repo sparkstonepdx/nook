@@ -297,7 +297,8 @@ SITE_MAX_BYTES=1073741824
 	h.SyncAll()
 
 	if o.Upgrade {
-		return nil
+		// this is the new binary: make sure the dashboard page comes from it too (the helper restarts after us)
+		return core.RestartStale(o.Out, false)
 	}
 	fmt.Fprintf(o.Out, "\nnook is installed (default domain %s, server address %s).\n", s.BaseDomain, s.SSHHost)
 	store, _ := web.OpenStore(config.WebStateDir)
