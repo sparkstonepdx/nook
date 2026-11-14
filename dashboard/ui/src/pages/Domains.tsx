@@ -1,6 +1,6 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { api, runCmd } from "../api";
-import { Field, PageHead, Sheet, StatusBadge } from "../components";
+import { Field, PageHead, Sheet, StatusBadge, Confirm, ConfirmStrip } from "../components";
 import { grantLabel } from "./Apps";
 
 type Domains = {
@@ -17,6 +17,7 @@ export default function DomainsPage() {
   const after = async (p?: Promise<unknown>) => { await p; refetch(); };
   const [kind, setKind] = createSignal("domain");
   const [allowing, setAllowing] = createSignal(false);
+  const [moving, setMoving] = createSignal(""); // the default domain waiting on "Change?"
 
   return (
     <>
@@ -34,7 +35,7 @@ export default function DomainsPage() {
                 <li class="row">
                   <span class="row-main"><span class="mono">{grantLabel(g.kind, g.name)}</span><small>{g.app} · {kindLabel[g.kind]}</small></span>
                   <span class="row-end">
-                    <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`) && after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))}>Remove</button>
+                    <Confirm label="Remove" yes="Remove" ask={`Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
                   </span>
                 </li>
               )}
@@ -71,8 +72,8 @@ export default function DomainsPage() {
               <span class="row-main"><span>Backup address <StatusBadge ok={d().ipAccess}>{d().ipAccess ? "on" : "off"}</StatusBadge></span><small><span class="mono">https://{d().ip}:{d().ipPort}</span>, self-signed. Keep it on so you can still get in if DNS breaks.</small></span>
               <span class="row-end">
                 <Show when={d().ipAccess} fallback={<button class="btn btn-secondary btn-sm" onClick={() => after(runCmd("IP access on", "/api/ip-access", { on: true }))}>Turn on</button>}>
-                  <button class="btn btn-ghost btn-sm" disabled={!d().dashboardHost} title={d().dashboardHost ? "" : "Set a dashboard address first"}
-                    onClick={() => window.confirm("Turn off IP access? If DNS for the dashboard address breaks, you'll need SSH to get back in.") && after(runCmd("IP access off", "/api/ip-access", { on: false }))}>Turn off</button>
+                  <Confirm label="Turn off" yes="Turn off" disabled={!d().dashboardHost} title={d().dashboardHost ? "" : "Set a dashboard address first"}
+                    ask="Turn off IP access? If DNS for the dashboard address breaks, you'll need SSH to get back in." onYes={() => after(runCmd("IP access off", "/api/ip-access", { on: false }))} />
                 </Show>
               </span>
             </li>
@@ -84,14 +85,17 @@ export default function DomainsPage() {
           <h2>Default domain</h2>
           <form class="card stack" onSubmit={(e) => {
             e.preventDefault();
-            const domain = String(new FormData(e.currentTarget).get("domain") || "");
-            if (domain !== d().baseDomain && window.confirm(`Change the default domain to ${domain}? Every short site name moves with it.`))
-              after(runCmd(`Default domain is now ${domain}`, "/api/default-domain", { domain }));
+            const domain = String(new FormData(e.currentTarget).get("domain") || "").trim();
+            if (domain !== d().baseDomain) setMoving(domain);
           }}>
             <div class="field-row">
               <Field label="Domain" hint={`Site folders without a dot, like "blog", are its subdomains. Changing it moves every app's *.${d().baseDomain}.`}><input class="input" name="domain" value={d().baseDomain} required /></Field>
               <button class="btn btn-secondary">Change</button>
             </div>
+            <Show when={moving()}>{(to) => (
+              <ConfirmStrip ask={`Change the default domain to ${to()}? Every short site name moves with it.`} yes="Change"
+                onNo={() => setMoving("")} onYes={() => { const domain = to(); setMoving(""); after(runCmd(`Default domain is now ${domain}`, "/api/default-domain", { domain })); }} />
+            )}</Show>
           </form>
         </section>
 
@@ -176,7 +180,7 @@ function Certificates() {
                 <span class="row-end">
                   <Show when={d.wildcard} fallback={<button class="btn btn-sm" onClick={() => setSetting(d)}>Use a wildcard</button>}>
                     <button class="btn btn-ghost btn-sm" onClick={() => setSetting(d)}>Token</button>
-                    <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Stop using a wildcard for ${d.domain}? Each hostname gets its own certificate again, which counts against the weekly limit.`) && after(runCmd(`${d.domain}: one certificate per hostname`, `/api/certificates/${encodeURIComponent(d.domain)}/remove`, {}))}>Remove</button>
+                    <Confirm label="Remove" yes="Remove" ask={`Stop using a wildcard for ${d.domain}? Each hostname gets its own certificate again, which counts against the weekly limit.`} onYes={() => after(runCmd(`${d.domain}: one certificate per hostname`, `/api/certificates/${encodeURIComponent(d.domain)}/remove`, {}))} />
                   </Show>
                 </span>
               </div>
@@ -206,7 +210,7 @@ function Certificates() {
               <Show when={anyWildcard() && !c().caddy.preferWildcard}><small class="text-error">Caddy {c().caddy.version} can't reuse a wildcard for each app's own address; that needs 2.10 or later. Update Caddy.</small></Show>
             </span>
             <span class="row-end">
-              <Show when={c().caddy.held}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm("Update Caddy, keeping its plugins? Sites pause for a few seconds while it restarts.") && after(runCmd("Updated Caddy", "/api/caddy/upgrade", {}))}>Update Caddy</button></Show>
+              <Show when={c().caddy.held}><Confirm label="Update Caddy" yes="Update" ask="Update Caddy, keeping its plugins? Sites pause for a few seconds while it restarts." onYes={() => after(runCmd("Updated Caddy", "/api/caddy/upgrade", {}))} /></Show>
             </span>
           </li>
         </ul>
@@ -281,7 +285,7 @@ function NotFoundPage() {
         <div class="field-row">
           <button class="btn btn-secondary" disabled={draft() === null || tooBig()}>Save</button>
           <Show when={page()?.custom}>
-            <button type="button" class="btn btn-ghost" onClick={() => window.confirm("Put the default 404 page back? Your edits are lost.") && save("", "Restored the default 404 page")}>Restore default</button>
+            <Confirm class="btn btn-ghost" label="Restore default" yes="Restore" ask="Put the default 404 page back? Your edits are lost." onYes={() => save("", "Restored the default 404 page")} />
           </Show>
         </div>
       </form>

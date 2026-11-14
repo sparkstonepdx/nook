@@ -229,3 +229,11 @@ img.app-coin { background: var(--surface-2, transparent); }
 /* the update sheet */
 .update-versions { margin: 0; font-size: var(--text-lg); display: flex; gap: var(--space-sm); align-items: baseline; }
 .update-notes { white-space: pre-wrap; max-height: 16rem; overflow: auto; padding: var(--space-md); border: var(--border-width) solid var(--line); border-radius: var(--radius-field); background: var(--fill); font-size: var(--text-sm); }
+
+/* In-place confirmation (components.tsx Confirm): takes the trigger's spot, and the full row in a list. */
+.confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-sm) var(--space-md); width: 100%; }
+.confirm-ask { flex: 1 1 14rem; color: var(--ink); font-size: var(--text-sm); }
+.confirm-actions { display: flex; gap: var(--space-sm); flex: none; }
+.row:has(> .row-end > .confirm) { flex-wrap: wrap; }
+.row-end:has(> .confirm) { flex-basis: 100%; }
+.row-end:has(> .confirm) > :not(.confirm) { display: none; }

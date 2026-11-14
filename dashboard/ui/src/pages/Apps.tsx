@@ -1,7 +1,7 @@
 import { For, Show, createResource, createSignal, onCleanup } from "solid-js";
 import { A } from "@solidjs/router";
 import { api, runCmd, setResult, type CmdResult } from "../api";
-import { StatusBadge, Field, PageHead, Sheet, TokenBox } from "../components";
+import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../components";
 import Server from "./Server";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
@@ -232,7 +232,7 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
               </Show>
               <Show when={s().running || s().kind === "cron"}><A class="btn btn-secondary" href={`/apps/${props.app}/sites/${encodeURIComponent(s().name)}/logs`}>Logs</A></Show>
             </div>
-            <button class="btn btn-ghost danger remove" onClick={() => window.confirm(`Remove ${name()}? This deletes sites/${s().name}.`) && op("remove", `Removed ${name()}`)}>Remove site</button>
+            <Confirm class="btn btn-ghost danger remove" label="Remove site" ask={<>Remove {name()}? This deletes <span class="mono">sites/{s().name}</span>.</>} yes="Remove" onYes={() => op("remove", `Removed ${name()}`)} />
           </div>
         )}
       </Show>
