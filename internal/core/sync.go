@@ -405,6 +405,7 @@ func (h *Host) syncLocked(app string) error {
 	if !bytes.Equal(old, []byte(text)) {
 		systemctl("reload", "caddy")
 	}
+	refreshNested() // a host two levels under a wildcard domain gets a wildcard for its parent
 	live, red := caddyfile.Hosts(text)
 	if len(live) == 0 {
 		h.say("%s: no sites", app)

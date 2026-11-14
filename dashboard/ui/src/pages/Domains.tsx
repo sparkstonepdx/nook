@@ -121,7 +121,8 @@ export default function DomainsPage() {
   );
 }
 
-type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string };
+type Nested = { domain: string; status: string; detail?: string; expires?: string };
+type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string; nested?: Nested[] };
 type Provider = { id: string; name: string; module: string; package: string; hint: string; tokenUrl?: string; steps?: string[] };
 type Certs = { caddy: { version: string; preferWildcard: boolean; held: boolean; modules: Record<string, boolean> }; domains: CertDomain[] | null; providers: Provider[] };
 
@@ -164,12 +165,13 @@ function Certificates() {
         <ul class="list">
           <For each={c().domains ?? []}>
             {(d) => (
-              <li class="row">
+              <li class="cert-item"><div class="row">
                 <span class="row-main">
                   <span><span class="mono">{d.wildcard ? `*.${d.domain}` : d.domain}</span><Show when={d.wildcard}> <StatusBadge ok={d.status === "issued"} warn={d.status === "waiting"}>{statusLabel[d.status ?? ""] ?? d.status}</StatusBadge></Show></span>
                   <small>{usedBy(d.for)} · {d.wildcard ? `wildcard via ${c().providers.find((p) => p.id === d.provider)?.name ?? d.provider}` : "one certificate per hostname"}
                     <Show when={d.expires}> · valid until {new Date(d.expires!).toLocaleDateString()}</Show></small>
                   <Show when={d.status === "error" || d.status === "waiting"}><small class={d.status === "error" ? "text-error" : ""}>{d.detail}</small></Show>
+
                 </span>
                 <span class="row-end">
                   <Show when={d.wildcard} fallback={<button class="btn btn-sm" onClick={() => setSetting(d)}>Use a wildcard</button>}>
@@ -177,11 +179,25 @@ function Certificates() {
                     <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Stop using a wildcard for ${d.domain}? Each hostname gets its own certificate again, which counts against the weekly limit.`) && after(runCmd(`${d.domain}: one certificate per hostname`, `/api/certificates/${encodeURIComponent(d.domain)}/remove`, {}))}>Remove</button>
                   </Show>
                 </span>
+              </div>
+              <Show when={d.nested?.length}>
+                <ul class="nested-certs" aria-label={`Wildcards under ${d.domain}`}>
+                  <For each={d.nested}>
+                    {(n) => (
+                      <li>
+                        <span class="mono">*.{n.domain}</span>
+                        <StatusBadge ok={n.status === "issued"} warn={n.status === "waiting"}>{statusLabel[n.status] ?? n.status}</StatusBadge>
+                        <Show when={n.status === "error"}><small class="text-error">{n.detail}</small></Show>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
               </li>
             )}
           </For>
         </ul>
-        <p class="hint">A wildcard covers one level: <span class="mono">blog.example.com</span> and PR previews (<span class="mono">blog-pr-12.example.com</span>). The domain itself and deeper names like <span class="mono">a.b.example.com</span> still get their own certificates.</p>
+        <p class="hint">A wildcard covers one level: <span class="mono">blog.example.com</span> and PR previews (<span class="mono">blog-pr-12.example.com</span>). A site deeper down, like <span class="mono">a.b.example.com</span>, gets a wildcard for its parent (<span class="mono">*.b.example.com</span>) by itself, shared by everything at that level. The domain itself keeps its own certificate. Until a wildcard is issued, the sites under it keep their own.</p>
         <ul class="list">
           <li class="row">
             <span class="row-main">
