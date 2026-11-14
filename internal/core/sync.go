@@ -296,7 +296,7 @@ func (h *Host) syncLocked(app string) error {
 				restartUnits = append(restartUnits, UnitName(app, s))
 				os.WriteFile(idFile, []byte(id), 0o600)
 			}
-			published = append(published, caddyfile.Site{Host: host, Port: port, Folder: s, Version: id})
+			published = append(published, caddyfile.Site{Host: host, Port: port, Folder: s, Version: id, TokenAuth: man.Auth == "nook-token"})
 		} else {
 			if _, err := os.Stat(filepath.Join("/etc/systemd/system", UnitName(app, s))); err == nil {
 				h.stopUnit(app, s)

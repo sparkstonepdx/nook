@@ -31,6 +31,7 @@ type Manifest struct {
 	Provides map[string]ProvideSpec `json:"provides,omitempty"` // services: interfaces it implements
 	Health   string                 `json:"health,omitempty"`   // web and service: a path that answers under 400 when it's working
 	CORS     bool                   `json:"cors,omitempty"`     // static: any origin may read its files (Access-Control-Allow-Origin: *)
+	Auth     string                 `json:"auth,omitempty"`     // web: "nook-token" lets in only requests with a deploy token from this server
 	calendar string
 }
 
@@ -52,6 +53,12 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if m.Health != "" && !healthPathRE.MatchString(m.Health) {
 		return m, fmt.Errorf("nook.json: health must be a path like /healthz, not %q", m.Health)
+	}
+	if m.Auth != "" && m.Auth != "nook-token" {
+		return m, fmt.Errorf(`nook.json: auth can only be "nook-token", not %q`, m.Auth)
+	}
+	if m.Auth != "" && m.Kind != "" && m.Kind != "web" {
+		return m, fmt.Errorf("nook.json: auth is for web sites; a %s has no address to protect", m.Kind)
 	}
 	switch m.Kind {
 	case "", "web":
