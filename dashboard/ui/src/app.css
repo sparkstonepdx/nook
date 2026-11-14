@@ -237,3 +237,4 @@ img.app-coin { background: var(--surface-2, transparent); }
 .row:has(> .row-end > .confirm) { flex-wrap: wrap; }
 .row-end:has(> .confirm) { flex-basis: 100%; }
 .row-end:has(> .confirm) > :not(.confirm) { display: none; }
+.next-try { font-weight: 600; color: var(--ink); }

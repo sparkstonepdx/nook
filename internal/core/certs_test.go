@@ -161,6 +161,7 @@ func TestOwnCertUntilIssued(t *testing.T) {
 	}
 	dir := t.TempDir()
 	certsFile, caddyCertsDir = filepath.Join(dir, "certs.json"), filepath.Join(dir, "certs")
+	noLimits(t, dir)
 	os.WriteFile(certsFile, []byte(`{"wildcards":[{"domain":"example.com","provider":"cloudflare","env":"NOOK_DNS_1"}]}`), 0o600)
 	// a Caddy that prefers wildcards
 	bin := filepath.Join(dir, "bin")

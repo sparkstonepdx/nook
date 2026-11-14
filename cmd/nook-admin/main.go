@@ -646,6 +646,11 @@ func certsCmd(h *core.Host, args []string) {
 			kind := "one certificate per hostname"
 			if d.Wildcard {
 				kind = fmt.Sprintf("wildcard via %s: %s %s %s", d.Provider, d.Status, d.Expires, d.Detail)
+				if d.Retry != "" {
+					if t, err := time.Parse(time.RFC3339, d.Retry); err == nil {
+						kind += " Next try: " + t.Local().Format("Mon Jan 2 3:04 PM MST") + "."
+					}
+				}
 			}
 			fmt.Printf("%-28s %s  (%s)\n", d.Domain, kind, strings.Join(d.For, ", "))
 		}
