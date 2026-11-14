@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/notfound"
 	"github.com/sparkstonepdx/nook/internal/redirects"
 )
@@ -22,6 +23,9 @@ type Site struct {
 	Version string
 	// CORS lets any origin read a static site's files (nook.json {"cors": true}).
 	CORS bool
+	// TokenAuth (nook.json {"auth": "nook-token"}) sends each request past nook's token check first: no valid
+	// deploy token, no request. The app gets X-Nook-App (which app's token it was) and never the token itself.
+	TokenAuth bool
 	// Rules are the static site's _redirects, in order.
 	Rules []redirects.Rule
 }
@@ -38,7 +42,9 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 		if s.Folder != "" {
 			fmt.Fprintf(&b, "# site %s %s\n", s.Folder, s.Version)
 		}
-		if s.Port > 0 {
+		if s.Port > 0 && s.TokenAuth {
+			fmt.Fprintf(&b, "%s {\n%s"+tokenAuth+"}\n", s.Host, tlsLine(s.Host, ownCert), TokenCheck, s.Port)
+		} else if s.Port > 0 {
 			fmt.Fprintf(&b, "%s {\n%s\treverse_proxy 127.0.0.1:%d\n}\n", s.Host, tlsLine(s.Host, ownCert), s.Port)
 		} else {
 			static(&b, s, tlsLine(s.Host, ownCert))
@@ -49,6 +55,23 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 	}
 	return b.String()
 }
+
+// TokenCheck is where Caddy asks nook-web whether a request's token is good (a var so tests can see it).
+var TokenCheck = "unix/" + config.WebSocket
+
+// tokenAuth runs in order (a route): a client's own X-Nook-App is dropped, nook-web checks the Bearer or Basic
+// token and answers 204 with X-Nook-App or 401, and the app gets the request without the token.
+const tokenAuth = `	route {
+		request_header -X-Nook-App
+		forward_auth %s {
+			uri /api/v1/token-check
+			copy_headers X-Nook-App
+		}
+		reverse_proxy 127.0.0.1:%d {
+			header_up -Authorization
+		}
+	}
+`
 
 const serve = "file_server {\n\t\tprecompressed gzip\n\t}"
 

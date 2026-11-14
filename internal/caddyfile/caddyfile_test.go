@@ -74,3 +74,15 @@ func TestRenderOwnCert(t *testing.T) {
 		t.Errorf("Hosts read back %v %v", live, redirs)
 	}
 }
+
+func TestTokenAuth(t *testing.T) {
+	out := Render("x", []Site{{Host: "npm.example.com", Port: 20001, TokenAuth: true}}, nil, nil)
+	for _, want := range []string{"request_header -X-Nook-App", "forward_auth unix//run/nook-web.sock {", "uri /api/v1/token-check", "copy_headers X-Nook-App", "reverse_proxy 127.0.0.1:20001 {", "header_up -Authorization"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if i, j := strings.Index(out, "request_header"), strings.Index(out, "forward_auth"); i > j {
+		t.Errorf("the client's X-Nook-App must go before the check:\n%s", out)
+	}
+}

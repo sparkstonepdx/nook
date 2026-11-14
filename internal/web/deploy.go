@@ -39,15 +39,32 @@ func apiError(w http.ResponseWriter, status int, format string, a ...any) {
 	writeJSON(w, status, map[string]string{"error": fmt.Sprintf(format, a...)})
 }
 
+// requestToken reads a deploy token from Authorization: Bearer, or (basic set, for the token check) from the
+// password of Basic auth, which is how `docker login` sends it.
+func requestToken(r *http.Request, basic bool) (string, bool) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok && basic {
+		_, tok, ok = r.BasicAuth()
+	}
+	tok = strings.TrimSpace(tok)
+	return tok, ok && bearerRE.MatchString(tok)
+}
+
 func (s *Server) serveDeployAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	ip := clientIP(r)
-	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || !bearerRE.MatchString(strings.TrimSpace(tok)) {
+	check := r.URL.Path == "/api/v1/token-check"
+	tok, ok := requestToken(r, check)
+	if !ok {
+		if check {
+			// Docker sends credentials only after a 401 that asks for them.
+			w.Header().Set("WWW-Authenticate", `Basic realm="nook"`)
+			apiError(w, 401, "this site needs a deploy token from its nook server: send Authorization: Bearer <token>, or log in with the token as the password")
+			return
+		}
 		apiError(w, 401, "send Authorization: Bearer <deploy token> (make one on the dashboard or with nook-admin token create APP)")
 		return
 	}
-	tok = strings.TrimSpace(tok)
 	if err := s.throttled(ip); err != nil {
 		he := err.(httpError)
 		apiError(w, he.status, "%s", he.msg)
@@ -61,6 +78,9 @@ func (s *Server) serveDeployAPI(w http.ResponseWriter, r *http.Request) {
 	if who.Error != "" {
 		if who.Status == 401 {
 			s.failed(ip)
+			if check {
+				w.Header().Set("WWW-Authenticate", `Basic realm="nook"`)
+			}
 		}
 		apiError(w, orDefault(who.Status, 500), "%s", who.Error)
 		return
@@ -71,6 +91,12 @@ func (s *Server) serveDeployAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	json.Unmarshal(who.Data, &info)
 
+	if check {
+		// Caddy's forward_auth for a site with {"auth": "nook-token"}: it copies X-Nook-App to the app and drops the token.
+		w.Header().Set("X-Nook-App", info.App)
+		w.WriteHeader(204)
+		return
+	}
 	if r.URL.Path == "/api/v1/whoami" && r.Method == "GET" {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(who.Data)
