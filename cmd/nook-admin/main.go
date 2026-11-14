@@ -179,6 +179,22 @@ func main() {
 		for _, a := range v.Advice {
 			fmt.Printf("  * %s: %s\n", a.Title, a.Detail)
 		}
+		if len(v.Apps) > 0 {
+			fmt.Println("\nApps (memory now, limit, trend since the last restart):")
+		}
+		for _, a := range v.Apps {
+			limit, trend := "server", "steady"
+			if a.OwnLimit {
+				limit = fmt.Sprintf("%d MB", a.Limit>>20)
+			}
+			if a.PerDay > 0 {
+				trend = fmt.Sprintf("+%.0f MB/day", a.PerDay/(1<<20))
+			}
+			if a.FullAt > 0 {
+				trend += ", full " + time.Unix(a.FullAt, 0).Format("Mon Jan 2")
+			}
+			fmt.Printf("  %-16s %6d MB  %-8s %5.1f%% CPU  %s\n", a.App, a.Mem>>20, limit, a.CPU, trend)
+		}
 	case "instructions":
 		needRoot()
 		instructionsCmd(args)

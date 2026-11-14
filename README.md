@@ -238,6 +238,7 @@ The Server section of the dashboard (and `nook-admin headroom`) says whether thi
 - **CPU:** tight when programs wait for CPU 25% of the time in over a quarter of the day's samples; watch at 10%. Advice: more or faster cores.
 - **Disk:** tight under 10% free, under 14 days to full at the current rate, or under 5% of inodes free; watch at 20%, 60 days or 15%. Advice: more storage.
 - **Apps:** an app killed for hitting its own memory limit, or using over 90% of it, gets "raise its limit" rather than "add RAM".
+- **App trends:** each app's memory over the chosen range, with a line through its hourly lowest reading since it last restarted (up to 7 days; a drop under 60% of the previous hour counts as a restart). The floor is what a leak raises; short spikes don't tilt it. Growing at least 1 MB a day gives a date it reaches its own limit, or the server's memory if it has none. Under 14 days is "watch" and under 3 is "tight", in the advice, the status and the push. The Server section lists every app with its memory, CPU over the last day, trend and a chart (memory, its limit dashed, the projection dashed); `nook-admin headroom` prints the same.
 - **Notifications:** a push when the overall status changes.
 
 

@@ -238,3 +238,11 @@ img.app-coin { background: var(--surface-2, transparent); }
 .row-end:has(> .confirm) { flex-basis: 100%; }
 .row-end:has(> .confirm) > :not(.confirm) { display: none; }
 .next-try { font-weight: 600; color: var(--ink); }
+/* Apps under Server (pages/Server.tsx AppTrendRow): memory, its limit, and where it's heading */
+.app-trend { flex-wrap: wrap; }
+.app-trend .figures { color: var(--muted); font-weight: normal; font-variant-numeric: tabular-nums; }
+.app-trend .trend-soon { color: var(--ink); font-weight: 600; }
+.app-trend .spark { flex: 1 1 100%; order: 3; width: 100%; height: 2.5rem; overflow: visible; }
+.app-trend .spark .line { fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.app-trend .spark .limit { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.app-trend .spark .projection { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }

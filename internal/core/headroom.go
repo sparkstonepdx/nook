@@ -263,6 +263,7 @@ type HeadroomView struct {
 	Resources []ResourceStatus `json:"resources"`
 	Advice    []Advice         `json:"advice"`
 	Series    []Series         `json:"series"`
+	Apps      []AppTrend       `json:"apps"`            // each app's memory and where it's heading, soonest trouble first
 	Since     int64            `json:"since,omitempty"` // the oldest sample shown
 	Samples   int              `json:"samples"`
 }
@@ -295,6 +296,7 @@ func Headroom(rng string) HeadroomView {
 	all := readSamples(keepSamples)
 	v := analyse(all, time.Now())
 	v.Series, v.Since = series(all, span, time.Now())
+	v.Apps = appTrends(all, time.Now(), span)
 	return v
 }
 
@@ -445,6 +447,17 @@ func analyse(all []Sample, now time.Time) HeadroomView {
 		} else if x.MemMax > 0 && float64(x.Mem)/float64(x.MemMax) > 0.9 {
 			v.Advice = append(v.Advice, Advice{Level: "watch", App: a, Title: a + " is near its memory limit",
 				Detail: fmt.Sprintf("Using %s of its %s. If it grows, it'll be stopped; raise the limit before then.", mib(x.Mem), mib(x.MemMax))})
+		}
+	}
+
+	// each app: heading for its limit, from the trend of its memory since it last restarted
+	advised := map[string]bool{}
+	for _, a := range v.Advice {
+		advised[a.App] = true
+	}
+	for _, a := range trendAdvice(appTrends(all, now, 24*time.Hour), now) {
+		if !advised[a.App] {
+			v.Advice = append(v.Advice, a)
 		}
 	}
 
