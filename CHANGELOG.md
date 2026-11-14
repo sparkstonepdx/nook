@@ -1,5 +1,11 @@
 # nook
 
+## 1.19.2
+
+### Patch Changes
+
+- c96e4b7: Remove site, Restart, Stop and Start work from the dashboard again. The site sheet closed itself before building the request, which cleared the app's name, so every one went to `/api/apps//sites/…` and failed with "not found".
+
 ## 1.19.1
 
 ### Patch Changes
