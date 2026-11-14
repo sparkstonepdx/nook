@@ -312,7 +312,7 @@ type CertDomain struct {
 	Status   string   `json:"status,omitempty"` // issued, waiting, limited, error
 	Detail   string   `json:"detail,omitempty"`
 	Expires  string   `json:"expires,omitempty"`
-	Retry    string   `json:"retry,omitempty"` // limited: when Let's Encrypt allows the next try (RFC 3339)
+	Retry    string   `json:"retry,omitempty"`  // limited: when Let's Encrypt allows the next try (RFC 3339)
 	Nested   []Nested `json:"nested,omitempty"` // wildcards for hosts deeper than one level
 }
 
