@@ -220,7 +220,7 @@ nook-admin store policy APP off|notify|patch|minor|all
   - Caddy needs the provider's plugin. Debian's Caddy can't add plugins, so the page downloads the current Caddy with it from caddyserver.com (the build server `caddy add-package` uses), checks it runs, lists the module and accepts your config, swaps it in for `/usr/bin/caddy` (keeping the old one as `caddy.nook-old`) and holds the package so apt can't put a plugin-less Caddy back. Update Caddy does the same with the same plugins.
   - Caddy 2.10+ uses the wildcard for every app's hostnames by itself (older Caddy, like Debian's 2.6, still gets one per hostname; the plugin step installs a current Caddy).
   - Until the wildcard is actually issued (a rate limit can hold it for days), every hostname under it keeps its own certificate (`tls force_automate`); the helper checks Caddy's certificate store every 2 minutes and moves them onto the wildcard once it's there. The dashboard address always keeps its own certificate, so a wildcard can't lock you out.
-  - A wildcard covers one level: `blog.example.com` and previews (`blog-pr-12.example.com`). The domain itself and deeper names like `a.b.example.com` still get their own.
+  - A wildcard covers one level: `blog.example.com` and previews (`blog-pr-12.example.com`). A site deeper down, like `a.b.example.com`, gets a wildcard for its parent (`*.b.example.com`) automatically, through the same provider and token and shared by everything at that level; it's worked out from the published sites on each sync, so it goes away with its last site. The domain itself keeps its own certificate.
 
 ## Catch-all page
 

@@ -217,3 +217,11 @@ img.app-coin { background: var(--surface-2, transparent); }
 .token-steps { display: grid; gap: var(--space-xs); padding: var(--space-md); border: var(--border-width) solid var(--line); border-radius: var(--radius-field); background: var(--fill); }
 .token-steps ol { margin: 0; padding-inline-start: 1.25rem; display: grid; gap: var(--space-2xs); }
 .token-steps .btn { justify-self: start; }
+
+/* nested wildcards: full-width lines under their parent's row */
+.cert-item { display: block; }
+.nested-certs { list-style: none; margin: 0; padding: 0 var(--space-md) var(--space-sm) calc(var(--space-md) + var(--space-md)); display: grid; gap: var(--space-2xs); }
+.nested-certs li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); font-size: var(--text-sm); }
+.nested-certs li::before { content: "↳"; color: var(--muted); }
+.nested-certs .text-error { flex-basis: 100%; }
+.cert-item + .cert-item { border-top: var(--border-width) solid var(--line); }
