@@ -333,7 +333,7 @@ export function ConfirmStrip(props: { ask: JSX.Element; yes: string; onYes: () =
       <span class="confirm-ask">{props.ask}</span>
       <span class="confirm-actions">
         <button type="button" class="btn btn-ghost btn-sm" ref={(el) => queueMicrotask(() => el.focus())} onClick={() => props.onNo()}>Cancel</button>
-        <button type="button" class="btn btn-sm danger-fill" onClick={() => props.onYes()}>{props.yes}</button>
+        <button type="button" class="btn btn-secondary btn-sm danger" onClick={() => props.onYes()}>{props.yes}</button>
       </span>
     </span>
   );
