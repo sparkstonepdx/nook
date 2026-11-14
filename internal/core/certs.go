@@ -196,8 +196,10 @@ func withoutPreferWildcard(text string) string {
 
 // ---- what Caddy has ----
 
-func wildcardIssued(domain string) (bool, time.Time) {
-	name := "wildcard_." + domain
+func wildcardIssued(domain string) (bool, time.Time) { return certIssued("wildcard_." + domain) }
+
+// certIssued looks for an unexpired certificate Caddy stored under name (a hostname, or wildcard_.DOMAIN).
+func certIssued(name string) (bool, time.Time) {
 	files, _ := filepath.Glob(filepath.Join(caddyCertsDir, "*", name, name+".crt"))
 	for _, f := range files {
 		b, err := os.ReadFile(f)
@@ -224,8 +226,9 @@ func OwnCert() func(host string) bool {
 		return nil
 	}
 	issued := map[string]bool{}
+	limits := certLimits()
 	return func(host string) bool {
-		_, target, ok := underWildcard(host, ws)
+		w, target, ok := underWildcard(host, ws)
 		if !ok {
 			return false
 		}
@@ -234,7 +237,15 @@ func OwnCert() func(host string) bool {
 			done, _ = wildcardIssued(target)
 			issued[target] = done
 		}
-		return !done
+		if done {
+			return false
+		}
+		if _, limited := limits[w.Domain]; limited {
+			// Out of certificates for the week: the wildcard goes first. A host that has its own keeps it.
+			has, _ := certIssued(host)
+			return has
+		}
+		return true
 	}
 }
 
@@ -267,6 +278,9 @@ func wildcardState() string {
 		ok, _ := wildcardIssued(w.Domain)
 		parts = append(parts, fmt.Sprintf("%s=%v", w.Domain, ok))
 	}
+	for d := range certLimits() {
+		parts = append(parts, "limited:"+d)
+	}
 	sort.Strings(parts)
 	return strings.Join(parts, " ")
 }
@@ -295,9 +309,10 @@ type CertDomain struct {
 	For      []string `json:"for"` // "default domain", or the apps with a grant on it
 	Wildcard bool     `json:"wildcard"`
 	Provider string   `json:"provider,omitempty"`
-	Status   string   `json:"status,omitempty"` // issued, waiting, error
+	Status   string   `json:"status,omitempty"` // issued, waiting, limited, error
 	Detail   string   `json:"detail,omitempty"`
 	Expires  string   `json:"expires,omitempty"`
+	Retry    string   `json:"retry,omitempty"`  // limited: when Let's Encrypt allows the next try (RFC 3339)
 	Nested   []Nested `json:"nested,omitempty"` // wildcards for hosts deeper than one level
 }
 
@@ -306,6 +321,7 @@ type Nested struct {
 	Status  string `json:"status"`
 	Detail  string `json:"detail,omitempty"`
 	Expires string `json:"expires,omitempty"`
+	Retry   string `json:"retry,omitempty"`
 }
 
 type CertsView struct {
@@ -350,11 +366,12 @@ func Certs() CertsView {
 		cd := CertDomain{Domain: d, For: doms[d]}
 		if w, ok := c.find(d); ok {
 			cd.Wildcard, cd.Provider = true, w.Provider
-			cd.Status, cd.Detail, cd.Expires = wildcardStatus(d)
+			limits := certLimits()
+			cd.Status, cd.Detail, cd.Expires, cd.Retry = wildcardStatus(d, limits[d])
 			for _, n := range nested {
 				if n.Parent == d {
-					st, det, exp := wildcardStatus(n.Domain)
-					cd.Nested = append(cd.Nested, Nested{Domain: n.Domain, Status: st, Detail: det, Expires: exp})
+					st, det, exp, retry := wildcardStatus(n.Domain, limits[d])
+					cd.Nested = append(cd.Nested, Nested{Domain: n.Domain, Status: st, Detail: det, Expires: exp, Retry: retry})
 				}
 			}
 		}
@@ -365,9 +382,12 @@ func Certs() CertsView {
 
 // wildcardStatus reads Caddy's own store: a certificate on disk is issued; otherwise the last error Caddy logged
 // for it, or waiting.
-func wildcardStatus(domain string) (status, detail, expires string) {
+func wildcardStatus(domain string, limit time.Time) (status, detail, expires, retry string) {
 	if ok, until := wildcardIssued(domain); ok {
-		return "issued", "", until.UTC().Format(time.RFC3339)
+		return "issued", "", until.UTC().Format(time.RFC3339), ""
+	}
+	if limit.After(time.Now()) {
+		return "limited", "Let's Encrypt's weekly limit for this domain is used up. Hosts that don't have a certificate yet wait for the wildcard, so it gets the first one.", "", limit.UTC().Format(time.RFC3339)
 	}
 	out, _ := exec.Command("journalctl", "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager").Output()
 	last := ""
@@ -390,9 +410,12 @@ func wildcardStatus(domain string) (status, detail, expires string) {
 		if len(last) > 300 {
 			last = last[:300] + "…"
 		}
-		return "error", last, ""
+		return "error", last, "", ""
 	}
-	return "waiting", "Caddy is asking for it. Until it's issued, each hostname keeps its own certificate.", ""
+	if !limit.IsZero() {
+		return "waiting", "The weekly limit has lifted, and Caddy will ask again on its next try. Hosts that don't have a certificate yet keep waiting for the wildcard.", "", ""
+	}
+	return "waiting", "Caddy is asking for it. Until it's issued, each hostname keeps its own certificate.", "", ""
 }
 
 // ---- changes ----

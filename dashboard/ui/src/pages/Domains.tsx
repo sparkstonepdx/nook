@@ -125,12 +125,15 @@ export default function DomainsPage() {
   );
 }
 
-type Nested = { domain: string; status: string; detail?: string; expires?: string };
-type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string; nested?: Nested[] };
+type Nested = { domain: string; status: string; detail?: string; expires?: string; retry?: string };
+type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string; retry?: string; nested?: Nested[] };
 type Provider = { id: string; name: string; module: string; package: string; hint: string; tokenUrl?: string; steps?: string[] };
 type Certs = { caddy: { version: string; preferWildcard: boolean; held: boolean; modules: Record<string, boolean> }; domains: CertDomain[] | null; providers: Provider[] };
 
-const statusLabel: Record<string, string> = { issued: "issued", waiting: "waiting", error: "error" };
+const statusLabel: Record<string, string> = { issued: "issued", waiting: "waiting", limited: "rate limited", error: "error" };
+const pending = (s?: string) => s === "waiting" || s === "limited";
+// When Let's Encrypt allows the next try, in the viewer's own time: "Sat, Nov 14, 12:21 AM".
+const nextTry = (iso: string) => new Date(iso).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // the zone a domain most likely is: its last two labels (apps.example.com is in example.com). Only a hint in the
 // steps: nook finds the real zone when it checks the token.
@@ -171,10 +174,11 @@ function Certificates() {
             {(d) => (
               <li class="cert-item"><div class="row">
                 <span class="row-main">
-                  <span><span class="mono">{d.wildcard ? `*.${d.domain}` : d.domain}</span><Show when={d.wildcard}> <StatusBadge ok={d.status === "issued"} warn={d.status === "waiting"}>{statusLabel[d.status ?? ""] ?? d.status}</StatusBadge></Show></span>
+                  <span><span class="mono">{d.wildcard ? `*.${d.domain}` : d.domain}</span><Show when={d.wildcard}> <StatusBadge ok={d.status === "issued"} warn={pending(d.status)}>{statusLabel[d.status ?? ""] ?? d.status}</StatusBadge></Show></span>
                   <small>{usedBy(d.for)} · {d.wildcard ? `wildcard via ${c().providers.find((p) => p.id === d.provider)?.name ?? d.provider}` : "one certificate per hostname"}
                     <Show when={d.expires}> · valid until {new Date(d.expires!).toLocaleDateString()}</Show></small>
-                  <Show when={d.status === "error" || d.status === "waiting"}><small class={d.status === "error" ? "text-error" : ""}>{d.detail}</small></Show>
+                  <Show when={d.retry}><small class="next-try">Next try: {nextTry(d.retry!)}</small></Show>
+                  <Show when={d.status === "error" || pending(d.status)}><small class={d.status === "error" ? "text-error" : ""}>{d.detail}</small></Show>
 
                 </span>
                 <span class="row-end">
@@ -190,7 +194,7 @@ function Certificates() {
                     {(n) => (
                       <li>
                         <span class="mono">*.{n.domain}</span>
-                        <StatusBadge ok={n.status === "issued"} warn={n.status === "waiting"}>{statusLabel[n.status] ?? n.status}</StatusBadge>
+                        <StatusBadge ok={n.status === "issued"} warn={pending(n.status)}>{statusLabel[n.status] ?? n.status}</StatusBadge>
                         <Show when={n.status === "error"}><small class="text-error">{n.detail}</small></Show>
                       </li>
                     )}
@@ -201,7 +205,7 @@ function Certificates() {
             )}
           </For>
         </ul>
-        <p class="hint">A wildcard covers one level: <span class="mono">blog.example.com</span> and PR previews (<span class="mono">blog-pr-12.example.com</span>). A site deeper down, like <span class="mono">a.b.example.com</span>, gets a wildcard for its parent (<span class="mono">*.b.example.com</span>) by itself, shared by everything at that level. The domain itself keeps its own certificate. Until a wildcard is issued, the sites under it keep their own.</p>
+        <p class="hint">A wildcard covers one level: <span class="mono">blog.example.com</span> and PR previews (<span class="mono">blog-pr-12.example.com</span>). A site deeper down, like <span class="mono">a.b.example.com</span>, gets a wildcard for its parent (<span class="mono">*.b.example.com</span>) by itself, shared by everything at that level. The domain itself keeps its own certificate. Until a wildcard is issued, the sites under it keep their own. If Let's Encrypt's weekly limit is reached, new sites wait for the wildcard instead, so it's first in line.</p>
         <ul class="list">
           <li class="row">
             <span class="row-main">
