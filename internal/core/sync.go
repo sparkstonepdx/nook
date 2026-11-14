@@ -393,7 +393,7 @@ func (h *Host) syncLocked(app string) error {
 	if err := config.WriteAtomic(out, []byte(text), 0o644); err != nil {
 		return err
 	}
-	if msg, err := Run("caddy", "validate", "--config", config.Caddyfile); err != nil {
+	if msg, err := caddyValidate(); err != nil {
 		if oldErr == nil {
 			config.WriteAtomic(out, old, 0o644)
 		} else {

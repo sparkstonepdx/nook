@@ -34,7 +34,7 @@ func (h *Host) AdminCaddy() error {
 		return err
 	}
 	ensureImport(config.AdminCaddy)
-	if out, err := Run("caddy", "validate", "--config", config.Caddyfile); err != nil {
+	if out, err := caddyValidate(); err != nil {
 		if oldErr == nil {
 			config.WriteAtomic(config.AdminCaddy, old, 0o644)
 		}
@@ -64,7 +64,7 @@ func ensureImport(path string) {
 }
 
 func (h *Host) ReloadCaddy() error {
-	if out, err := Run("caddy", "validate", "--config", config.Caddyfile); err != nil {
+	if out, err := caddyValidate(); err != nil {
 		return fmt.Errorf("Caddy config doesn't validate:\n%s", lastLines(out, 8))
 	}
 	if err := systemctl("reload", "caddy"); err != nil {

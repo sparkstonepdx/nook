@@ -215,6 +215,11 @@ nook-admin store policy APP off|notify|patch|minor|all
   New apps get `sub <default domain>`. Several apps can share a domain; the first to publish a hostname keeps it.
 - A root domain an app owns (`domain` or `host` grant) with no `www.` folder gets `www.` redirecting to it. A real `www.` site in any app replaces the redirect.
 - The Domains page lists the DNS records each grant needs.
+- **Certificates:** by default Caddy gets one certificate per hostname, and Let's Encrypt allows 50 a week per registered domain, which apps plus PR previews run into. Domains → Certificates sets up a wildcard (`*.domain`, by DNS challenge) for the default domain and each `domain`/`sub` grant:
+  - Pick the DNS provider (Cloudflare for now) and paste an API token from the "Edit zone DNS" template, scoped to that zone. nook checks the token can see the zone before saving it to `/etc/nook/dns.env` (root-only), and gives it to Caddy through a systemd drop-in.
+  - Caddy needs the provider's plugin: the page adds it (`caddy add-package`) and holds the package so apt can't drop it, then offers Update Caddy (`caddy upgrade`, keeping plugins).
+  - With Caddy 2.10+, `auto_https prefer_wildcard` makes every app's hostnames use the wildcard.
+  - A wildcard covers one level: `blog.example.com` and previews (`blog-pr-12.example.com`). The domain itself and deeper names like `a.b.example.com` still get their own.
 
 ## Catch-all page
 

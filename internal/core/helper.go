@@ -102,6 +102,8 @@ func handleHelper(c *net.UnixConn, webUID int) {
 	}
 	if req.Op == "notFoundSet" { // the page itself stays out of the log
 		log.Printf("%s: %s (%d bytes)", req.By, req.Op, len(req.Params["html"]))
+	} else if req.Op == "certSet" { // and so does the DNS token
+		log.Printf("%s: %s %s via %s", req.By, req.Op, req.Params["domain"], req.Params["provider"])
 	} else {
 		log.Printf("%s: %s %v", req.By, req.Op, req.Params)
 	}
@@ -262,6 +264,16 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "storeImage":
 		t, b, err := StoreImage(p["catalog"], p["sha"])
 		return data(map[string]any{"type": t, "data": b}, err)
+	case "certs":
+		return data(Certs(), nil)
+	case "certSet":
+		return command("nook-admin certs set "+p["domain"]+" --provider "+p["provider"], func(h *Host) error { return h.SetWildcard(p["domain"], p["provider"], p["token"]) })
+	case "certRemove":
+		return command("nook-admin certs rm "+p["domain"], func(h *Host) error { return h.RemoveWildcard(p["domain"]) })
+	case "caddyPlugin":
+		return command("nook-admin certs plugin "+p["provider"], func(h *Host) error { return h.AddDNSPlugin(p["provider"]) })
+	case "caddyUpgrade":
+		return command("nook-admin certs upgrade-caddy", func(h *Host) error { return h.UpgradeCaddy() })
 	case "headroom":
 		return data(Headroom(p["range"]), nil)
 	case "setLimits":
