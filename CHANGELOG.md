@@ -1,5 +1,11 @@
 # nook
 
+## 1.17.3
+
+### Patch Changes
+
+- 948f185: The deploy action sets up Go with `actions/setup-go` v7.
+
 ## 1.17.2
 
 ### Patch Changes
