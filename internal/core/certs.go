@@ -10,8 +10,9 @@ package core
 //	/etc/caddy/nook-tls.caddy                          *.example.com { tls { dns cloudflare {env.NOOK_DNS_1} } respond 404 }
 //	/usr/bin/caddy                                     replaced by a build with the DNS plugin from caddyserver.com, package held
 //
-// with "auto_https prefer_wildcard" in the Caddyfile's global options (Caddy 2.10+), so each app's per-host block
-// uses the wildcard instead of getting its own certificate. Every `caddy validate` nook runs loads dns.env, since
+// Caddy 2.10+ prefers a managed wildcard over a certificate per subdomain by itself, so each app's per-host block
+// uses it. (The "auto_https prefer_wildcard" option that used to ask for this was removed from Caddy; current Caddy
+// rejects it, so nook takes it out of the Caddyfile if it's there.) Every `caddy validate` nook runs loads dns.env, since
 // the DNS module rejects an empty token.
 
 import (
@@ -175,39 +176,24 @@ func renderTLS(c certsConfig) string {
 	return b.String()
 }
 
-const preferWildcard = "auto_https prefer_wildcard"
-
-// withPreferWildcard adds or removes "auto_https prefer_wildcard" in the Caddyfile's global options block.
-func withPreferWildcard(text string, on bool) string {
-	lines := strings.Split(text, "\n")
+// withoutPreferWildcard drops "auto_https prefer_wildcard" from the Caddyfile: current Caddy refuses the whole
+// config over it (it prefers wildcards without being asked), and an earlier nook may have written it.
+func withoutPreferWildcard(text string) string {
 	var out []string
-	for _, l := range lines {
-		if strings.TrimSpace(l) == preferWildcard {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.TrimSpace(l) == "auto_https prefer_wildcard" {
 			continue
 		}
 		out = append(out, l)
 	}
-	if !on {
-		return strings.Join(out, "\n")
-	}
-	for i, l := range out {
-		t := strings.TrimSpace(l)
-		if t == "" || strings.HasPrefix(t, "#") {
-			continue
-		}
-		if t == "{" { // the global options block
-			return strings.Join(append(out[:i+1], append([]string{"\t" + preferWildcard}, out[i+1:]...)...), "\n")
-		}
-		break
-	}
-	return "{\n\t" + preferWildcard + "\n}\n\n" + strings.Join(out, "\n")
+	return strings.Join(out, "\n")
 }
 
 // ---- what Caddy has ----
 
 type CaddyInfo struct {
 	Version        string          `json:"version"`
-	PreferWildcard bool            `json:"preferWildcard"` // 2.10+: per-host blocks reuse a wildcard
+	PreferWildcard bool            `json:"preferWildcard"` // 2.10+: uses a managed wildcard for its subdomains by itself
 	Held           bool            `json:"held"`           // apt-mark hold, so an apt upgrade can't drop plugins
 	Modules        map[string]bool `json:"modules"`        // provider id -> its DNS module is built in
 }
@@ -463,7 +449,7 @@ func (h *Host) applyCerts(c certsConfig, tokens map[string]string) error {
 	}
 	if err == nil {
 		cf, _ := os.ReadFile(config.Caddyfile)
-		err = config.WriteAtomic(config.Caddyfile, []byte(withPreferWildcard(string(cf), on && caddyInfo().PreferWildcard)), 0o644)
+		err = config.WriteAtomic(config.Caddyfile, []byte(withoutPreferWildcard(string(cf))), 0o644)
 		ensureImport(tlsCaddy)
 	}
 	if err != nil {
@@ -490,7 +476,7 @@ func modeOf(f string) os.FileMode {
 }
 
 // Caddy with plugins comes from Caddy's build server (what `caddy add-package` uses), not from apt: Debian's caddy
-// has no add-package or upgrade, and its version is often older than prefer_wildcard needs. The binary is
+// has no add-package or upgrade, and its version is often older than 2.10, which uses a wildcard for subdomains. The binary is
 // replaced in place (the distro's unit and config stay), keeps its port permission, and the package is held so
 // an apt upgrade can't put a plugin-less Caddy back.
 var caddyDownload = "https://caddyserver.com/api/download"
@@ -535,11 +521,9 @@ func (h *Host) UpgradeCaddy() error {
 	if err := h.installCaddyBuild(caddyPlugins(""), want); err != nil {
 		return err
 	}
-	after := caddyInfo()
-	// a version that now supports prefer_wildcard turns it on
-	if c := loadCerts(); len(c.Wildcards) > 0 {
-		cf, _ := os.ReadFile(config.Caddyfile)
-		config.WriteAtomic(config.Caddyfile, []byte(withPreferWildcard(string(cf), after.PreferWildcard)), 0o644)
+	cf, _ := os.ReadFile(config.Caddyfile)
+	if clean := withoutPreferWildcard(string(cf)); clean != string(cf) {
+		config.WriteAtomic(config.Caddyfile, []byte(clean), 0o644)
 	}
 	return h.restartCaddyIfValid()
 }
