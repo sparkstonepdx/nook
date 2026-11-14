@@ -67,6 +67,8 @@ type CatalogApp struct {
 	Site        string              `json:"site,omitempty"` // default site name (default: the id)
 	Schedule    string              `json:"schedule,omitempty"`
 	Health      string              `json:"health,omitempty"` // path answering < 400 when it's up
+	Auth        string              `json:"auth,omitempty"`   // "nook-token": only requests with a deploy token from this server
+	Open        []string            `json:"open,omitempty"`   // with auth: paths that skip the token check
 	Memory      string              `json:"memory,omitempty"`
 	CPU         string              `json:"cpu,omitempty"`
 	Needs       []string            `json:"needs,omitempty"`
@@ -156,6 +158,17 @@ func (a CatalogApp) check() error {
 	}
 	if a.Site != "" && !names.Site(a.Site) {
 		return fmt.Errorf("catalog entry %s: bad site", a.ID)
+	}
+	if a.Auth != "" && (a.Auth != "nook-token" || a.kind() != "web") {
+		return fmt.Errorf(`catalog entry %s: auth can only be "nook-token", on a web app`, a.ID)
+	}
+	if len(a.Open) > 0 && a.Auth == "" || len(a.Open) > 20 {
+		return fmt.Errorf("catalog entry %s: open needs auth, and at most 20 paths", a.ID)
+	}
+	for _, o := range a.Open {
+		if !openPathRE.MatchString(o) {
+			return fmt.Errorf("catalog entry %s: bad open path %q", a.ID, o)
+		}
 	}
 	switch a.Kind {
 	case "", "web", "service", "cron":
@@ -321,6 +334,12 @@ func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
 	}
 	if a.Health != "" && a.kind() != "cron" { // so the dashboard checks it too
 		man["health"] = a.Health
+	}
+	if a.Auth != "" {
+		man["auth"] = a.Auth
+	}
+	if len(a.Open) > 0 {
+		man["open"] = a.Open
 	}
 	manJSON, _ := json.MarshalIndent(man, "", "  ")
 	files := map[string][]byte{a.Binary: bin, "nook.json": manJSON}
