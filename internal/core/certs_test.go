@@ -26,24 +26,17 @@ func TestRenderTLS(t *testing.T) {
 	}
 }
 
-func TestPreferWildcard(t *testing.T) {
-	nook := "{\n\tadmin unix//run/caddy/admin.sock\n}\n\nimport /etc/caddy/apps/*.caddy\n"
-	on := withPreferWildcard(nook, true)
-	if on != "{\n\tauto_https prefer_wildcard\n\tadmin unix//run/caddy/admin.sock\n}\n\nimport /etc/caddy/apps/*.caddy\n" {
-		t.Fatalf("insert:\n%s", on)
+func TestWithoutPreferWildcard(t *testing.T) {
+	clean := "{\n\tadmin unix//run/caddy/admin.sock\n}\n\nimport /etc/caddy/apps/*.caddy\n"
+	written := "{\n\tauto_https prefer_wildcard\n\tadmin unix//run/caddy/admin.sock\n}\n\nimport /etc/caddy/apps/*.caddy\n"
+	if got := withoutPreferWildcard(written); got != clean {
+		t.Fatalf("not removed:\n%s", got)
 	}
-	if withPreferWildcard(on, true) != on {
-		t.Fatal("not idempotent")
+	if withoutPreferWildcard(clean) != clean {
+		t.Fatal("changed a clean Caddyfile")
 	}
-	if withPreferWildcard(on, false) != nook {
-		t.Fatalf("remove:\n%s", withPreferWildcard(on, false))
-	}
-	// a comment first, and no global block at all
-	if got := withPreferWildcard("# hi\n{\n}\n", true); got != "# hi\n{\n\tauto_https prefer_wildcard\n}\n" {
-		t.Fatalf("after a comment:\n%q", got)
-	}
-	if got := withPreferWildcard("import x\n", true); got != "{\n\tauto_https prefer_wildcard\n}\n\nimport x\n" {
-		t.Fatalf("no global block:\n%q", got)
+	if withoutPreferWildcard("{\n\tauto_https off\n}\n") != "{\n\tauto_https off\n}\n" {
+		t.Fatal("removed another auto_https setting")
 	}
 }
 

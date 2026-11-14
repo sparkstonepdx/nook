@@ -638,7 +638,7 @@ func storeCmd(h *core.Host, args []string) {
 func certsCmd(h *core.Host, args []string) {
 	if len(args) == 0 || args[0] == "list" {
 		v := core.Certs()
-		fmt.Printf("Caddy %s (prefer_wildcard: %v, held: %v)\n", v.Caddy.Version, v.Caddy.PreferWildcard, v.Caddy.Held)
+		fmt.Printf("Caddy %s (uses wildcards for subdomains: %v, held: %v)\n", v.Caddy.Version, v.Caddy.PreferWildcard, v.Caddy.Held)
 		for _, p := range v.Providers {
 			fmt.Printf("  %s plugin: %v\n", p.Name, v.Caddy.Modules[p.ID])
 		}
