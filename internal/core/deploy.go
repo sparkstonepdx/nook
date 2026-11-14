@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -80,7 +81,7 @@ func DispatchDeploy(req *rpc.Request, file *os.File) rpc.Response {
 		return deployFail(500, "%v", err)
 	}
 	if out, err := u.asAppIn(file, 64<<10, "internal-unpack", name, strconv.FormatInt(s.SiteMaxBytes, 10)); err != nil {
-		return deployFail(400, "%s", firstNonEmpty(strings.TrimSpace(string(out)), err.Error()))
+		return deployFail(400, "%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
 	// env only after the upload unpacked, so a bad upload changes nothing
 	if req.Params["env"] == "1" {
@@ -193,15 +194,6 @@ func (l *limited) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
-}
-
-func firstNonEmpty(a ...string) string {
-	for _, s := range a {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
 }
 
 // ciEnv handles the env API: values from CI into the app's "ci" scope (no site) or a site's deploy scope.

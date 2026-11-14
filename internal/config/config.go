@@ -22,7 +22,8 @@ const (
 	EnvDir       = "/etc/nook/env"
 	SSHKeysDir   = "/etc/ssh/nook-keys" // public keys: readable (sshd reads them as the user), root-writable only
 	LogDir       = "/var/log/nook"
-	WWWDir       = "/var/lib/nook/www"
+	LibDir       = "/var/lib/nook" // nook-admin's own data: www, store, catalogs, stats, update state
+	WWWDir       = LibDir + "/www"
 	CaddyAppsDir = "/etc/caddy/nook"
 	AdminCaddy   = "/etc/caddy/nook-dashboard.caddy"
 	Caddyfile    = "/etc/caddy/Caddyfile"

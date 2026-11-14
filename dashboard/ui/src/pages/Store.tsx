@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createResource, createSignal } from "solid-js";
 import { A, useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { api, runCmd, say } from "../api";
+import { api, attempt, runCmd, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
@@ -82,12 +82,13 @@ export default function Store() {
   const addOffered = async () => {
     const source = offer()!;
     setOffer(null);
-    try {
+    const ok = await attempt("Couldn't add that catalog", async () => {
       const r = await api<{ name: string; fingerprint: string }>("/api/store/catalogs", { source });
       say(`Added ${r.name}`, { kind: "success", detail: `Its key is ${r.fingerprint}.` });
       handled = false;
       setRefresh(true); refetch();
-    } catch (x) { say("Couldn't add that catalog", { kind: "error", detail: (x as Error).message }); setParams({ app: undefined, source: undefined }, { replace: true }); }
+    });
+    if (!ok) setParams({ app: undefined, source: undefined }, { replace: true });
   };
 
   return (
@@ -171,8 +172,7 @@ export default function Store() {
                       const using = (data()?.installed ?? []).filter((r) => r.catalog === c.id).map((r) => r.app);
                       return `Remove ${c.name}?${using.length ? ` ${using.join(", ")} keep running but stop getting updates.` : ""}`;
                     })()} onYes={async () => {
-                      try { await api(`/api/store/catalogs/${encodeURIComponent(c.id)}/remove`, {}); say(`Removed ${c.name}`, { kind: "success" }); }
-                      catch (x) { say("Couldn't remove it", { kind: "error", detail: (x as Error).message }); }
+                      await attempt("Couldn't remove it", async () => { await api(`/api/store/catalogs/${encodeURIComponent(c.id)}/remove`, {}); say(`Removed ${c.name}`, { kind: "success" }); });
                       refetch();
                     }} />
                   </Show>
@@ -189,11 +189,11 @@ export default function Store() {
           e.preventDefault();
           const source = String(new FormData(e.currentTarget).get("source")).trim();
           setAdding(false);
-          try {
+          await attempt("Couldn't add that catalog", async () => {
             const r = await api<{ name: string; fingerprint: string }>("/api/store/catalogs", { source });
             say(`Added ${r.name}`, { kind: "success", detail: `Its key is ${r.fingerprint}. Check that with whoever runs it.` });
             setRefresh(true); refetch();
-          } catch (x) { say("Couldn't add that catalog", { kind: "error", detail: (x as Error).message }); }
+          });
         }}>
           <div class="note note-warn">nook doesn't review community catalogs. An app from one runs as its own user like any other, but only add catalogs from people you trust.</div>
           <Field label="GitHub repo or URL" hint="A repo publishes its catalog to its dist branch. A URL is where index.json, index.json.sig and catalog.pub are."><input class="input mono" name="source" required placeholder="owner/nook-catalog" autocomplete="off" /></Field>
@@ -280,8 +280,7 @@ function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => v
             <Field label="Updates" hint={policyHint[r().policy]}>
               <select class="select" onChange={async (e) => {
                 const p = e.currentTarget.value;
-                try { await api(`/api/store/${r().app}/policy`, { policy: p }); say(`${r().app}: ${policyLabel[p].toLowerCase()}`, { kind: "success" }); }
-                catch (x) { say("Couldn't change updates", { kind: "error", detail: (x as Error).message }); }
+                await attempt("Couldn't change updates", async () => { await api(`/api/store/${r().app}/policy`, { policy: p }); say(`${r().app}: ${policyLabel[p].toLowerCase()}`, { kind: "success" }); });
                 props.onDone();
               }}>
                 <For each={Object.keys(policyLabel)}>{(p) => <option value={p} selected={p === r().policy}>{policyLabel[p]}</option>}</For>

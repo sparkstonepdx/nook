@@ -16,6 +16,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -116,7 +117,7 @@ var (
 	sha256RE    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-func storeDir(app string) string { return filepath.Join(config.WWWDir, "..", "store", app) }
+func storeDir(app string) string { return filepath.Join(config.LibDir, "store", app) }
 
 func (a CatalogApp) check() error {
 	if !catalogIDRE.MatchString(a.ID) || a.Name == "" || a.Version == "" || len(a.Version) > 40 {
@@ -357,7 +358,7 @@ func deployPackage(app, site string, pkg []byte) (string, error) {
 	}
 	s := config.Load()
 	if out, err := u.asAppIn(bytes.NewReader(pkg), 64<<10, "internal-unpack", site, strconv.FormatInt(s.SiteMaxBytes, 10)); err != nil {
-		return "", fmt.Errorf("%s", firstNonEmpty(strings.TrimSpace(string(out)), err.Error()))
+		return "", fmt.Errorf("%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
 	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", filepath.Join(u.Home, "builds", site), site)
 	return strings.TrimSpace(string(out)), err

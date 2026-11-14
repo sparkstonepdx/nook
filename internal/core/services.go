@@ -500,7 +500,7 @@ func ServicesOverview() ServicesView {
 	bound := map[string]bool{}
 	for _, b := range readBindings() {
 		bound[b.App+"/"+b.Interface] = true
-		row := BindingRow{Binding: b}
+		row := BindingRow{Binding: b, Env: []string{}} // [] not null: the page lists it
 		row.Token = ""
 		for k := range bindingValues(b) {
 			if to, ok := b.As[k]; ok {

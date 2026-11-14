@@ -48,7 +48,7 @@ var (
 
 func catalogsFile() string { return filepath.Join(filepath.Dir(config.StoreFile), "catalogs.json") }
 
-func catalogCacheDir() string { return filepath.Join(config.WWWDir, "..", "catalogs") }
+func catalogCacheDir() string { return filepath.Join(config.LibDir, "catalogs") }
 
 func officialSource() CatalogSource {
 	url := "https://raw.githubusercontent.com/" + OfficialCatalogRepo + "/dist/"
