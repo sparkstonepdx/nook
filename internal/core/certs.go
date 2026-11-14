@@ -165,6 +165,8 @@ func caddyValidate() (string, error) {
 
 // ---- generated config ----
 
+var retryAfterRE = regexp.MustCompile(`retry after (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC`)
+
 var dnsTokenRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{20,200}$`)
 
 // A wildcard covers one level, so a host two or more levels under a domain with a wildcard (a.b.example.com) gets
@@ -515,6 +517,12 @@ func wildcardStatus(domain string) (status, detail, expires string) {
 		}
 		if json.Unmarshal([]byte(last), &e) == nil && (e.Error != "" || e.Msg != "") {
 			last = strings.TrimSpace(e.Msg + ": " + e.Error)
+		}
+		// Let's Encrypt's rate limit says when the next slot opens; that's the one thing worth showing
+		if m := retryAfterRE.FindStringSubmatch(last); m != nil {
+			if t, err := time.Parse("2006-01-02 15:04:05 MST", m[1]); err == nil {
+				last = "Let's Encrypt's weekly limit for this domain is used up. Caddy retries by itself and gets it at " + t.UTC().Format(time.RFC3339) + "."
+			}
 		}
 		if caddyForceAutomate() {
 			last += " Until it's issued, each hostname keeps its own certificate; Caddy keeps trying."

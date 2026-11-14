@@ -132,6 +132,9 @@ const statusLabel: Record<string, string> = { issued: "issued", waiting: "waitin
 // steps: nook finds the real zone when it checks the token.
 const zoneOf = (d: string) => d.split(".").slice(-2).join(".");
 
+// an RFC 3339 time in a status line, in the viewer's own time zone
+const localTimes = (s?: string) => (s ?? "").replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ/g, (t) => new Date(t).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }));
+
 // who uses a domain, short: "default domain and 18 apps", "wordbag and kinlog"
 function usedBy(f: string[] | null) {
   if (!f?.length) return "no longer used by any app";
@@ -170,8 +173,7 @@ function Certificates() {
                   <span><span class="mono">{d.wildcard ? `*.${d.domain}` : d.domain}</span><Show when={d.wildcard}> <StatusBadge ok={d.status === "issued"} warn={d.status === "waiting"}>{statusLabel[d.status ?? ""] ?? d.status}</StatusBadge></Show></span>
                   <small>{usedBy(d.for)} · {d.wildcard ? `wildcard via ${c().providers.find((p) => p.id === d.provider)?.name ?? d.provider}` : "one certificate per hostname"}
                     <Show when={d.expires}> · valid until {new Date(d.expires!).toLocaleDateString()}</Show></small>
-                  <Show when={d.status === "error" || d.status === "waiting"}><small class={d.status === "error" ? "text-error" : ""}>{d.detail}</small></Show>
-
+                  <Show when={d.status === "error" || d.status === "waiting"}><small class={d.status === "error" ? "text-error" : ""}>{localTimes(d.detail)}</small></Show>
                 </span>
                 <span class="row-end">
                   <Show when={d.wildcard} fallback={<button class="btn btn-sm" onClick={() => setSetting(d)}>Use a wildcard</button>}>
@@ -187,7 +189,7 @@ function Certificates() {
                       <li>
                         <span class="mono">*.{n.domain}</span>
                         <StatusBadge ok={n.status === "issued"} warn={n.status === "waiting"}>{statusLabel[n.status] ?? n.status}</StatusBadge>
-                        <Show when={n.status === "error"}><small class="text-error">{n.detail}</small></Show>
+                        <Show when={n.status === "error"}><small class="text-error">{localTimes(n.detail)}</small></Show>
                       </li>
                     )}
                   </For>

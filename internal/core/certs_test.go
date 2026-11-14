@@ -227,3 +227,11 @@ func TestNestedWildcards(t *testing.T) {
 		t.Fatalf("nested wildcard not rendered with its parent's token:\n%s", tls)
 	}
 }
+
+func TestRetryAfter(t *testing.T) {
+	line := `will retry: [*.sparkstonepdx.com] Obtain: creating new order: HTTP 429 urn:ietf:params:acme:error:rateLimited - too many certificates (50) already issued for "sparkstonepdx.com" in the last 168h0m0s, retry after 2026-11-14 08:21:17 UTC: see https://letsencrypt.org/docs/rate-limits/`
+	m := retryAfterRE.FindStringSubmatch(line)
+	if m == nil || m[1] != "2026-11-14 08:21:17" {
+		t.Fatalf("got %v", m)
+	}
+}
