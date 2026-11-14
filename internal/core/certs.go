@@ -225,6 +225,109 @@ func caddyInfo() CaddyInfo {
 	return info
 }
 
+// ---- own certificates until the wildcard is issued ----
+
+// Caddy 2.10+ uses a managed wildcard for every subdomain it covers and stops getting them certificates of their
+// own, so until the wildcard is issued (a rate limit can hold it for days) those hosts would serve nothing. Hosts
+// under a wildcard that isn't issued yet keep their own certificate (`tls force_automate`), and the helper switches
+// them over once it is. The dashboard address always keeps its own, so a wildcard can't lock anyone out.
+
+var caddyVersionCache struct {
+	mtime   time.Time
+	version string
+}
+
+// caddyForceAutomate: whether this Caddy prefers wildcards (and so understands force_automate), 2.10+.
+func caddyForceAutomate() bool {
+	bin, err := exec.LookPath("caddy")
+	if err != nil {
+		return false
+	}
+	st, err := os.Stat(bin)
+	if err != nil {
+		return false
+	}
+	if !st.ModTime().Equal(caddyVersionCache.mtime) {
+		out, _ := exec.Command(bin, "version").Output()
+		caddyVersionCache.mtime, caddyVersionCache.version = st.ModTime(), strings.TrimSpace(string(out))
+	}
+	return caddyAtLeast(caddyVersionCache.version, 2, 10)
+}
+
+// wildcardIssued: Caddy has a current certificate for *.domain in its store.
+func wildcardIssued(domain string) (bool, time.Time) {
+	name := "wildcard_." + domain
+	files, _ := filepath.Glob(filepath.Join(caddyCertsDir, "*", name, name+".crt"))
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if blk, _ := pem.Decode(b); blk != nil {
+			if cert, err := x509.ParseCertificate(blk.Bytes); err == nil && time.Now().Before(cert.NotAfter) {
+				return true, cert.NotAfter
+			}
+		}
+	}
+	return false, time.Time{}
+}
+
+// coveredBy is the wildcard domain host is one level under, if any.
+func coveredBy(host string, domains []string) string {
+	for _, d := range domains {
+		if sub, ok := strings.CutSuffix(host, "."+d); ok && sub != "" && !strings.Contains(sub, ".") {
+			return d
+		}
+	}
+	return ""
+}
+
+// OwnCert says which hosts keep their own certificate: those under a wildcard that isn't issued yet. Nil (none)
+// on Caddy before 2.10, which doesn't prefer wildcards.
+func OwnCert() func(host string) bool {
+	if !caddyForceAutomate() {
+		return nil
+	}
+	var pending []string
+	for _, w := range loadCerts().Wildcards {
+		if ok, _ := wildcardIssued(w.Domain); !ok {
+			pending = append(pending, w.Domain)
+		}
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	return func(host string) bool { return coveredBy(host, pending) != "" }
+}
+
+// wildcardState is what the generated config depends on: each wildcard and whether it's issued.
+func wildcardState() string {
+	var parts []string
+	for _, w := range loadCerts().Wildcards {
+		ok, _ := wildcardIssued(w.Domain)
+		parts = append(parts, fmt.Sprintf("%s=%v", w.Domain, ok))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, " ")
+}
+
+// WatchWildcards regenerates the Caddy config whenever a wildcard is issued (or one is added or removed), so hosts
+// move onto it as soon as it exists. Run by the helper; the first look also updates config written by an older nook.
+func WatchWildcards() {
+	last := ""
+	for {
+		if st := wildcardState(); st != last {
+			if last != "" || st != "" {
+				h := New(io.Discard)
+				h.SyncAll()
+				h.AdminCaddy()
+			}
+			last = st
+		}
+		time.Sleep(2 * time.Minute)
+	}
+}
+
 // ---- the view ----
 
 type CertDomain struct {
@@ -297,18 +400,8 @@ func Certs() CertsView {
 // wildcardStatus reads Caddy's own store: a certificate on disk is issued; otherwise the last error Caddy logged
 // for it, or waiting.
 func wildcardStatus(domain string) (status, detail, expires string) {
-	name := "wildcard_." + domain
-	files, _ := filepath.Glob(filepath.Join(caddyCertsDir, "*", name, name+".crt"))
-	for _, f := range files {
-		b, err := os.ReadFile(f)
-		if err != nil {
-			continue
-		}
-		if blk, _ := pem.Decode(b); blk != nil {
-			if cert, err := x509.ParseCertificate(blk.Bytes); err == nil && time.Now().Before(cert.NotAfter) {
-				return "issued", "", cert.NotAfter.UTC().Format(time.RFC3339)
-			}
-		}
+	if ok, until := wildcardIssued(domain); ok {
+		return "issued", "", until.UTC().Format(time.RFC3339)
 	}
 	out, _ := exec.Command("journalctl", "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager").Output()
 	last := ""
@@ -325,12 +418,15 @@ func wildcardStatus(domain string) (status, detail, expires string) {
 		if json.Unmarshal([]byte(last), &e) == nil && (e.Error != "" || e.Msg != "") {
 			last = strings.TrimSpace(e.Msg + ": " + e.Error)
 		}
+		if caddyForceAutomate() {
+			last += " Until it's issued, each hostname keeps its own certificate; Caddy keeps trying."
+		}
 		if len(last) > 300 {
 			last = last[:300] + "…"
 		}
 		return "error", last, ""
 	}
-	return "waiting", "Caddy asks for it after a restart; it can take a minute or two.", ""
+	return "waiting", "Caddy is asking for it. Until it's issued, each hostname keeps its own certificate.", ""
 }
 
 // ---- changes ----
@@ -460,6 +556,10 @@ func (h *Host) applyCerts(c certsConfig, tokens map[string]string) error {
 		restore()
 		return fmt.Errorf("Caddy didn't accept it; nothing changed\n%s", lastLines(out, 6))
 	}
+	// hosts under a wildcard that isn't issued yet keep their own certificate (or drop that once it is)
+	quiet := New(io.Discard)
+	quiet.SyncAll()
+	quiet.AdminCaddy()
 	systemctl("daemon-reload")
 	h.say("restarting Caddy (its environment changed; sites are back within seconds)")
 	if err := systemctl("restart", "caddy"); err != nil {

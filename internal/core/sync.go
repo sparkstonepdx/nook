@@ -387,7 +387,7 @@ func (h *Host) syncLocked(app string) error {
 
 	sort.Slice(published, func(i, j int) bool { return published[i].Host < published[j].Host })
 	out := filepath.Join(config.CaddyAppsDir, app+".caddy")
-	text := caddyfile.Render(sitesPath, published, redirects)
+	text := caddyfile.Render(sitesPath, published, redirects, OwnCert())
 	old, oldErr := os.ReadFile(out)
 	os.MkdirAll(config.CaddyAppsDir, 0o755)
 	if err := config.WriteAtomic(out, []byte(text), 0o644); err != nil {
