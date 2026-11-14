@@ -201,7 +201,8 @@ function NewApp(props: { open: boolean; defaults: Overview["defaults"]; onClose:
 }
 
 function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after: (p?: Promise<unknown>) => void }) {
-  const op = (o: string, title: string) => { const s = props.site!; props.onClose(); props.after(runCmd(title, `/api/apps/${props.app}/sites/${encodeURIComponent(s.name)}/${o}`)); };
+  // read the app and site before closing: closing clears them (props.app was "" by the time the URL was built)
+  const op = (o: string, title: string) => { const app = props.app, s = props.site!; props.onClose(); props.after(runCmd(title, `/api/apps/${encodeURIComponent(app)}/sites/${encodeURIComponent(s.name)}/${o}`)); };
   const name = () => props.site?.host || props.site?.name || "";
   return (
     <Sheet open={!!props.site} title={name()} onClose={props.onClose}>
