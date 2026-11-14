@@ -17,6 +17,7 @@ Debian VPS. Caddy (reverse proxy + TLS) is the only thing exposed to the interne
 - `nook-admin grant list` / `nook-admin grant add|rm APP domain|sub|host NAME`
 - `nook-admin env set NAME KEY` (prompts), `nook-admin env list NAME [--values]`, `nook-admin env unset NAME KEY`
 - `nook-admin update` / `nook-admin update --check`, `nook-admin version`
+- `nook-admin certs [list]`, `nook-admin certs set DOMAIN [--provider cloudflare]` (token on stdin), `nook-admin certs rm DOMAIN`, `nook-admin certs plugin cloudflare`, `nook-admin certs upgrade-caddy`
 
 App users (and their deploy keys) only get `nook site deploy|rm|restart|list|logs`. SSH for `nook-*` users is forced through `nook ssh-gate`: an rsync upload into `builds/` and `nook site …`, nothing else.
 
@@ -34,6 +35,7 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 | Dashboard logins | `/var/lib/nook-web/users.json` |
 | Generated Caddy config | `/etc/caddy/nook/*.caddy`, `/etc/caddy/nook-dashboard.caddy` (don't edit) |
 | Catch-all 404 page | `/etc/caddy/catchall/index.html` (yours to edit) |
+| Wildcard certificates | `/etc/nook/certs.json` (which domains), `/etc/nook/dns.env` (DNS API tokens, root-only), `/etc/caddy/nook-tls.caddy`, `/etc/systemd/system/caddy.service.d/nook-dns.conf` |
 
 ## Updates
 
@@ -44,7 +46,8 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 ## Caddy
 
 - Main config: `/etc/caddy/Caddyfile` (imports the generated files). Admin API is on a root-only socket, not `localhost:2019`.
-- Check / apply: `caddy validate --config /etc/caddy/Caddyfile` then `systemctl reload caddy`
+- Check / apply: `sudo bash -c 'set -a; . /etc/nook/dns.env; caddy validate --config /etc/caddy/Caddyfile'` then `systemctl reload caddy`. The DNS tokens have to be loaded or the Cloudflare module refuses the config; nook loads them for every validate it runs.
+- **Wildcard certificates** (Domains → Certificates): one `*.domain` certificate by DNS challenge instead of one per hostname, so apps and PR previews don't use up Let's Encrypt's 50 a week per domain. The Cloudflare plugin is added with `caddy add-package` and the `caddy` package is held (`apt-mark hold caddy`) so apt can't replace it; update Caddy from the Domains page (`caddy upgrade`, which keeps plugins). `auto_https prefer_wildcard` (Caddy 2.10+) makes each app's host blocks use the wildcard. Changing a token restarts Caddy, since its environment changed.
 - Logs: `journalctl -u caddy -f`
 
 ## Subduction (optional)

@@ -36,6 +36,8 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
   nook-admin delete NAME                         asks you to type the name
   nook-admin limits NAME [--memory 512M] [--cpu 100%] [--tasks 256]   change an app's limits (no restart)
+  nook-admin certs [list] | set DOMAIN [--provider cloudflare] (token on stdin) | rm DOMAIN
+  nook-admin certs plugin PROVIDER | upgrade-caddy   add a DNS plugin to Caddy (and hold it) / upgrade Caddy keeping plugins
   nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
@@ -160,11 +162,14 @@ func main() {
 			}
 		}
 		die(h.SetLimits(args[1], mem, cpu, tasks))
+	case "certs":
+		needRoot()
+		certsCmd(h, args)
 	case "headroom":
 		needRoot()
 		rng := "24h"
-		if len(args) > 1 {
-			rng = args[1]
+		if len(args) > 0 {
+			rng = args[0]
 		}
 		v := core.Headroom(rng)
 		fmt.Println(v.Summary)
@@ -627,5 +632,43 @@ func storeCmd(h *core.Host, args []string) {
 		die(h.StoreCheck())
 	default:
 		die(usage)
+	}
+}
+
+func certsCmd(h *core.Host, args []string) {
+	if len(args) == 0 || args[0] == "list" {
+		v := core.Certs()
+		fmt.Printf("Caddy %s (prefer_wildcard: %v, held: %v)\n", v.Caddy.Version, v.Caddy.PreferWildcard, v.Caddy.Held)
+		for _, p := range v.Providers {
+			fmt.Printf("  %s plugin: %v\n", p.Name, v.Caddy.Modules[p.ID])
+		}
+		for _, d := range v.Domains {
+			kind := "one certificate per hostname"
+			if d.Wildcard {
+				kind = fmt.Sprintf("wildcard via %s: %s %s %s", d.Provider, d.Status, d.Expires, d.Detail)
+			}
+			fmt.Printf("%-28s %s  (%s)\n", d.Domain, kind, strings.Join(d.For, ", "))
+		}
+		return
+	}
+	switch {
+	case args[0] == "set" && len(args) >= 2:
+		provider := "cloudflare"
+		for i, a := range args {
+			if a == "--provider" && i+1 < len(args) {
+				provider = args[i+1]
+			}
+		}
+		fmt.Fprint(os.Stderr, "API token: ")
+		tok, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		die(h.SetWildcard(args[1], provider, strings.TrimSpace(tok)))
+	case args[0] == "rm" && len(args) == 2:
+		die(h.RemoveWildcard(args[1]))
+	case args[0] == "plugin" && len(args) == 2:
+		die(h.AddDNSPlugin(args[1]))
+	case args[0] == "upgrade-caddy":
+		die(h.UpgradeCaddy())
+	default:
+		die(fmt.Errorf("usage: nook-admin certs [list] | set DOMAIN [--provider P] | rm DOMAIN | plugin P | upgrade-caddy"))
 	}
 }

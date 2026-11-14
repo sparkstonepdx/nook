@@ -24,6 +24,7 @@ export default function DomainsPage() {
         <button class="btn" onClick={() => setAllowing(true)}>Allow a domain</button>
       </PageHead>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
+      <Certificates />
       <Show when={data()}>{(d) => (<>
         <section class="section">
           <h2>What each app may use</h2>
@@ -117,6 +118,111 @@ export default function DomainsPage() {
         </Sheet>
       </>)}</Show>
     </>
+  );
+}
+
+type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string };
+type Provider = { id: string; name: string; module: string; package: string; hint: string };
+type Certs = { caddy: { version: string; preferWildcard: boolean; held: boolean; modules: Record<string, boolean> }; domains: CertDomain[] | null; providers: Provider[] };
+
+const statusLabel: Record<string, string> = { issued: "issued", waiting: "waiting", error: "error" };
+
+// who uses a domain, short: "default domain and 18 apps", "wordbag and kinlog"
+function usedBy(f: string[] | null) {
+  if (!f?.length) return "no longer used by any app";
+  const dflt = f.includes("default domain");
+  const apps = f.filter((x) => x !== "default domain");
+  const named = apps.length <= 2 ? apps.join(" and ") : `${apps.length} apps`;
+  return dflt ? (apps.length ? `default domain and ${named}` : "default domain") : named;
+}
+
+// Wildcard certificates: one *.domain certificate by DNS challenge instead of one per hostname, so apps and PR
+// previews don't use up Let's Encrypt's weekly limit.
+function Certificates() {
+  const [certs, { refetch }] = createResource(() => api<Certs>("/api/certificates"));
+  const [setting, setSetting] = createSignal<CertDomain | null>(null);
+  const [provider, setProvider] = createSignal("cloudflare");
+  const after = async (p?: Promise<unknown>) => { await p; refetch(); };
+  const prov = () => certs()?.providers.find((p) => p.id === provider());
+  const hasPlugin = (id: string) => !!certs()?.caddy.modules[id];
+  const without = () => (certs()?.domains ?? []).filter((d) => !d.wildcard).map((d) => d.domain);
+  const anyWildcard = () => (certs()?.domains ?? []).some((d) => d.wildcard);
+
+  return (
+    <section class="section">
+      <h2>Certificates</h2>
+      <Show when={certs.error}><div class="note note-bad">{String(certs.error!.message)}</div></Show>
+      <Show when={certs.loading && !certs()}><p class="hint">Checking Caddy…</p></Show>
+      <Show when={certs()}>{(c) => (<div class="stack">
+        <Show when={without().length}>
+          <div class="note note-warn"><span>Use a wildcard for <strong>{without().join(", ")}</strong>. Every app and preview on a domain otherwise gets its own certificate, and Let's Encrypt allows 50 a week per domain.</span></div>
+        </Show>
+        <ul class="list">
+          <For each={c().domains ?? []}>
+            {(d) => (
+              <li class="row">
+                <span class="row-main">
+                  <span><span class="mono">{d.wildcard ? `*.${d.domain}` : d.domain}</span><Show when={d.wildcard}> <StatusBadge ok={d.status === "issued"} warn={d.status === "waiting"}>{statusLabel[d.status ?? ""] ?? d.status}</StatusBadge></Show></span>
+                  <small>{usedBy(d.for)} · {d.wildcard ? `wildcard via ${c().providers.find((p) => p.id === d.provider)?.name ?? d.provider}` : "one certificate per hostname"}
+                    <Show when={d.expires}> · valid until {new Date(d.expires!).toLocaleDateString()}</Show></small>
+                  <Show when={d.status === "error" || d.status === "waiting"}><small class={d.status === "error" ? "text-error" : ""}>{d.detail}</small></Show>
+                </span>
+                <span class="row-end">
+                  <Show when={d.wildcard} fallback={<button class="btn btn-sm" onClick={() => setSetting(d)}>Use a wildcard</button>}>
+                    <button class="btn btn-ghost btn-sm" onClick={() => setSetting(d)}>Token</button>
+                    <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Stop using a wildcard for ${d.domain}? Each hostname gets its own certificate again, which counts against the weekly limit.`) && after(runCmd(`${d.domain}: one certificate per hostname`, `/api/certificates/${encodeURIComponent(d.domain)}/remove`, {}))}>Remove</button>
+                  </Show>
+                </span>
+              </li>
+            )}
+          </For>
+        </ul>
+        <p class="hint">A wildcard covers one level: <span class="mono">blog.example.com</span> and PR previews (<span class="mono">blog-pr-12.example.com</span>). The domain itself and deeper names like <span class="mono">a.b.example.com</span> still get their own certificates.</p>
+        <ul class="list">
+          <li class="row">
+            <span class="row-main">
+              <span>Caddy <span class="mono">{c().caddy.version || "?"}</span><Show when={c().caddy.held}> <StatusBadge>held</StatusBadge></Show></span>
+              <small>{c().providers.map((p) => `${p.name} plugin: ${hasPlugin(p.id) ? "added" : "not added"}`).join(" · ")}<Show when={c().caddy.held}> · apt won't replace it, so update it here</Show></small>
+              <Show when={anyWildcard() && !c().caddy.preferWildcard}><small class="text-error">Caddy {c().caddy.version} can't reuse a wildcard for each app's own address; that needs 2.10 or later. Update Caddy.</small></Show>
+            </span>
+            <span class="row-end">
+              <Show when={c().caddy.held}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm("Update Caddy, keeping its plugins? Sites pause for a few seconds while it restarts.") && after(runCmd("Updated Caddy", "/api/caddy/upgrade", {}))}>Update Caddy</button></Show>
+            </span>
+          </li>
+        </ul>
+      </div>)}</Show>
+
+      <Sheet open={!!setting()} title={setting()?.wildcard ? `Token for *.${setting()?.domain}` : `Wildcard for ${setting()?.domain ?? ""}`} onClose={() => setSetting(null)}
+        footer={<><button class="btn btn-secondary" onClick={() => setSetting(null)}>Cancel</button><button class="btn" type="submit" form="wildcard" disabled={!hasPlugin(provider())}>Save</button></>}>
+        <Show when={setting()}>{(d) => (
+          <form id="wildcard" class="stack" onSubmit={(e) => {
+            e.preventDefault();
+            const f = new FormData(e.currentTarget);
+            const domain = d().domain;
+            setSetting(null);
+            after(runCmd(`*.${domain}: wildcard on`, "/api/certificates", { domain, provider: provider(), token: String(f.get("token") || "") }));
+          }}>
+            <p class="hint">Caddy proves it controls <span class="mono">{d().domain}</span> through your DNS host, then gets one certificate for <span class="mono">*.{d().domain}</span>. Its DNS has to be at a provider below.</p>
+            <Field label="DNS provider">
+              <select class="select" onChange={(e) => setProvider(e.currentTarget.value)}>
+                <For each={certs()?.providers}>{(p) => <option value={p.id} selected={p.id === provider()}>{p.name}</option>}</For>
+              </select>
+            </Field>
+            <Show when={hasPlugin(provider())} fallback={
+              <div class="stack">
+                <div class="note note-warn"><span>Caddy needs the {prov()?.name} plugin first. Adding it downloads a Caddy build with it, and holds the package so an apt upgrade can't drop it.</span></div>
+                <button type="button" class="btn btn-secondary" onClick={() => after(runCmd(`Added the ${prov()?.name} plugin to Caddy`, "/api/caddy/plugin", { provider: provider() }))}>Add the {prov()?.name} plugin to Caddy</button>
+              </div>
+            }>
+              <Field label="API token" hint={prov()?.hint}>
+                <input class="input mono" name="token" type="password" autocomplete="off" required />
+              </Field>
+              <p class="hint">nook checks the token can see this domain's zone before saving. It's kept in a file only root can read, and Caddy restarts to pick it up.</p>
+            </Show>
+          </form>
+        )}</Show>
+      </Sheet>
+    </section>
   );
 }
 
