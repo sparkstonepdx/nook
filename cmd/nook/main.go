@@ -40,6 +40,28 @@ A folder with an executable "run" is started as a service on $PORT; anything els
 Admin commands (create, delete, sync, grant, env, invite, update) are in nook-admin, as root.
 `
 
+// removeTree deletes dir and everything in it. Builds often ship read-only folders, whose files can't be
+// unlinked until the folder is writable again, so it makes them writable first (only what this user owns).
+// It never follows symlinks, and fails if anything is left.
+func removeTree(dir string) error {
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		return nil
+	}
+	filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err == nil && d.IsDir() && d.Type()&os.ModeSymlink == 0 {
+			os.Chmod(p, 0o700)
+		}
+		return nil
+	})
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dir); err == nil {
+		return fmt.Errorf("%s is still there", dir)
+	}
+	return nil
+}
+
 func die(format string, a ...any) { fmt.Fprintf(os.Stderr, format+"\n", a...); os.Exit(1) }
 
 func main() {
@@ -192,8 +214,11 @@ func site(args []string) int {
 			die("usage: nook site rm SITE")
 		}
 		check(args[1])
-		os.RemoveAll(filepath.Join(sites, args[1]))
-		os.RemoveAll(filepath.Join(home(), "builds", args[1]))
+		for _, dir := range []string{filepath.Join(sites, args[1]), filepath.Join(home(), "builds", args[1])} {
+			if err := removeTree(dir); err != nil {
+				die("couldn't remove %s: %v", args[1], err)
+			}
+		}
 		fmt.Printf("removed %s\n", args[1])
 	case "restart":
 		if len(args) != 2 {

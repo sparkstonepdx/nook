@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,8 +170,17 @@ func (h *Host) SiteOp(app, site, op string) error {
 		}
 		// remove as the app user, so a swapped-in symlink can't point root somewhere else
 		if _, err := u.AsApp(1<<16, "site", "rm", site); err != nil {
-			return err
+			msg := strings.TrimPrefix(strings.TrimSpace(err.Error()), "exit status 1: ")
+			if strings.Contains(msg, "permission denied") {
+				msg += ". Something in it isn't the app's to delete; remove it as root: rm -rf " + filepath.Join(u.Home, "sites", site)
+			}
+			return errors.New(strings.TrimSuffix(msg, ":"))
 		}
+		// check rather than trust: a file the app's user can't delete (root's, from an old nook) leaves it in place
+		if st, err := sites.lstat(site); err == nil && isDir(st) {
+			return fmt.Errorf("%s is still in %s/sites: something in it isn't the app's to delete. Remove it as root: rm -rf %s", site, u.Home, filepath.Join(u.Home, "sites", site))
+		}
+		h.say("removed %s", site)
 		return h.Sync(app)
 	}
 	return fmt.Errorf("unknown operation")
