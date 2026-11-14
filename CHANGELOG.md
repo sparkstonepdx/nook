@@ -1,5 +1,11 @@
 # nook
 
+## 1.19.0
+
+### Minor Changes
+
+- b3486d2: Sites more than one level under a domain with a wildcard get one too. `a.b.example.com` gets `*.b.example.com`, shared by everything at that level, through the same DNS provider and token. These are worked out from the published sites on every sync, so one goes away with its last site. Each site keeps its own certificate until its wildcard is issued. The Domains page lists them under their domain, with each one's status.
+
 ## 1.18.4
 
 ### Patch Changes
