@@ -1,5 +1,11 @@
 # nook
 
+## 1.19.4
+
+### Patch Changes
+
+- 5258250: The Services page no longer throws in the browser when a binding has no env.
+
 ## 1.19.3
 
 ### Patch Changes
