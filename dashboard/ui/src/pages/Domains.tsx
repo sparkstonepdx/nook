@@ -122,10 +122,14 @@ export default function DomainsPage() {
 }
 
 type CertDomain = { domain: string; for: string[] | null; wildcard: boolean; provider?: string; status?: string; detail?: string; expires?: string };
-type Provider = { id: string; name: string; module: string; package: string; hint: string };
+type Provider = { id: string; name: string; module: string; package: string; hint: string; tokenUrl?: string; steps?: string[] };
 type Certs = { caddy: { version: string; preferWildcard: boolean; held: boolean; modules: Record<string, boolean> }; domains: CertDomain[] | null; providers: Provider[] };
 
 const statusLabel: Record<string, string> = { issued: "issued", waiting: "waiting", error: "error" };
+
+// the zone a domain most likely is: its last two labels (apps.example.com is in example.com). Only a hint in the
+// steps: nook finds the real zone when it checks the token.
+const zoneOf = (d: string) => d.split(".").slice(-2).join(".");
 
 // who uses a domain, short: "default domain and 18 apps", "wordbag and kinlog"
 function usedBy(f: string[] | null) {
@@ -214,6 +218,15 @@ function Certificates() {
                 <button type="button" class="btn btn-secondary" onClick={() => after(runCmd(`Added the ${prov()?.name} plugin to Caddy`, "/api/caddy/plugin", { provider: provider() }))}>Add the {prov()?.name} plugin to Caddy</button>
               </div>
             }>
+              <Show when={prov()?.steps?.length}>
+                <div class="token-steps">
+                  <strong>Make a {prov()?.name} token</strong>
+                  <ol>
+                    <For each={prov()!.steps}>{(step) => <li>{step.replace("{zone}", zoneOf(d().domain))}</li>}</For>
+                  </ol>
+                  <Show when={prov()?.tokenUrl}><a class="btn btn-secondary btn-sm" href={prov()!.tokenUrl} target="_blank" rel="noopener">Open {prov()?.name}'s API Tokens page ↗</a></Show>
+                </div>
+              </Show>
               <Field label="API token" hint={prov()?.hint}>
                 <input class="input mono" name="token" type="password" autocomplete="off" required />
               </Field>
