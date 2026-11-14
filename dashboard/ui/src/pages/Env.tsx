@@ -1,7 +1,7 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { A, useParams, useSearchParams } from "@solidjs/router";
 import { api, runCmd } from "../api";
-import { Field, PageHead } from "../components";
+import { Field, PageHead, Confirm } from "../components";
 
 type Env = { vars: { key: string; value: string }[]; running: string[]; affected: string[]; scope: string; scopes: string[]; sites: string[] };
 
@@ -69,7 +69,7 @@ export default function EnvPage() {
                 <span class="row-main"><span class="mono">{v.key}</span><small class="mono env-value">{shown().has(v.key) ? v.value : "••••••••"}</small></span>
                 <span class="row-end">
                   <button class="btn btn-ghost btn-sm" onClick={() => toggle(v.key)}>{shown().has(v.key) ? "Hide" : "Show"}</button>
-                  <Show when={!["deploy", "ci"].includes(kind())}><button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${v.key}? Running sites restart.`) && apply(`Removed ${v.key}`, { unset: [v.key] })}>Remove</button></Show>
+                  <Show when={!["deploy", "ci"].includes(kind())}><Confirm label="Remove" yes="Remove" ask={`Remove ${v.key}? Running sites restart.`} onYes={() => apply(`Removed ${v.key}`, { unset: [v.key] })} /></Show>
                 </span>
               </li>
             )}

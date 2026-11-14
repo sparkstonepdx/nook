@@ -1,6 +1,6 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { api, say } from "../api";
-import { Field, PageHead } from "../components";
+import { Field, PageHead, Confirm } from "../components";
 
 type Users = { users: { name: string; created: string; invitedBy: string; me: boolean }[]; inviteHours: number };
 
@@ -20,7 +20,7 @@ export default function UsersPage() {
               <li class="row">
                 <span class="row-main"><span>{u.name}<Show when={u.me}> <span class="badge">you</span></Show></span><small>since {u.created.slice(0, 10)} · invited by {u.invitedBy || "the setup link"}</small></span>
                 <span class="row-end"><Show when={!u.me}>
-                  <button class="btn btn-ghost btn-sm" onClick={() => window.confirm(`Remove ${u.name}? They're logged out right away.`) && act(() => api(`/api/users/${encodeURIComponent(u.name)}/remove`, {}), `Removed ${u.name}`)}>Remove</button>
+                  <Confirm label="Remove" yes="Remove" ask={`Remove ${u.name}? They're logged out right away.`} onYes={() => act(() => api(`/api/users/${encodeURIComponent(u.name)}/remove`, {}), `Removed ${u.name}`)} />
                 </Show></span>
               </li>
             )}

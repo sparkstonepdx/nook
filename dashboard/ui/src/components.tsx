@@ -323,6 +323,31 @@ export function Sheet(props: { open: boolean; title: string; onClose: () => void
   );
 }
 
+// Asking before something that can't be undone, in place rather than in a browser alert: the
+// question and its two buttons take the trigger's spot (and the whole row, in a list). Cancel gets
+// focus, so a second Enter or a double tap never confirms by accident; Escape backs out too.
+export function ConfirmStrip(props: { ask: JSX.Element; yes: string; onYes: () => void; onNo: () => void }) {
+  return (
+    <span class="confirm" role="group" aria-label="Confirm"
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); props.onNo(); } }}>
+      <span class="confirm-ask">{props.ask}</span>
+      <span class="confirm-actions">
+        <button type="button" class="btn btn-ghost btn-sm" ref={(el) => queueMicrotask(() => el.focus())} onClick={() => props.onNo()}>Cancel</button>
+        <button type="button" class="btn btn-secondary btn-sm danger" onClick={() => props.onYes()}>{props.yes}</button>
+      </span>
+    </span>
+  );
+}
+
+export function Confirm(props: { label: JSX.Element; ask: JSX.Element; yes: string; onYes: () => void; class?: string; disabled?: boolean; title?: string }) {
+  const [asking, setAsking] = createSignal(false);
+  return (
+    <Show when={asking()} fallback={<button type="button" class={props.class ?? "btn btn-ghost btn-sm"} disabled={props.disabled} title={props.title} onClick={() => setAsking(true)}>{props.label}</button>}>
+      <ConfirmStrip ask={props.ask} yes={props.yes} onNo={() => setAsking(false)} onYes={() => { setAsking(false); props.onYes(); }} />
+    </Show>
+  );
+}
+
 export function ResultSheet() {
   return (
     <Sheet open={!!result()} title={result()?.title ?? ""} onClose={() => setResult(null)} wide

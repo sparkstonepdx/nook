@@ -1,7 +1,7 @@
 import { For, Show, createEffect, createResource, createSignal } from "solid-js";
 import { A, useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { api, runCmd, say } from "../api";
-import { Field, PageHead, Sheet, StatusBadge } from "../components";
+import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
 type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
@@ -167,13 +167,14 @@ export default function Store() {
                 </span>
                 <span class="row-end">
                   <Show when={!c.official}>
-                    <button class="btn btn-ghost btn-sm" onClick={async () => {
+                    <Confirm label="Remove" yes="Remove" ask={(() => {
                       const using = (data()?.installed ?? []).filter((r) => r.catalog === c.id).map((r) => r.app);
-                      if (!window.confirm(`Remove ${c.name}?${using.length ? ` ${using.join(", ")} keep running but stop getting updates.` : ""}`)) return;
+                      return `Remove ${c.name}?${using.length ? ` ${using.join(", ")} keep running but stop getting updates.` : ""}`;
+                    })()} onYes={async () => {
                       try { await api(`/api/store/catalogs/${encodeURIComponent(c.id)}/remove`, {}); say(`Removed ${c.name}`, { kind: "success" }); }
                       catch (x) { say("Couldn't remove it", { kind: "error", detail: (x as Error).message }); }
                       refetch();
-                    }}>Remove</button>
+                    }} />
                   </Show>
                 </span>
               </li>

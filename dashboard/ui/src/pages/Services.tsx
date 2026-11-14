@@ -1,6 +1,6 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { api, runCmd } from "../api";
-import { Field, PageHead, Sheet, StatusBadge } from "../components";
+import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type Iface = { name: string; desc: string; env: string[] };
 type Provider = { id: string; interface: string; desc: string; ready: boolean; note?: string };
@@ -75,11 +75,10 @@ export default function Services() {
                 </span>
                 <span class="row-end">
                   <Show when={!b.ready}><StatusBadge ok={false} title="The provider isn't running or no longer offers this">unavailable</StatusBadge></Show>
-                  <button class="btn btn-ghost btn-sm" onClick={async () => {
-                    if (!window.confirm(`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.`)) return;
+                  <Confirm label="Unbind" yes="Unbind" ask={`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.`} onYes={async () => {
                     await runCmd(`Unbound ${b.app} from ${b.interface}`, "/api/services/unbind", { app: b.app, interface: b.interface });
                     refetch();
-                  }}>Unbind</button>
+                  }} />
                 </span>
               </li>
             )}
