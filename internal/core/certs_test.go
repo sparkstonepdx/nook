@@ -1,6 +1,7 @@
 package core
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -99,5 +100,48 @@ func TestVerifyCloudflare(t *testing.T) {
 	}
 	if err := verifyCloudflare("other", "example.com"); err == nil || !strings.Contains(err.Error(), "Edit zone DNS") {
 		t.Fatalf("wrong zone: %v", err)
+	}
+}
+
+func TestInstallCaddyBuild(t *testing.T) {
+	dir := t.TempDir()
+	// the installed Caddy: no plugin
+	old := "#!/bin/sh\ncase \"$1\" in version) echo v2.6.2;; list-modules) echo http;; esac\n"
+	os.WriteFile(filepath.Join(dir, "caddy"), []byte(old), 0o755)
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	var asked string
+	build := "#!/bin/sh\ncase \"$1\" in version) echo v2.10.2;; list-modules) echo http; echo dns.providers.cloudflare;; validate) exit 0;; esac\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.RawQuery
+		if r.URL.Query().Get("p") == "missing" {
+			w.Write([]byte("#!/bin/sh\necho v2.10.2\n")) // a build without the module
+			return
+		}
+		w.Write([]byte(build))
+	}))
+	defer srv.Close()
+	caddyDownload = srv.URL
+	h := New(io.Discard)
+
+	if err := h.installCaddyBuild([]string{"missing"}, "dns.providers.cloudflare"); err == nil || !strings.Contains(err.Error(), "doesn't list") {
+		t.Fatalf("a build without the module was accepted: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "caddy")); string(b) != old {
+		t.Fatal("a refused build replaced caddy")
+	}
+	if err := h.installCaddyBuild([]string{"github.com/caddy-dns/cloudflare"}, "dns.providers.cloudflare"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(asked, "p=github.com%2Fcaddy-dns%2Fcloudflare") || !strings.Contains(asked, "os=linux") {
+		t.Fatalf("asked for %s", asked)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "caddy")); string(b) != build {
+		t.Fatal("caddy wasn't replaced")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "caddy.nook-old")); string(b) != old {
+		t.Fatal("the old caddy wasn't kept")
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, ".caddy-nook-*")); len(left) != 0 {
+		t.Fatalf("temp files left: %v", left)
 	}
 }

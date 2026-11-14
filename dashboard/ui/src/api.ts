@@ -57,7 +57,8 @@ export async function runCmd(title: string, path: string, body: unknown = {}, wa
   } catch (e) {
     r = { ok: false, code: -1, cmd: "", out: (e as Error).message };
   }
-  const res = { ...r, title, warning };
+  // a failure doesn't get the success title ("Added the plugin"): the command line under it says what was tried
+  const res = { ...r, title: r.ok ? title : "That didn't work", warning };
   if (!r.ok || warning) setResult(res);
   else say(title, { kind: "success", action: r.out.trim() ? { label: "Output", run: () => setResult(res) } : undefined });
   return r;
