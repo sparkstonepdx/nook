@@ -31,17 +31,20 @@ import (
 type source struct {
 	core.CatalogApp
 	Source struct {
-		GitHub  string            `json:"github"`  // owner/repo
-		Tag     string            `json:"tag"`     // pin a release; default: the latest
-		Assets  map[string]string `json:"assets"`  // GOARCH -> regexp for the asset name
-		Format  string            `json:"format"`  // tar.gz, zip, gz or raw
-		Version string            `json:"version"` // regexp with one group to take the version from the tag (default: the tag)
+		GitHub  string            `json:"github"`    // owner/repo
+		Tag     string            `json:"tag"`       // pin a release; default: the latest
+		Prefix  string            `json:"tagPrefix"` // the newest release whose tag starts with this (several apps released from one repo, like push-v1.2.0: "push-")
+		Assets  map[string]string `json:"assets"`    // GOARCH -> regexp for the asset name
+		Format  string            `json:"format"`    // tar.gz, zip, gz or raw
+		Version string            `json:"version"`   // regexp with one group to take the version from the tag (default: the tag)
 	} `json:"source"`
 }
 
 type release struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
 		Name string `json:"name"`
 		URL  string `json:"browser_download_url"`
 	} `json:"assets"`
@@ -120,15 +123,25 @@ func build(path string) (core.CatalogApp, error) {
 	if s.Source.Tag != "" {
 		url = "https://api.github.com/repos/" + s.Source.GitHub + "/releases/tags/" + s.Source.Tag
 	}
-	rb, err := get(url, "application/vnd.github+json")
-	if err != nil {
-		return a, err
-	}
 	var r release
-	if err := json.Unmarshal(rb, &r); err != nil {
-		return a, err
+	if s.Source.Prefix != "" && s.Source.Tag == "" {
+		var err error
+		if r, err = newestWithPrefix(s.Source.GitHub, s.Source.Prefix); err != nil {
+			return a, fmt.Errorf("%s: %v", path, err)
+		}
+	} else {
+		rb, err := get(url, "application/vnd.github+json")
+		if err != nil {
+			return a, err
+		}
+		if err := json.Unmarshal(rb, &r); err != nil {
+			return a, err
+		}
 	}
 	a.Version = r.TagName
+	if s.Source.Prefix != "" && s.Source.Version == "" {
+		a.Version = strings.TrimPrefix(r.TagName, s.Source.Prefix) // "push-" + push-v1.2.0 -> v1.2.0
+	}
 	if s.Source.Version != "" {
 		if m := regexp.MustCompile(s.Source.Version).FindStringSubmatch(r.TagName); len(m) > 1 {
 			a.Version = m[1]
@@ -186,4 +199,35 @@ func main() {
 	}
 	out, _ := json.MarshalIndent(c, "", "  ")
 	os.Stdout.Write(append(out, '\n'))
+}
+
+// newestWithPrefix is the newest published (not draft, not prerelease) release whose tag starts with prefix. GitHub
+// lists releases newest first.
+func newestWithPrefix(repo, prefix string) (release, error) {
+	for page := 1; page <= 5; page++ {
+		b, err := get(fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=100&page=%d", repo, page), "application/vnd.github+json")
+		if err != nil {
+			return release{}, err
+		}
+		var rs []release
+		if err := json.Unmarshal(b, &rs); err != nil {
+			return release{}, err
+		}
+		if r, ok := pickPrefix(rs, prefix); ok {
+			return r, nil
+		}
+		if len(rs) < 100 {
+			break
+		}
+	}
+	return release{}, fmt.Errorf("no release in %s with a tag starting %q", repo, prefix)
+}
+
+func pickPrefix(rs []release, prefix string) (release, bool) {
+	for _, r := range rs {
+		if !r.Draft && !r.Prerelease && strings.HasPrefix(r.TagName, prefix) {
+			return r, true
+		}
+	}
+	return release{}, false
 }
