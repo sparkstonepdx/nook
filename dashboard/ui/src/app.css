@@ -164,9 +164,20 @@ img.app-coin { background: var(--surface-2, transparent); }
 .app-row .app-name { font-family: var(--display); font-weight: var(--display-weight); font-size: var(--text-lg); }
 .app-chev { flex: none; width: 1rem; color: var(--muted); font-size: var(--text-lg); transition: transform 150ms ease; }
 .app-open > .app-row .app-chev { transform: rotate(90deg); }
-.app-body { padding: 0 var(--space-md) var(--space-md) calc(var(--space-md) + 1rem + var(--space-sm)); display: grid; gap: var(--space-sm); }
-.app-body > .list { margin: 0; }
-.app-actions { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+/* an open app: its sites as flat rows on a light tint inside the same card, lined up under the app's name */
+.app-body { background: color-mix(in oklch, var(--fill) 55%, transparent); border-top: var(--border-width) solid var(--line); padding: var(--space-2xs) 0 var(--space-sm); }
+.app-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--space-sm); padding: 0 var(--space-sm) 0 calc(var(--space-md) + 1rem + var(--space-sm)); min-height: var(--tap); }
+.app-warn { color: var(--bad); font-size: var(--text-sm); }
+.app-actions { display: flex; gap: var(--space-2xs); margin-inline-start: auto; }
+.site-list { list-style: none; margin: 0; padding: 0; }
+.site-list > li + li { border-top: var(--border-width) solid color-mix(in oklch, var(--line) 70%, transparent); }
+.site-row { display: flex; align-items: center; gap: var(--space-sm); width: 100%; min-height: var(--tap); padding: var(--space-xs) var(--space-md) var(--space-xs) calc(var(--space-md) + 1rem + var(--space-sm)); background: none; border: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.site-row:hover { background: var(--fill); }
+.site-row:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; }
+.site-main { flex: 1; min-width: 0; display: grid; }
+.site-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site-main small { color: var(--muted); font-size: var(--text-sm); }
+.site-row .row-end { display: flex; align-items: center; gap: var(--space-sm); flex: none; }
 @media (prefers-reduced-motion: reduce) { .app-chev { transition: none; } }
 
 /* the install ask: the app icon beside the words */

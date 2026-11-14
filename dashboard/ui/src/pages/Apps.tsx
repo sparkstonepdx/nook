@@ -29,6 +29,11 @@ function siteIssue(s: Site) {
     || (s.running && s.ActiveState === "failed") || s.healthy === false;
 }
 
+// Sites with a problem first, then by name, so an open app answers "what's wrong" before scrolling.
+function sortedSites(sites: Site[]) {
+  return [...sites].sort((a, b) => Number(!!siteIssue(b)) - Number(!!siteIssue(a)) || (a.host || a.name).localeCompare(b.host || b.name));
+}
+
 // Which apps are open, per browser: a convenience, so a failed read just means all closed.
 const OPEN_KEY = "nook-open-apps";
 function readOpen(): Set<string> {
@@ -112,23 +117,30 @@ export default function Apps() {
                   </button>
                   <Show when={isOpen(app.name)}>
                     <div class="app-body" id={`app-${app.name}`}>
-                      <Show when={app.watcher !== "active"}><div class="note note-bad">The watcher is {app.watcher}, so new folders in sites/ won't deploy. Sync restarts it.</div></Show>
+                      <div class="app-tools">
+                        <Show when={app.watcher !== "active"} fallback={<span />}>
+                          <span class="app-warn">Watcher {app.watcher}: new folders won't deploy</span>
+                        </Show>
+                        <span class="app-actions">
+                          <button class="btn btn-ghost btn-sm" onClick={() => after(runCmd(`Synced ${app.name}`, `/api/apps/${app.name}/sync`))}>Sync</button>
+                          <button class="btn btn-ghost btn-sm" onClick={() => setManage(app.name)}>Manage</button>
+                        </span>
+                      </div>
                       <Show when={app.sites.length} fallback={<p class="empty">No sites yet. <A class="link" href={`/apps/${app.name}/deploy`}>How to deploy</A></p>}>
-                        <ul class="list">
-                          <For each={app.sites}>
+                        <ul class="site-list">
+                          <For each={sortedSites(app.sites)}>
                             {(s) => (
-                              <li><button class="row" onClick={() => setSite({ app: app.name, name: s.name })} title={kindTitle[s.kind]}>
-                                <span class="row-main"><span class={s.host ? "" : "mono"}>{s.host || s.name}</span><small>{siteDetail(s)}</small></span>
+                              <li><button class="site-row" onClick={() => setSite({ app: app.name, name: s.name })} title={kindTitle[s.kind]}>
+                                <span class="site-main">
+                                  <span class={`site-name${s.host ? "" : " mono"}`}>{s.host || s.name}</span>
+                                  <Show when={siteDetail(s) !== "static"}><small>{siteDetail(s)}</small></Show>
+                                </span>
                                 <span class="row-end">{siteAlert(s)}<span class="chev">›</span></span>
                               </button></li>
                             )}
                           </For>
                         </ul>
                       </Show>
-                      <div class="app-actions">
-                        <button class="btn btn-secondary btn-sm" onClick={() => after(runCmd(`Synced ${app.name}`, `/api/apps/${app.name}/sync`))}>Sync</button>
-                        <button class="btn btn-secondary btn-sm" onClick={() => setManage(app.name)}>Manage</button>
-                      </div>
                     </div>
                   </Show>
                 </li>
