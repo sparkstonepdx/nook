@@ -8,6 +8,7 @@ package core
 //	/etc/nook/dns.env                                  root-only: NOOK_DNS_<n>=<API token>
 //	/etc/systemd/system/caddy.service.d/nook-dns.conf  EnvironmentFile=/etc/nook/dns.env (an env change needs a restart)
 //	/etc/caddy/nook-tls.caddy                          *.example.com { tls { dns cloudflare {env.NOOK_DNS_1} } respond 404 }
+//	/usr/bin/caddy                                     replaced by a build with the DNS plugin from caddyserver.com, package held
 //
 // with "auto_https prefer_wildcard" in the Caddyfile's global options (Caddy 2.10+), so each app's per-host block
 // uses the wildcard instead of getting its own certificate. Every `caddy validate` nook runs loads dns.env, since
@@ -26,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,7 +51,7 @@ type DNSProvider struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Module  string `json:"module"`  // in `caddy list-modules`
-	Package string `json:"package"` // for `caddy add-package`
+	Package string `json:"package"` // its Go package, for a Caddy build from caddyserver.com
 	Hint    string `json:"hint"`    // how to make the token
 	verify  func(token, domain string) error
 }
@@ -131,6 +133,9 @@ func writeDNSEnv(m map[string]string) error {
 // caddyEnv is the environment Caddy runs with: ours plus the DNS tokens, so `caddy validate` sees what Caddy will.
 func caddyEnv(tokens map[string]string) []string {
 	env := os.Environ()
+	if os.Getenv("HOME") == "" {
+		env = append(env, "HOME=/root")
+	}
 	for k, v := range tokens {
 		env = append(env, k+"="+v)
 	}
@@ -474,8 +479,25 @@ func modeOf(f string) os.FileMode {
 	return 0o644
 }
 
-// AddDNSPlugin builds provider's DNS module into Caddy and holds the package, since an apt upgrade would replace
-// the binary with one without it. Upgrades then go through UpgradeCaddy, which keeps plugins.
+// Caddy with plugins comes from Caddy's build server (what `caddy add-package` uses), not from apt: Debian's caddy
+// has no add-package or upgrade, and its version is often older than prefer_wildcard needs. The binary is
+// replaced in place (the distro's unit and config stay), keeps its port permission, and the package is held so
+// an apt upgrade can't put a plugin-less Caddy back.
+var caddyDownload = "https://caddyserver.com/api/download"
+
+// caddyPlugins is every DNS plugin the running Caddy has, plus extra: a rebuild must keep them all.
+func caddyPlugins(extra string) []string {
+	info := caddyInfo()
+	var pkgs []string
+	for _, p := range dnsProviders {
+		if info.Modules[p.ID] || p.ID == extra {
+			pkgs = append(pkgs, p.Package)
+		}
+	}
+	return pkgs
+}
+
+// AddDNSPlugin gets a Caddy with provider's DNS module (and every plugin it already has), and holds the package.
 func (h *Host) AddDNSPlugin(provider string) error {
 	p, ok := dnsProvider(provider)
 	if !ok {
@@ -483,43 +505,120 @@ func (h *Host) AddDNSPlugin(provider string) error {
 	}
 	if caddyInfo().Modules[p.ID] {
 		h.say("Caddy already has the %s plugin", p.Name)
-	} else {
-		h.say("adding %s to Caddy (it downloads a new Caddy build; takes a minute)", p.Package)
-		if out, err := Run("caddy", "add-package", p.Package); err != nil {
-			return fmt.Errorf("caddy add-package failed:\n%s", lastLines(out, 8))
-		}
-		if !caddyInfo().Modules[p.ID] {
-			return fmt.Errorf("Caddy still doesn't list %s after adding it", p.Module)
-		}
+		return h.holdCaddy()
 	}
-	if out, err := Run("apt-mark", "hold", "caddy"); err != nil {
-		h.say("couldn't hold the caddy package: %s", strings.TrimSpace(out))
-	} else {
-		h.say("held the caddy package: apt won't replace it; update Caddy from the Domains page")
+	if err := h.installCaddyBuild(caddyPlugins(p.ID), p.Module); err != nil {
+		return err
 	}
-	return h.restartCaddyIfValid()
+	return h.holdCaddy()
 }
 
-// UpgradeCaddy updates Caddy keeping its plugins (`caddy upgrade`), for a held package.
+// UpgradeCaddy gets the current Caddy with the same plugins.
 func (h *Host) UpgradeCaddy() error {
 	before := caddyInfo()
-	h.say("upgrading Caddy %s, keeping its plugins (takes a minute)", before.Version)
-	if out, err := Run("caddy", "upgrade"); err != nil {
-		return fmt.Errorf("caddy upgrade failed:\n%s", lastLines(out, 8))
-	}
-	after := caddyInfo()
+	var want string
 	for _, p := range dnsProviders {
-		if before.Modules[p.ID] && !after.Modules[p.ID] {
-			return fmt.Errorf("Caddy lost the %s plugin in the upgrade: add it again", p.Name)
+		if before.Modules[p.ID] {
+			want = p.Module
 		}
 	}
-	h.say("Caddy is now %s", after.Version)
+	if err := h.installCaddyBuild(caddyPlugins(""), want); err != nil {
+		return err
+	}
+	after := caddyInfo()
 	// a version that now supports prefer_wildcard turns it on
 	if c := loadCerts(); len(c.Wildcards) > 0 {
 		cf, _ := os.ReadFile(config.Caddyfile)
 		config.WriteAtomic(config.Caddyfile, []byte(withPreferWildcard(string(cf), after.PreferWildcard)), 0o644)
 	}
 	return h.restartCaddyIfValid()
+}
+
+func (h *Host) holdCaddy() error {
+	if out, err := Run("apt-mark", "hold", "caddy"); err != nil {
+		h.say("couldn't hold the caddy package: %s", strings.TrimSpace(out))
+	} else {
+		h.say("held the caddy package: apt won't replace it. Update Caddy from the Domains page")
+	}
+	return h.restartCaddyIfValid()
+}
+
+// installCaddyBuild downloads Caddy with pkgs for this machine, checks it runs and has module, and swaps it in for
+// the caddy on PATH. The old binary is kept beside it as caddy.nook-old.
+func (h *Host) installCaddyBuild(pkgs []string, module string) error {
+	bin, err := exec.LookPath("caddy")
+	if err != nil {
+		return fmt.Errorf("caddy isn't installed")
+	}
+	if real, err := filepath.EvalSymlinks(bin); err == nil {
+		bin = real
+	}
+	q := url.Values{"os": {"linux"}, "arch": {runtime.GOARCH}}
+	for _, p := range pkgs {
+		q.Add("p", p)
+	}
+	h.say("downloading Caddy with %s from caddyserver.com (about 40 MB; takes a minute)", strings.Join(pkgs, ", "))
+	resp, err := caddyHTTP.Get(caddyDownload + "?" + q.Encode())
+	if err != nil {
+		return fmt.Errorf("couldn't reach caddyserver.com: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
+		return fmt.Errorf("caddyserver.com couldn't build it (%s): %s", resp.Status, strings.TrimSpace(string(b)))
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(bin), ".caddy-nook-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, io.LimitReader(resp.Body, 300<<20)); err != nil {
+		tmp.Close()
+		return fmt.Errorf("download failed: %v", err)
+	}
+	tmp.Close()
+	os.Chmod(tmp.Name(), 0o755)
+	ver, err := exec.Command(tmp.Name(), "version").Output()
+	if err != nil {
+		return fmt.Errorf("the downloaded Caddy doesn't run: %v", err)
+	}
+	if module != "" {
+		mods, _ := exec.Command(tmp.Name(), "list-modules").Output()
+		if !regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(module) + `\s*$`).Match(mods) {
+			return fmt.Errorf("the downloaded Caddy doesn't list %s", module)
+		}
+	}
+	// keep the old binary's capabilities (binding ports 80 and 443 as the caddy user)
+	if caps, err := exec.Command("getcap", bin).Output(); err == nil {
+		if f := strings.Fields(string(caps)); len(f) >= 2 {
+			if out, err := Run("setcap", strings.Join(f[1:], " "), tmp.Name()); err != nil {
+				return fmt.Errorf("couldn't give the new Caddy the old one's capabilities: %s", strings.TrimSpace(out))
+			}
+		}
+	}
+	// check the config with the new binary before it's in place
+	cmd := exec.Command(tmp.Name(), "validate", "--config", config.Caddyfile, "--adapter", "caddyfile")
+	cmd.Env = caddyEnv(readDNSEnv())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("the new Caddy doesn't accept the current config; kept the old one\n%s", lastLines(string(out), 6))
+	}
+	copyFileMode(bin, bin+".nook-old")
+	if err := os.Rename(tmp.Name(), bin); err != nil {
+		return err
+	}
+	h.say("installed Caddy %s (the previous one is kept as %s.nook-old)", strings.Fields(string(ver) + " ")[0], bin)
+	return nil
+}
+
+var caddyHTTP = &http.Client{Timeout: 10 * time.Minute}
+
+func copyFileMode(src, dst string) {
+	b, err := os.ReadFile(src)
+	if err != nil {
+		return
+	}
+	st, _ := os.Stat(src)
+	os.WriteFile(dst, b, st.Mode().Perm())
 }
 
 func (h *Host) restartCaddyIfValid() error {
