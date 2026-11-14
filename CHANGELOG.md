@@ -1,5 +1,11 @@
 # nook
 
+## 1.18.2
+
+### Patch Changes
+
+- 553567c: The wildcard sheet says how to make the Cloudflare token, step by step, with a link to Cloudflare's API Tokens page.
+
 ## 1.18.1
 
 ### Patch Changes
