@@ -1,6 +1,6 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import { api, say } from "../api";
+import { api, attempt, say } from "../api";
 import { Field, PageHead, TokenBox, Confirm } from "../components";
 
 type Token = { id: string; app: string; label: string; created: number };
@@ -43,8 +43,7 @@ export default function DeployPage() {
                   <span class="row-main"><span>{t.label || "no label"}</span><small><span class="mono">{t.id}</span> · made {new Date(t.created * 1000).toLocaleDateString()}</small></span>
                   <span class="row-end">
                     <Confirm label="Revoke" yes="Revoke" ask={`Revoke token ${t.id}? Deploys using it stop working right away.`} onYes={async () => {
-                      try { await api(`/api/apps/${params.app}/tokens/${t.id}/revoke`, {}); say(`Revoked ${t.id}`, { kind: "success" }); }
-                      catch (e) { say("Couldn't revoke it", { kind: "error", detail: (e as Error).message }); }
+                      await attempt("Couldn't revoke it", async () => { await api(`/api/apps/${params.app}/tokens/${t.id}/revoke`, {}); say(`Revoked ${t.id}`, { kind: "success" }); });
                       refetch();
                     }} />
                   </span>
@@ -55,11 +54,11 @@ export default function DeployPage() {
           <form class="card" onSubmit={async (e) => {
             e.preventDefault();
             const form = e.currentTarget;
-            try {
+            await attempt("Couldn't make a token", async () => {
               setFresh(await api(`/api/apps/${params.app}/tokens`, { label: String(new FormData(form).get("label")) }));
               form.reset();
               refetch();
-            } catch (x) { say("Couldn't make a token", { kind: "error", detail: (x as Error).message }); }
+            });
           }}>
             <div class="field-row">
               <Field label="Label"><input class="input" name="label" maxLength={40} placeholder="github: owner/repo" /></Field>
@@ -80,11 +79,12 @@ export default function DeployPage() {
           <p class="hint">The workflow and everything else a repo needs, apart from the token above. <span class="mono">nook-admin instructions {params.app}</span> prints them too.</p>
           <form class="card" onSubmit={async (e) => {
             e.preventDefault();
-            try {
-              await api(`/api/apps/${params.app}/repo`, { repo: String(new FormData(e.currentTarget).get("repo")).trim() });
+            const repo = String(new FormData(e.currentTarget).get("repo")).trim();
+            await attempt("Couldn't save the repo", async () => {
+              await api(`/api/apps/${params.app}/repo`, { repo });
               say("Repo saved", { kind: "success" });
               refetchHowto();
-            } catch (x) { say("Couldn't save the repo", { kind: "error", detail: (x as Error).message }); }
+            });
           }}>
             <div class="field-row">
               <Field label="Site">

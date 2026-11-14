@@ -39,7 +39,7 @@ const (
 	keepSamples = 30 * 24 * time.Hour
 )
 
-func statsDir() string    { return filepath.Join(config.WWWDir, "..", "stats") }
+func statsDir() string    { return filepath.Join(config.LibDir, "stats") }
 func samplesPath() string { return filepath.Join(statsDir(), "samples.jsonl") }
 
 type DiskSample struct {

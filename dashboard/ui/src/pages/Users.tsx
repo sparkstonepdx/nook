@@ -1,5 +1,5 @@
 import { For, Show, createResource, createSignal } from "solid-js";
-import { api, say } from "../api";
+import { api, attempt, say } from "../api";
 import { Field, PageHead, Confirm } from "../components";
 
 type Users = { users: { name: string; created: string; invitedBy: string; me: boolean }[]; inviteHours: number };
@@ -8,7 +8,7 @@ export default function UsersPage() {
   const [data, { refetch }] = createResource(() => api<Users>("/api/users"));
   const [link, setLink] = createSignal("");
   const act = async (fn: () => Promise<unknown>, ok: string) => {
-    try { await fn(); say(ok, { kind: "success" }); refetch(); } catch (e) { say("That didn't work", { kind: "error", detail: (e as Error).message }); }
+    if (await attempt("That didn't work", fn)) { say(ok, { kind: "success" }); refetch(); }
   };
   return (
     <>

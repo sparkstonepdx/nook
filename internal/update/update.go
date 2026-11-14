@@ -35,8 +35,8 @@ var signingPub string
 // Version is set by main (from -ldflags at build time).
 var Version = "dev"
 
-const stateFile = "/var/lib/nook/update.json"
-const motdFile = "/var/lib/nook/update-available"
+const stateFile = config.LibDir + "/update.json"
+const motdFile = config.LibDir + "/update-available"
 
 type Status struct {
 	Current   string `json:"current"`

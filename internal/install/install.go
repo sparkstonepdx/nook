@@ -115,7 +115,7 @@ func Run(o Opts) error {
 		os.MkdirAll(d, 0o700)
 		os.Chmod(d, 0o700)
 	}
-	for _, d := range []string{config.SSHKeysDir, config.CaddyAppsDir, config.AppsDir, config.LogDir, config.WWWDir, "/var/lib/nook"} {
+	for _, d := range []string{config.SSHKeysDir, config.CaddyAppsDir, config.AppsDir, config.LogDir, config.WWWDir, config.LibDir} {
 		os.MkdirAll(d, 0o755)
 	}
 	if !fileExists(config.ConfigFile) {

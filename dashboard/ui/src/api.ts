@@ -46,6 +46,12 @@ export function say(text: string, opts: Omit<Notice, "id" | "text"> = {}) {
   setTimeout(() => dismiss(n.id), ms);
 }
 
+// Runs fn, saying `failed` with the error if it throws. True if it worked; fn says its own success.
+export async function attempt(failed: string, fn: () => Promise<unknown>): Promise<boolean> {
+  try { await fn(); return true; }
+  catch (e) { say(failed, { kind: "error", detail: (e as Error).message }); return false; }
+}
+
 export const dismiss = (id: number) => setNotices((l) => l.filter((n) => n.id !== id));
 
 // runCmd runs a command on the server. A success says so in a notice, with the output a tap away; a failure,
