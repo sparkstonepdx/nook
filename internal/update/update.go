@@ -326,7 +326,12 @@ func Apply(out io.Writer, force bool) error {
 		fmt.Fprintf(out, "post-update install step failed: %v\n%s\n", err, o)
 	}
 	writeState(Status{Current: r.Tag, Latest: r.Tag, URL: r.HTMLURL, CheckedAt: time.Now().UTC().Format(time.RFC3339)})
-	exec.Command("systemctl", "--no-block", "restart", "nook-helper.service", "nook-web.service").Run()
+	// the web process first, and waited for, so a failure shows here; the helper last and without waiting, since
+	// it may be the process running this
+	if o, err := exec.Command("systemctl", "restart", "nook-web.service").CombinedOutput(); err != nil {
+		fmt.Fprintf(out, "couldn't restart the dashboard page (nook-web): %v %s\n", err, strings.TrimSpace(string(o)))
+	}
+	exec.Command("systemctl", "--no-block", "restart", "nook-helper.service").Run()
 	fmt.Fprintln(out, "restarting the dashboard; running sites are not affected")
 	return nil
 }

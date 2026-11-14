@@ -46,6 +46,11 @@ func ServeHelper() error {
 	if err != nil {
 		return err
 	}
+	go func() {
+		if err := RestartStale(log.Writer(), false); err != nil {
+			log.Print(err)
+		}
+	}()
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
 	log.Printf("helper listening on %s", config.HelperSocket)

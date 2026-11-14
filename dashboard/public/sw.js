@@ -23,7 +23,11 @@ self.addEventListener("fetch", (e) => {
   // pages: the network first, the last copy if it doesn't answer
   if (req.mode === "navigate") {
     e.respondWith(fetch(req).then((res) => {
-      if (res.ok) caches.open(CACHE).then((c) => c.put("/", res.clone()));
+      // only the dashboard page itself, not a file opened directly (version.json, the manifest)
+      if (res.ok && (res.headers.get("content-type") || "").startsWith("text/html")) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put("/", copy));
+      }
       return res;
     }).catch(async () => (await caches.match("/")) || Response.error()));
   }

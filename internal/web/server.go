@@ -24,9 +24,10 @@ import (
 )
 
 type Server struct {
-	Store  *Store
-	Socket string
-	UI     fs.FS
+	Store   *Store
+	Socket  string
+	UI      fs.FS
+	Version string // this process's own build, which the footer shows (the update state can be ahead of it)
 
 	mu     sync.Mutex
 	fails  map[string]*failState
@@ -300,6 +301,7 @@ func (s *Server) routes() []route {
 	add("GET", "/api/not-found", false, helper("notFoundGet", nil, false))
 	add("POST", "/api/not-found", false, helper("notFoundSet", p("html"), true))
 	add("GET", "/api/update", false, helper("updateStatus", nil, false))
+	add("GET", "/api/version", false, func(c *ctx) (any, error) { return map[string]string{"version": s.Version}, nil })
 	add("POST", "/api/update", false, helper("updateNow", nil, true))
 	add("POST", "/api/update/check", false, helper("updateCheck", nil, false))
 	return rs

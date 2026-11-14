@@ -230,6 +230,9 @@ func main() {
 			notify = notify || a == "--notify"
 		}
 		if check {
+			if err := core.RestartStale(os.Stdout, true); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
 			_, err := update.Check(os.Stdout, notify)
 			die(err)
 			return
@@ -363,7 +366,7 @@ func serveWeb() {
 	store, err := web.OpenStore(config.WebStateDir)
 	die(err)
 	srv := &http.Server{
-		Handler:           &web.Server{Store: store, Socket: config.HelperSocket, UI: ui},
+		Handler:           &web.Server{Store: store, Socket: config.HelperSocket, UI: ui, Version: version},
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      11 * time.Minute,
