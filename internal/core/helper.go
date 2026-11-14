@@ -51,6 +51,7 @@ func ServeHelper() error {
 			log.Print(err)
 		}
 	}()
+	go WatchWildcards()
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
 	log.Printf("helper listening on %s", config.HelperSocket)

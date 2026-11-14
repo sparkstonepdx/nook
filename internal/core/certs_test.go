@@ -1,13 +1,20 @@
 package core
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderTLS(t *testing.T) {
@@ -136,5 +143,51 @@ func TestInstallCaddyBuild(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(dir, ".caddy-nook-*")); len(left) != 0 {
 		t.Fatalf("temp files left: %v", left)
+	}
+}
+
+func TestOwnCertUntilIssued(t *testing.T) {
+	if got := coveredBy("blog.example.com", []string{"example.com"}); got != "example.com" {
+		t.Fatal("one level under isn't covered")
+	}
+	for _, h := range []string{"example.com", "a.b.example.com", "blogexample.com", "x.other.com"} {
+		if coveredBy(h, []string{"example.com"}) != "" {
+			t.Errorf("%s shouldn't be covered", h)
+		}
+	}
+	dir := t.TempDir()
+	certsFile, caddyCertsDir = filepath.Join(dir, "certs.json"), filepath.Join(dir, "certs")
+	os.WriteFile(certsFile, []byte(`{"wildcards":[{"domain":"example.com","provider":"cloudflare","env":"NOOK_DNS_1"}]}`), 0o600)
+	// a Caddy that prefers wildcards
+	bin := filepath.Join(dir, "bin")
+	os.MkdirAll(bin, 0o755)
+	os.WriteFile(filepath.Join(bin, "caddy"), []byte("#!/bin/sh\necho v2.10.2\n"), 0o755)
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	caddyVersionCache.mtime = time.Time{}
+
+	own := OwnCert()
+	if own == nil || !own("blog.example.com") || own("example.com") {
+		t.Fatal("pending wildcard: subdomains should keep their own certificate")
+	}
+	before := wildcardState()
+	// the wildcard is issued: a certificate in Caddy's store
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(90 * 24 * time.Hour), DNSNames: []string{"*.example.com"}}
+	der, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	d := filepath.Join(caddyCertsDir, "acme-v02.api.letsencrypt.org-directory", "wildcard_.example.com")
+	os.MkdirAll(d, 0o755)
+	os.WriteFile(filepath.Join(d, "wildcard_.example.com.crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644)
+	if OwnCert() != nil {
+		t.Fatal("issued wildcard: hosts should use it")
+	}
+	if wildcardState() == before {
+		t.Fatal("the watcher wouldn't notice the wildcard was issued")
+	}
+	// Caddy before 2.10 has no force_automate
+	os.WriteFile(filepath.Join(bin, "caddy"), []byte("#!/bin/sh\necho 2.6.2\n"), 0o755)
+	os.Chtimes(filepath.Join(bin, "caddy"), time.Now(), time.Now().Add(time.Minute))
+	os.RemoveAll(caddyCertsDir)
+	if OwnCert() != nil {
+		t.Fatal("old Caddy got force_automate")
 	}
 }
