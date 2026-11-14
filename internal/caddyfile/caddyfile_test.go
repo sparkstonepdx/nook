@@ -74,3 +74,24 @@ func TestRenderOwnCert(t *testing.T) {
 		t.Errorf("Hosts read back %v %v", live, redirs)
 	}
 }
+
+func TestTokenAuth(t *testing.T) {
+	out := Render("x", []Site{{Host: "npm.example.com", Port: 20001, TokenAuth: true}}, nil, nil)
+	for _, want := range []string{"request_header -X-Nook-App", "forward_auth unix//run/nook-web.sock {", "uri /api/v1/token-check", "copy_headers X-Nook-App", "reverse_proxy 127.0.0.1:20001 {", "header_up -Authorization"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if i, j := strings.Index(out, "request_header"), strings.Index(out, "forward_auth"); i > j {
+		t.Errorf("the client's X-Nook-App must go before the check:\n%s", out)
+	}
+}
+
+func TestTokenAuthOpenPaths(t *testing.T) {
+	out := Render("x", []Site{{Host: "push.example.com", Port: 20002, TokenAuth: true, Open: []string{"/v1/health", "/v1/send/*"}}}, nil, nil)
+	for _, want := range []string{"@nook_open path /v1/health /v1/send/*", "handle @nook_open {", "\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:20002 {\n\t\t\t\theader_up -Authorization\n", "\thandle {\n\t\troute {", "\t\t\tforward_auth unix/"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}

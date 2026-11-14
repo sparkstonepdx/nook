@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -156,5 +157,37 @@ func TestCatalogImages(t *testing.T) {
 	}
 	if _, _, err := StoreImage("official", "../../etc/passwd"); err == nil {
 		t.Error("bad hash accepted")
+	}
+}
+
+func TestCatalogTokenAuth(t *testing.T) {
+	a := CatalogApp{ID: "push", Name: "push", Version: "v0.1.0", Binary: "push", Auth: "nook-token", Open: []string{"/v1/health", "/v1/send/*"},
+		Artifacts: map[string]Artifact{}}
+	pkg, err := buildSitePackage(a, []byte("ELF"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, _ := gzip.NewReader(bytes.NewReader(pkg))
+	tr := tar.NewReader(zr)
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			break
+		}
+		b, _ := io.ReadAll(tr)
+		if h.Name == "nook.json" && (!bytes.Contains(b, []byte(`"auth": "nook-token"`)) || !bytes.Contains(b, []byte(`"/v1/send/*"`))) {
+			t.Fatalf("nook.json: %s", b)
+		}
+	}
+	for _, bad := range []CatalogApp{
+		{Auth: "basic"},
+		{Auth: "nook-token", Kind: "service"},
+		{Open: []string{"/x"}},
+		{Auth: "nook-token", Open: []string{"/x/*/y"}},
+	} {
+		bad.ID, bad.Name, bad.Version, bad.Binary = "push", "push", "v0.1.0", "push"
+		if err := bad.check(); err == nil || !strings.Contains(err.Error(), "auth") && !strings.Contains(err.Error(), "open") {
+			t.Errorf("%+v: %v", bad, err)
+		}
 	}
 }
