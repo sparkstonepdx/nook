@@ -86,3 +86,12 @@ func TestTokenAuth(t *testing.T) {
 		t.Errorf("the client's X-Nook-App must go before the check:\n%s", out)
 	}
 }
+
+func TestTokenAuthOpenPaths(t *testing.T) {
+	out := Render("x", []Site{{Host: "push.example.com", Port: 20002, TokenAuth: true, Open: []string{"/v1/health", "/v1/send/*"}}}, nil, nil)
+	for _, want := range []string{"@nook_open path /v1/health /v1/send/*", "handle @nook_open {", "\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:20002 {\n\t\t\t\theader_up -Authorization\n", "\thandle {\n\t\troute {", "\t\t\tforward_auth unix/"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
