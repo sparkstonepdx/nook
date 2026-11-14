@@ -6,22 +6,36 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 )
 
+// A stand-in service: a copy of this test binary that just sleeps. (Copying sleep itself fails where it's a
+// multi-call binary that exits when it doesn't recognise its own name.)
+func TestStaleHelperSleep(t *testing.T) {
+	if os.Getenv("NOOK_STALE_HELPER") == "1" {
+		time.Sleep(30 * time.Second)
+	}
+}
+
 func TestStaleUnit(t *testing.T) {
-	sleep, err := exec.LookPath("sleep")
+	self, err := os.Executable()
 	if err != nil {
-		t.Skip("no sleep")
+		t.Skip(err)
+	}
+	data, err := os.ReadFile(self)
+	if err != nil {
+		t.Skip(err)
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "svc")
-	data, _ := os.ReadFile(sleep)
 	os.WriteFile(bin, data, 0o755)
-	cmd := exec.Command(bin, "30")
+	cmd := exec.Command(bin, "-test.run=^TestStaleHelperSleep$")
+	cmd.Env = append(os.Environ(), "NOOK_STALE_HELPER=1")
 	if err := cmd.Start(); err != nil {
 		t.Skip(err)
 	}
 	defer cmd.Process.Kill()
+	time.Sleep(200 * time.Millisecond)
 	// a systemctl that says this process is the unit's main PID
 	stub := filepath.Join(dir, "systemctl")
 	os.WriteFile(stub, []byte("#!/bin/sh\necho "+strconv.Itoa(cmd.Process.Pid)+"\n"), 0o755)
