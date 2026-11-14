@@ -225,3 +225,7 @@ img.app-coin { background: var(--surface-2, transparent); }
 .nested-certs li::before { content: "↳"; color: var(--muted); }
 .nested-certs .text-error { flex-basis: 100%; }
 .cert-item + .cert-item { border-top: var(--border-width) solid var(--line); }
+
+/* the update sheet */
+.update-versions { margin: 0; font-size: var(--text-lg); display: flex; gap: var(--space-sm); align-items: baseline; }
+.update-notes { white-space: pre-wrap; max-height: 16rem; overflow: auto; padding: var(--space-md); border: var(--border-width) solid var(--line); border-radius: var(--radius-field); background: var(--fill); font-size: var(--text-sm); }
