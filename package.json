@@ -1,6 +1,6 @@
 {
   "name": "nook",
-  "version": "1.19.2",
+  "version": "1.19.3",
   "private": true,
   "description": "Version and changelog for nook releases (the code is Go; this file exists for Changesets).",
   "scripts": {
