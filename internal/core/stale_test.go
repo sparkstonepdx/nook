@@ -27,13 +27,13 @@ func TestStaleUnit(t *testing.T) {
 	os.WriteFile(stub, []byte("#!/bin/sh\necho "+strconv.Itoa(cmd.Process.Pid)+"\n"), 0o755)
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
 
-	if _, stale := staleUnit("x.service"); stale {
+	if _, stale := staleUnit("x.service", bin); stale {
 		t.Fatal("fresh process reported stale")
 	}
 	// what an update does: a new file renamed over the old one
 	os.WriteFile(bin+".new", data, 0o755)
 	os.Rename(bin+".new", bin)
-	if pid, stale := staleUnit("x.service"); !stale || pid != strconv.Itoa(cmd.Process.Pid) {
+	if pid, stale := staleUnit("x.service", bin); !stale || pid != strconv.Itoa(cmd.Process.Pid) {
 		t.Fatalf("replaced binary not noticed: %s %v", pid, stale)
 	}
 }
