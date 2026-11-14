@@ -1,5 +1,11 @@
 # nook
 
+## 1.21.1
+
+### Patch Changes
+
+- 1e27eb3: `catalog-build`: `source.tagPrefix` picks the newest release whose tag starts with it, so one repo can release several catalog apps (`push-v0.1.0`, `registry-v0.1.0`). The version is the tag without the prefix.
+
 ## 1.21.0
 
 ### Minor Changes
