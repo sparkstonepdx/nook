@@ -51,7 +51,8 @@ type card struct {
 	Background  string `json:"background,omitempty"`
 	Icon        string `json:"icon,omitempty"` // a file name under directory-icons: <sha256>.<ext>
 	Screenshots []shot `json:"screenshots,omitempty"`
-	Installable bool   `json:"installable"` // it has a web manifest
+	Image       string `json:"image,omitempty"` // og:image or twitter:image, absolute, on the site's own host
+	Installable bool   `json:"installable"`     // it has a web manifest
 	unreachable bool   // the page couldn't be read: kept for a minute, not an hour
 }
 
@@ -102,15 +103,21 @@ func get(u string, max int64) ([]byte, string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, "", errors.New(resp.Status)
+		return nil, "", statusErr(resp.Status)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, max))
 	return b, resp.Request.URL.String(), err
 }
 
+// statusErr is a site that answered, just not with its page (a 401 from a token-only API, a 404 at /).
+type statusErr string
+
+func (e statusErr) Error() string { return string(e) }
+
 var (
+	metaRE   = regexp.MustCompile(`(?is)<meta\b[^>]*>`)
 	linkRE   = regexp.MustCompile(`(?is)<link\b[^>]*>`)
-	attrRE   = regexp.MustCompile(`(?is)\b(rel|href|sizes)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
+	attrRE   = regexp.MustCompile(`(?is)\b(rel|href|sizes|property|name|content)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
 	titleRE  = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	descRE   = regexp.MustCompile(`(?is)<meta\b[^>]*name\s*=\s*["']?description["']?[^>]*content\s*=\s*"([^"]*)"`)
 	themeRE  = regexp.MustCompile(`(?is)<meta\b[^>]*name\s*=\s*["']?theme-color["']?[^>]*content\s*=\s*"([^"]*)"`)
@@ -145,6 +152,9 @@ func color(s string) string {
 
 // sameHost resolves ref against base and keeps it only when it stays on host over https.
 func sameHost(base *url.URL, ref, host string) string {
+	if strings.TrimSpace(ref) == "" { // resolves to the page itself, which isn't an image or a manifest
+		return ""
+	}
 	u, err := base.Parse(strings.TrimSpace(ref))
 	if err != nil || u.Host != host || (u.Scheme != "https" && u.Scheme != "http") {
 		return ""
@@ -194,7 +204,13 @@ func readCard(host string) card {
 	c := card{Host: host, URL: "https://" + host + "/", Name: strings.Split(host, ".")[0]}
 	page, final, err := get(c.URL, 512<<10)
 	if err != nil {
-		c.unreachable = true
+		var se statusErr
+		if !errors.As(err, &se) {
+			c.unreachable = true // nothing answered: try again in a minute
+			return c
+		}
+		// it answered, just not with a page (an API, a token-only site): its favicon may still be there
+		c.Icon = firstIcon(fallbackIcons(host))
 		return c
 	}
 	base, _ := url.Parse(final)
@@ -207,6 +223,31 @@ func readCard(host string) card {
 	}
 	if m := themeRE.FindStringSubmatch(text); m != nil {
 		c.Theme = color(m[1])
+	}
+	// Open Graph and Twitter cards: the share image, and a name or description the page doesn't give otherwise
+	og := map[string]string{}
+	for _, tag := range metaRE.FindAllString(text, -1) {
+		a := attrs(tag)
+		k := strings.ToLower(cmpOr(a["property"], a["name"]))
+		if strings.HasPrefix(k, "og:") || strings.HasPrefix(k, "twitter:") {
+			if _, seen := og[k]; !seen {
+				og[k] = a["content"]
+			}
+		}
+	}
+	for _, k := range []string{"og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src"} {
+		if u := sameHost(base, og[k], host); u != "" {
+			c.Image = u
+			break
+		}
+	}
+	if c.Description == "" {
+		c.Description = clean(cmpOr(og["og:description"], og["twitter:description"]), 300)
+	}
+	if titleRE.FindStringSubmatch(text) == nil {
+		if n := clean(cmpOr(og["og:site_name"], og["og:title"], og["twitter:title"]), 60); n != "" {
+			c.Name = n
+		}
 	}
 	var icons []iconRef
 	manifest := ""
@@ -284,11 +325,50 @@ func readCard(host string) card {
 			}
 		}
 	}
-	if len(icons) == 0 {
-		icons = []iconRef{{"https://" + host + "/favicon.ico", 16}}
-	}
-	c.Icon = saveIcon(best(icons))
+	// the page's own icons best first, then the usual paths: a single-page app answers every path with its
+	// page, so each candidate is only kept if it's really an image
+	c.Icon = firstIcon(append(ranked(icons), fallbackIcons(host)...))
 	return c
+}
+
+// fallbackIcons are where sites keep icons without saying so, best first.
+func fallbackIcons(host string) []string {
+	return []string{"https://" + host + "/apple-touch-icon.png", "https://" + host + "/favicon.svg", "https://" + host + "/favicon.ico"}
+}
+
+// ranked orders icons as best would pick them.
+func ranked(icons []iconRef) []string {
+	var out []string
+	for len(icons) > 0 {
+		b := best(slices.Clone(icons))
+		out = append(out, b)
+		icons = slices.DeleteFunc(icons, func(i iconRef) bool { return i.src == b })
+	}
+	return out
+}
+
+// firstIcon saves the first of srcs that is an image and returns its file name.
+func firstIcon(srcs []string) string {
+	seen := map[string]bool{}
+	for _, u := range srcs {
+		if seen[u] {
+			continue
+		}
+		seen[u] = true
+		if name := saveIcon(u); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func cmpOr(vs ...string) string {
+	for _, v := range vs {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // saveIcon downloads an icon (up to 512 KB of PNG, JPEG, WebP, GIF, ICO or SVG) and returns its file name.
@@ -312,7 +392,7 @@ func saveIcon(u string) string {
 		ext = "gif"
 	case t == "image/x-icon" || t == "image/vnd.microsoft.icon":
 		ext = "ico"
-	case strings.Contains(strings.ToLower(string(b[:min(len(b), 512)])), "<svg"):
+	case !strings.HasPrefix(t, "text/html") && strings.Contains(strings.ToLower(string(b[:min(len(b), 512)])), "<svg"):
 		ext = "svg"
 	default:
 		return ""
@@ -342,10 +422,11 @@ func (s *Server) directory(fresh bool) ([]card, error) {
 		return nil, errors.New(resp.Error)
 	}
 	var entries []struct {
-		Host    string `json:"host"`
-		App     string `json:"app"`
-		Listed  bool   `json:"listed"`
-		Preview bool   `json:"preview"`
+		Host      string `json:"host"`
+		App       string `json:"app"`
+		Listed    bool   `json:"listed"`
+		Preview   bool   `json:"preview"`
+		StoreIcon string `json:"storeIcon"`
 	}
 	json.Unmarshal(resp.Data, &entries)
 	out := make([]card, len(entries))
@@ -379,8 +460,46 @@ func (s *Server) directory(fresh bool) ([]card, error) {
 	wg.Wait()
 	for i, e := range entries {
 		out[i].App, out[i].Listed, out[i].Preview = e.App, e.Listed, e.Preview
+		if out[i].Icon == "" && e.StoreIcon != "" {
+			out[i].Icon = s.storeIcon(e.StoreIcon)
+		}
 	}
 	return out, nil
+}
+
+// storeIcon is a store app's catalog icon (catalog/sha256) saved with the other icons, for a site that serves
+// none of its own. The helper fetches it and checks it against the hash the signed catalog pins.
+func (s *Server) storeIcon(ref string) string {
+	catalog, sum, ok := strings.Cut(ref, "/")
+	if !ok || len(sum) != 64 {
+		return ""
+	}
+	for _, ext := range []string{"png", "jpg"} {
+		if _, err := os.Stat(filepath.Join(iconDir, sum[:32]+"."+ext)); err == nil {
+			return sum[:32] + "." + ext
+		}
+	}
+	resp, err := rpc.Call(s.Socket, rpc.Request{Op: "storeImage", By: "web", Params: map[string]string{"catalog": catalog, "sha": sum}}, 30*time.Second)
+	if err != nil || resp.Error != "" {
+		return ""
+	}
+	var img struct {
+		Type string `json:"type"`
+		Data []byte `json:"data"`
+	}
+	if json.Unmarshal(resp.Data, &img) != nil {
+		return ""
+	}
+	ext := map[string]string{"image/png": "png", "image/jpeg": "jpg"}[img.Type]
+	if ext == "" {
+		return ""
+	}
+	name := sum[:32] + "." + ext
+	os.MkdirAll(iconDir, 0o755)
+	if os.WriteFile(filepath.Join(iconDir, name+".tmp"), img.Data, 0o644) == nil {
+		os.Rename(filepath.Join(iconDir, name+".tmp"), filepath.Join(iconDir, name))
+	}
+	return name
 }
 
 // publicDirectory serves GET /api/v1/directory (the listed sites, for a Directory app or anyone) and
