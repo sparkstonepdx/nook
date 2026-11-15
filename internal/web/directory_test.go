@@ -150,7 +150,9 @@ func TestReadCardFavicon(t *testing.T) {
 		case "/":
 			w.Write([]byte(`<title>Kinlog</title><link rel="manifest" href="/m.json"><link rel="icon" href="/favicon.svg" type="image/svg+xml">`))
 		case "/m.json":
-			w.Write([]byte(`{"name":"Kinlog","icons":[{"src":"/i192.png","sizes":"192x192"}]}`))
+			w.Write([]byte(`{"name":"Kinlog","icons":[{"src":"/i192.png","sizes":"192x192"},{"src":"/mask.png","sizes":"512x512","purpose":"maskable"}]}`))
+		case "/mask.png":
+			w.Write(append(png1, 'm'))
 		case "/i192.png":
 			w.Write(png1)
 		case "/favicon.svg":
@@ -162,7 +164,7 @@ func TestReadCardFavicon(t *testing.T) {
 	defer srv.Close()
 	siteAddr = strings.TrimPrefix(srv.URL, "https://")
 	c := readCard("kinlog.example.com")
-	if !strings.HasSuffix(c.Icon, ".png") || !strings.HasSuffix(c.Favicon, ".svg") {
-		t.Fatalf("icon %q, favicon %q", c.Icon, c.Favicon)
+	if !strings.HasSuffix(c.Icon, ".png") || !strings.HasSuffix(c.Favicon, ".svg") || !strings.HasSuffix(c.Maskable, ".png") || c.Maskable == c.Icon {
+		t.Fatalf("icon %q, maskable %q, favicon %q", c.Icon, c.Maskable, c.Favicon)
 	}
 }
