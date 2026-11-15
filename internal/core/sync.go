@@ -300,7 +300,13 @@ func (h *Host) syncLocked(app string) error {
 				restartUnits = append(restartUnits, UnitName(app, s))
 				os.WriteFile(idFile, []byte(id), 0o600)
 			}
-			published = append(published, caddyfile.Site{Host: host, Port: port, Folder: s, Version: id, TokenAuth: man.Auth == "nook-token", Open: man.Open, Login: login, Dashboard: dash.Host})
+			// "nook-login" asks for the login switch whatever it's set to; with no dashboard address to log in at
+			// it stays token-only, so the site is never open by accident
+			siteLogin := login
+			if man.Auth == "nook-login" && dash.Host != "" {
+				siteLogin = app
+			}
+			published = append(published, caddyfile.Site{Host: host, Port: port, Folder: s, Version: id, TokenAuth: man.Auth != "", Open: man.Open, Login: siteLogin, Dashboard: dash.Host})
 		} else {
 			if _, err := os.Stat(filepath.Join("/etc/systemd/system", UnitName(app, s))); err == nil {
 				h.stopUnit(app, s)

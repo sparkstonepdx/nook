@@ -184,11 +184,19 @@ func TestCatalogTokenAuth(t *testing.T) {
 		{Auth: "nook-token", Kind: "service"},
 		{Open: []string{"/x"}},
 		{Auth: "nook-token", Open: []string{"/x/*/y"}},
+		{Auth: "nook-login", Kind: "service"},
 	} {
 		bad.ID, bad.Name, bad.Version, bad.Binary = "push", "push", "v0.1.0", "push"
 		if err := bad.check(); err == nil || !strings.Contains(err.Error(), "auth") && !strings.Contains(err.Error(), "open") {
 			t.Errorf("%+v: %v", bad, err)
 		}
+	}
+}
+
+func TestCatalogLogin(t *testing.T) {
+	a := CatalogApp{ID: "files", Name: "Files", Version: "v0.2.0", Binary: "files", Auth: "nook-login", Open: []string{"/s/*", "/health"}}
+	if err := a.check(); err != nil {
+		t.Fatal(err)
 	}
 }
 

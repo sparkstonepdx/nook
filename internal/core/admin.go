@@ -225,7 +225,8 @@ type AppInfo struct {
 	Sites     []SiteInfo `json:"sites"`
 	Redirects []string   `json:"redirects"`
 	Grants    [][]string `json:"grants"`
-	Login     bool       `json:"login"` // sites behind nook's login
+	Login     bool       `json:"login"`    // sites behind nook's login
+	LoginApp  bool       `json:"loginApp"` // a site's nook.json asks for the login itself ("auth": "nook-login")
 }
 
 func mb(v string) string {
@@ -290,6 +291,9 @@ func (h *Host) Overview() map[string]any {
 					p := UnitProps(UnitName(a, s), "ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts")
 					si.Active, si.Sub, si.PID, si.Memory, si.Restarts = p["ActiveState"], p["SubState"], p["MainPID"], p["MemoryCurrent"], p["NRestarts"]
 					si.Health = SiteHealthPath(a, s)
+					if m, err := u.readManifest(s); err == nil && m.Auth == "nook-login" {
+						info.LoginApp = true
+					}
 				}
 				if port := PortOf(a, s); port > 0 {
 					si.Port = strconv.Itoa(port)
