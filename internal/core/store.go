@@ -15,7 +15,6 @@ package core
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"cmp"
 	"compress/gzip"
 	"crypto/sha256"
@@ -255,80 +254,129 @@ var policies = map[string]bool{"off": true, "notify": true, "patch": true, "mino
 
 // ---- packages ----
 
-// pkgFor downloads a's artifact for this machine, checks its hash and builds the site package.
-func pkgFor(a CatalogApp) ([]byte, error) {
+// maxArtifact caps a catalog download and the binary taken out of it.
+const maxArtifact = 500 << 20
+
+// pkgFor downloads a's artifact for this machine, checks its hash and builds the site package, all through
+// files in a scratch folder, so memory stays flat whatever the size. done removes the folder.
+func pkgFor(a CatalogApp) (pkg string, done func(), err error) {
 	art, ok := a.Artifacts[runtime.GOARCH]
 	if !ok {
-		return nil, fmt.Errorf("%s has no build for %s", a.ID, runtime.GOARCH)
+		return "", nil, fmt.Errorf("%s has no build for %s", a.ID, runtime.GOARCH)
 	}
-	data, err := update.Download(art.URL)
+	os.MkdirAll(config.LibDir, 0o755)
+	dir, err := os.MkdirTemp(config.LibDir, ".store-")
 	if err != nil {
-		return nil, fmt.Errorf("download: %v", err)
+		return "", nil, err
 	}
-	sum := sha256.Sum256(data)
-	if hex.EncodeToString(sum[:]) != art.SHA256 {
-		return nil, errors.New("download doesn't match the catalog's sha256: refusing it")
-	}
-	bin, err := extractBinary(data, art.Format, a.Binary)
+	done = func() { os.RemoveAll(dir) }
+	defer func() {
+		if err != nil {
+			done()
+		}
+	}()
+	dl, err := os.Create(filepath.Join(dir, "download"))
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return buildSitePackage(a, bin)
+	defer dl.Close()
+	h := sha256.New()
+	if err := update.DownloadTo(art.URL, io.MultiWriter(dl, h), maxArtifact); err != nil {
+		return "", nil, fmt.Errorf("download: %v", err)
+	}
+	if hex.EncodeToString(h.Sum(nil)) != art.SHA256 {
+		return "", nil, errors.New("download doesn't match the catalog's sha256: refusing it")
+	}
+	bin, err := os.Create(filepath.Join(dir, "binary"))
+	if err != nil {
+		return "", nil, err
+	}
+	defer bin.Close()
+	if err := extractBinary(dl, art.Format, a.Binary, bin); err != nil {
+		return "", nil, err
+	}
+	pkg = filepath.Join(dir, "package.tgz")
+	out, err := os.Create(pkg)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := buildSitePackage(a, bin, out); err != nil {
+		out.Close()
+		return "", nil, err
+	}
+	return pkg, done, out.Close()
 }
 
-// extractBinary reads the executable out of the artifact in memory.
+// copyCapped copies r to w, failing past maxArtifact instead of cutting the file short.
+func copyCapped(w io.Writer, r io.Reader) error {
+	n, err := io.Copy(w, io.LimitReader(r, maxArtifact+1))
+	if err == nil && n > maxArtifact {
+		err = fmt.Errorf("the binary is over %d MB", maxArtifact>>20)
+	}
+	return err
+}
+
+// extractBinary copies the executable named name out of the artifact in f into w, streaming.
 var artifactFormats = map[string]bool{"tar.gz": true, "zip": true, "gz": true, "raw": true}
 
-func extractBinary(data []byte, format, name string) ([]byte, error) {
+func extractBinary(f *os.File, format, name string, w io.Writer) error {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
 	switch format {
 	case "zip":
-		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		st, err := f.Stat()
 		if err != nil {
-			return nil, err
+			return err
 		}
-		for _, f := range zr.File {
-			if f.Mode().IsRegular() && path.Base(f.Name) == name {
-				rc, err := f.Open()
+		zr, err := zip.NewReader(f, st.Size())
+		if err != nil {
+			return err
+		}
+		for _, zf := range zr.File {
+			if zf.Mode().IsRegular() && path.Base(zf.Name) == name {
+				rc, err := zf.Open()
 				if err != nil {
-					return nil, err
+					return err
 				}
 				defer rc.Close()
-				return io.ReadAll(io.LimitReader(rc, 500<<20))
+				return copyCapped(w, rc)
 			}
 		}
-		return nil, fmt.Errorf("no %s in the archive", name)
+		return fmt.Errorf("no %s in the archive", name)
 	case "raw":
-		return data, nil
+		return copyCapped(w, f)
 	case "gz":
-		zr, err := gzip.NewReader(bytes.NewReader(data))
+		zr, err := gzip.NewReader(f)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return io.ReadAll(io.LimitReader(zr, 500<<20))
+		return copyCapped(w, zr)
 	case "tar.gz":
-		zr, err := gzip.NewReader(bytes.NewReader(data))
+		zr, err := gzip.NewReader(f)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		tr := tar.NewReader(zr)
 		for {
 			h, err := tr.Next()
 			if err == io.EOF {
-				return nil, fmt.Errorf("no %s in the archive", name)
+				return fmt.Errorf("no %s in the archive", name)
 			}
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if h.Typeflag == tar.TypeReg && path.Base(h.Name) == name {
-				return io.ReadAll(io.LimitReader(tr, 500<<20))
+				return copyCapped(w, tr)
 			}
 		}
 	}
-	return nil, fmt.Errorf("unknown artifact format %q", format)
+	return fmt.Errorf("unknown artifact format %q", format)
 }
 
-// buildSitePackage makes the tar.gz that gets deployed: the binary, the catalog's files, and nook.json.
-func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
+// buildSitePackage writes the tar.gz that gets deployed to w: the binary (streamed from bin), the catalog's
+// files, and nook.json.
+func buildSitePackage(a CatalogApp, bin *os.File, w io.Writer) error {
 	man := map[string]any{"kind": a.kind()}
 	if a.Schedule != "" {
 		man["schedule"] = a.Schedule
@@ -349,16 +397,21 @@ func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
 		man["listen"] = a.Listen
 	}
 	manJSON, _ := json.MarshalIndent(man, "", "  ")
-	files := map[string][]byte{a.Binary: bin, "nook.json": manJSON}
+	files := map[string][]byte{"nook.json": manJSON}
 	for n, body := range a.Files {
 		files[n] = []byte(body)
 	}
-	var buf bytes.Buffer
-	zw := gzip.NewWriter(&buf)
+	st, err := bin.Stat()
+	if err != nil {
+		return err
+	}
+	zw := gzip.NewWriter(w)
 	tw := tar.NewWriter(zw)
-	keys := make([]string, 0, len(files))
+	keys := []string{a.Binary}
 	for n := range files {
-		keys = append(keys, n)
+		if n != a.Binary {
+			keys = append(keys, n)
+		}
 	}
 	sort.Strings(keys)
 	for _, n := range keys {
@@ -366,41 +419,77 @@ func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
 		if n == a.Binary || n == "run" {
 			mode = 0o755
 		}
-		if err := tw.WriteHeader(&tar.Header{Name: n, Typeflag: tar.TypeReg, Mode: mode, Size: int64(len(files[n])), ModTime: time.Now()}); err != nil {
-			return nil, err
+		size := int64(len(files[n]))
+		if n == a.Binary {
+			size = st.Size()
 		}
-		tw.Write(files[n])
+		if err := tw.WriteHeader(&tar.Header{Name: n, Typeflag: tar.TypeReg, Mode: mode, Size: size, ModTime: time.Now()}); err != nil {
+			return err
+		}
+		if n == a.Binary {
+			if _, err := bin.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			if _, err := io.CopyN(tw, bin, size); err != nil {
+				return err
+			}
+		} else if _, err := tw.Write(files[n]); err != nil {
+			return err
+		}
 	}
-	tw.Close()
-	zw.Close()
-	return buf.Bytes(), nil
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return zw.Close()
 }
 
-// deployPackage publishes pkg as app's site, as the app user (the deploy API's path).
-func deployPackage(app, site string, pkg []byte) (string, error) {
+// deployPackage publishes the package file pkg as app's site, as the app user (the deploy API's path).
+func deployPackage(app, site, pkg string) (string, error) {
 	u, err := LookupApp(app)
 	if err != nil {
 		return "", err
 	}
+	f, err := os.Open(pkg)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
 	s := config.Load()
-	if out, err := u.asAppIn(bytes.NewReader(pkg), 64<<10, "internal-unpack", site, strconv.FormatInt(s.SiteMaxBytes, 10)); err != nil {
+	if out, err := u.asAppIn(f, 64<<10, "internal-unpack", site, strconv.FormatInt(s.SiteMaxBytes, 10)); err != nil {
 		return "", fmt.Errorf("%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
 	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", filepath.Join(u.Home, "builds", site), site)
 	return strings.TrimSpace(string(out)), err
 }
 
-func savePackage(app, version string, pkg []byte) {
+// savePackage keeps a copy of the package for rollbacks.
+func savePackage(app, version, pkg string) {
 	dir := storeDir(app)
 	os.MkdirAll(dir, 0o700)
-	config.WriteAtomic(filepath.Join(dir, safeVersion(version)+".tgz"), pkg, 0o600)
+	in, err := os.Open(pkg)
+	if err != nil {
+		return
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(dir, ".save-")
+	if err != nil {
+		return
+	}
+	defer os.Remove(tmp.Name())
+	_, err = io.Copy(tmp, in)
+	if cerr := tmp.Close(); err == nil && cerr == nil {
+		os.Chmod(tmp.Name(), 0o600)
+		os.Rename(tmp.Name(), filepath.Join(dir, safeVersion(version)+".tgz"))
+	}
 }
 
-func loadPackage(app, version string) ([]byte, error) {
-	return os.ReadFile(filepath.Join(storeDir(app), safeVersion(version)+".tgz"))
+// loadPackage is the saved package file for version, if there is one.
+func loadPackage(app, version string) (string, error) {
+	p := filepath.Join(storeDir(app), safeVersion(version)+".tgz")
+	_, err := os.Stat(p)
+	return p, err
 }
 
-// prunePackages keeps the packages of keep (current and previous version).
 func prunePackages(app string, keep ...string) {
 	want := map[string]bool{}
 	for _, k := range keep {
@@ -494,10 +583,11 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 		h.say("from the community catalog %s, not the official one", a.CatalogName)
 	}
 	h.say("downloading %s %s", a.Name, a.Version)
-	pkg, err := pkgFor(a)
+	pkg, done, err := pkgFor(a)
 	if err != nil {
 		return err
 	}
+	defer done()
 	if _, err := h.Create(CreateOpts{Name: o.App, Memory: a.Memory, CPU: a.CPU}); err != nil {
 		return err
 	}
@@ -562,10 +652,11 @@ func (h *Host) StoreUpdate(app string, force bool) error {
 		return nil
 	}
 	h.say("updating %s: %s → %s", app, rec.Version, a.Version)
-	pkg, err := pkgFor(a)
+	pkg, done, err := pkgFor(a)
 	if err != nil {
 		return err
 	}
+	defer done()
 	out, derr := deployPackage(app, rec.Site, pkg)
 	h.say("%s", out)
 	herr := derr

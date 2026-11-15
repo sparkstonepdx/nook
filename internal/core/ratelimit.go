@@ -11,7 +11,9 @@ package core
 // A record goes once the domain's wildcard and every nested wildcard under it are issued.
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,11 +70,41 @@ func readCertLimits() map[string]time.Time {
 
 // rateLimitLog is a week of Caddy's rate-limit errors (a var for tests).
 var rateLimitLog = func() string {
-	out, err := exec.Command("journalctl", "-u", "caddy", "--since", "-7d", "--grep", "rateLimited", "-o", "cat", "--no-pager").Output()
+	limited := func(l string) bool { return strings.Contains(l, "rateLimited") }
+	out, err := journalLines(limited, "-u", "caddy", "--since", "-7d", "--grep", "rateLimited", "-o", "cat", "--no-pager")
 	if err != nil { // a journalctl without --grep
-		out, _ = exec.Command("journalctl", "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager").Output()
+		out, _ = journalLines(limited, "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager")
 	}
-	return string(out)
+	return out
+}
+
+// journalLines runs journalctl and keeps only the lines keep wants, reading as it goes, so a busy Caddy log
+// never sits in memory whole. At most the last 1000 kept lines.
+func journalLines(keep func(string) bool, args ...string) (string, error) {
+	cmd := exec.Command("journalctl", args...)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	var kept []string
+	sc := bufio.NewScanner(out)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		if l := sc.Text(); keep(l) {
+			kept = append(kept, l)
+			if len(kept) > 1000 {
+				kept = kept[1:]
+			}
+		}
+	}
+	io.Copy(io.Discard, out)
+	if err := cmd.Wait(); err != nil {
+		return "", err
+	}
+	return strings.Join(kept, "\n"), nil
 }
 
 var limitsCache struct {
