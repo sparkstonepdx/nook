@@ -98,6 +98,15 @@ func TestLoginHandOff(t *testing.T) {
 	if w.Code != 204 || w.Header().Get("X-Nook-User") != "ada" {
 		t.Fatalf("logged in: %d %q", w.Code, w.Header().Get("X-Nook-User"))
 	}
+	// both headers, so Caddy 2.6's copy_headers never passes its placeholder's text for the missing one
+	if v, ok := w.Header()["X-Nook-App"]; !ok || v[0] != "" {
+		t.Errorf("X-Nook-App should be there and empty: %q", v)
+	}
+	r := check("notes", notes, "", false)
+	r.Header.Set("X-Nook-Card", s.Store.cardKey())
+	if w := do(s, r); w.Code != 204 || len(w.Header()["X-Nook-User"]) != 1 || len(w.Header()["X-Nook-App"]) != 1 {
+		t.Errorf("card read: %d %v", w.Code, w.Header())
+	}
 	// bound to its host
 	if w := do(s, check("blog", "blog.example.com", c, true)); w.Code != 302 {
 		t.Errorf("cookie worked on another host: %d", w.Code)
