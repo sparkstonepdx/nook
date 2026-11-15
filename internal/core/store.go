@@ -254,25 +254,29 @@ var policies = map[string]bool{"off": true, "notify": true, "patch": true, "mino
 
 // ---- packages ----
 
+// storeScratch holds pkgFor's working folders (a var for tests).
+var storeScratch = config.LibDir
+
 // maxArtifact caps a catalog download and the binary taken out of it.
 const maxArtifact = 500 << 20
 
 // pkgFor downloads a's artifact for this machine, checks its hash and builds the site package, all through
 // files in a scratch folder, so memory stays flat whatever the size. done removes the folder.
-func pkgFor(a CatalogApp) (pkg string, done func(), err error) {
+func pkgFor(a CatalogApp, j *job) (pkg string, done func(), err error) {
 	art, ok := a.Artifacts[runtime.GOARCH]
 	if !ok {
 		return "", nil, fmt.Errorf("%s has no build for %s", a.ID, runtime.GOARCH)
 	}
-	os.MkdirAll(config.LibDir, 0o755)
-	dir, err := os.MkdirTemp(config.LibDir, ".store-")
+	os.MkdirAll(storeScratch, 0o755)
+	dir, err := os.MkdirTemp(storeScratch, ".store-")
 	if err != nil {
 		return "", nil, err
 	}
-	done = func() { os.RemoveAll(dir) }
+	// the cleanup is its own variable: a failed return sets the named done to nil, and calling that would panic
+	cleanup := func() { os.RemoveAll(dir) }
 	defer func() {
 		if err != nil {
-			done()
+			cleanup()
 		}
 	}()
 	dl, err := os.Create(filepath.Join(dir, "download"))
@@ -281,12 +285,15 @@ func pkgFor(a CatalogApp) (pkg string, done func(), err error) {
 	}
 	defer dl.Close()
 	h := sha256.New()
-	if err := update.DownloadTo(art.URL, io.MultiWriter(dl, h), maxArtifact); err != nil {
+	j.step(StepDownload)
+	if err := update.DownloadTo(art.URL, io.MultiWriter(dl, h, j), maxArtifact, j.total); err != nil {
 		return "", nil, fmt.Errorf("download: %v", err)
 	}
+	j.step(StepCheck)
 	if hex.EncodeToString(h.Sum(nil)) != art.SHA256 {
 		return "", nil, errors.New("download doesn't match the catalog's sha256: refusing it")
 	}
+	j.step(StepUnpack)
 	bin, err := os.Create(filepath.Join(dir, "binary"))
 	if err != nil {
 		return "", nil, err
@@ -304,7 +311,7 @@ func pkgFor(a CatalogApp) (pkg string, done func(), err error) {
 		out.Close()
 		return "", nil, err
 	}
-	return pkg, done, out.Close()
+	return pkg, cleanup, out.Close()
 }
 
 // copyCapped copies r to w, failing past maxArtifact instead of cutting the file short.
@@ -583,7 +590,9 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 		h.say("from the community catalog %s, not the official one", a.CatalogName)
 	}
 	h.say("downloading %s %s", a.Name, a.Version)
-	pkg, done, err := pkgFor(a)
+	j := startJob(o.App, "install", a.Name, "", a.Version)
+	defer func() { j.finish(err) }()
+	pkg, done, err := pkgFor(a, j)
 	if err != nil {
 		return err
 	}
@@ -606,6 +615,7 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 		}
 	}
 	h.say("installing %s as app %s, site %s", a.Name, o.App, o.Site)
+	j.step(StepDeploy)
 	out, err := deployPackage(o.App, o.Site, pkg)
 	h.say("%s", out)
 	if err != nil && !strings.Contains(out, "(cron job)") && !strings.Contains(out, "(service)") {
@@ -627,6 +637,7 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			h.say("%s needs %s: nothing provides it yet; grant it on the Services page", a.Name, need)
 		}
 	}
+	j.step(StepHealth)
 	if err := healthy(o.App, o.Site, a); err != nil {
 		h.say("warning: %v (it's installed; check its logs)", err)
 	} else {
@@ -637,7 +648,7 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 
 // StoreUpdate moves an installed app to the catalog's version, rolling back if it doesn't come up.
 // force reinstalls even when the version is the same.
-func (h *Host) StoreUpdate(app string, force bool) error {
+func (h *Host) StoreUpdate(app string, force bool) (err error) {
 	m := readInstalled()
 	rec, ok := m[app]
 	if !ok {
@@ -652,19 +663,24 @@ func (h *Host) StoreUpdate(app string, force bool) error {
 		return nil
 	}
 	h.say("updating %s: %s → %s", app, rec.Version, a.Version)
-	pkg, done, err := pkgFor(a)
+	j := startJob(app, "update", a.Name, rec.Version, a.Version)
+	defer func() { j.finish(err) }()
+	pkg, done, err := pkgFor(a, j)
 	if err != nil {
 		return err
 	}
 	defer done()
+	j.step(StepDeploy)
 	out, derr := deployPackage(app, rec.Site, pkg)
 	h.say("%s", out)
 	herr := derr
 	if herr == nil {
+		j.step(StepHealth)
 		herr = healthy(app, rec.Site, a)
 	}
 	if herr != nil {
 		h.say("%s %s didn't come up (%v); rolling back to %s", app, a.Version, herr, rec.Version)
+		j.step(StepRollback)
 		old, lerr := loadPackage(app, rec.Version)
 		if lerr != nil {
 			return fmt.Errorf("update failed (%v) and there's no saved %s to roll back to: %v", herr, rec.Version, lerr)
