@@ -1,7 +1,12 @@
-import { For, Show, createEffect, createResource, createSignal } from "solid-js";
+import { For, Show, createEffect, createResource, createSignal, on } from "solid-js";
 import { A, useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { api, attempt, runCmd, say } from "../api";
+import { api, attempt, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
+import { JobProgress, jobFor, jobLine, jobs, pollJobs, running } from "../storejobs";
+
+// Requests this page has in flight, so polling runs every second from the click, before the job file exists.
+const [busy, setBusy] = createSignal(0);
+type Phase = "form" | "running" | "done" | "failed";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
 type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
@@ -61,6 +66,10 @@ export default function Store() {
   const [adding, setAdding] = createSignal(false);
   const navigate = useNavigate();
   const row = () => data()?.installed.find((r) => r.app === open());
+  const pollNow = pollJobs(() => busy() > 0);
+  // a job that just finished changes versions and the list: read it again
+  createEffect(on(() => jobs().filter((j) => j.done).map((j) => j.app + j.updated).join(), (k, prev) => { if (prev !== undefined && k !== prev) refetch(); }));
+  const installing = () => jobs().filter((j) => j.action === "install" && (running(j) || (j.error && !data()?.installed.some((r) => r.app === j.app))));
 
   // A storefront's "Install on nook" lands here: /store/install?app=ID&catalog=official, or &source=owner/repo
   // for a community catalog, which is offered for adding first.
@@ -96,7 +105,7 @@ export default function Store() {
       <Show when={detail()} fallback={<Show when={data()}><PageHead title="Not in your catalogs" back={{ href: "/store/install", label: "Install" }} /><p class="lede">Refresh the catalog, or check the link.</p></Show>}>
         {(a) => <>
           <AppDetail app={a()} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
-          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
+          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} poll={pollNow} />
         </>}
       </Show>
     }>
@@ -114,16 +123,30 @@ export default function Store() {
       </nav>
 
       <Show when={!browsing() && !managing()}>
-        <Show when={data()?.installed.length} fallback={<Show when={data()}><p class="empty">Nothing from the store yet. <A class="link" href="/store/install">Install an app</A></p></Show>}>
+        <Show when={installing().length}>
+          <ul class="list">
+            <For each={installing()}>
+              {(j) => (
+                <li class="row job-row">
+                  <span class="row-main"><span>{j.app}</span><small>{j.name} <span class="mono">{j.to}</span></small></span>
+                  <span class="row-end"><Show when={j.error} fallback={<StatusBadge warn>{jobLine(j)}</StatusBadge>}><StatusBadge ok={false} title={j.error}>install failed</StatusBadge></Show></span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <Show when={data()?.installed.length} fallback={<Show when={data() && !installing().length}><p class="empty">Nothing from the store yet. <A class="link" href="/store/install">Install an app</A></p></Show>}>
           <ul class="list">
             <For each={data()!.installed}>
               {(r) => (
                 <li><button class="row" onClick={() => setOpen(r.app)}>
                   <span class="row-main"><span>{r.app}</span><small>{r.name} <span class="mono">{r.version}</span> · updates: {policyLabel[r.policy]?.toLowerCase()}</small></span>
                   <span class="row-end">
-                    <Origin official={r.official} name={r.catalogName} />
-                    <Show when={r.lastError}><StatusBadge ok={false} title={r.lastError}>rolled back</StatusBadge></Show>
-                    <Show when={r.available}><StatusBadge warn>{r.latest}</StatusBadge></Show>
+                    <Show when={running(jobFor(r.app))} fallback={<>
+                      <Origin official={r.official} name={r.catalogName} />
+                      <Show when={r.lastError}><StatusBadge ok={false} title={r.lastError}>rolled back</StatusBadge></Show>
+                      <Show when={r.available}><StatusBadge warn>{r.latest}</StatusBadge></Show>
+                    </>}><StatusBadge warn>{jobLine(jobFor(r.app)!)}</StatusBadge></Show>
                     <span class="chev">›</span>
                   </span>
                 </button></li>
@@ -207,8 +230,8 @@ export default function Store() {
           <div class="note note-warn"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
         </div>
       </Sheet>
-      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} />
-      <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} />
+      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} poll={pollNow} />
+      <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} poll={pollNow} />
     </>
     </Show>
   );
@@ -264,11 +287,49 @@ function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () =
   );
 }
 
-function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => void }) {
+// run starts a store request with its progress in the sheet; the request's own output shows if it fails.
+async function run(path: string, body: unknown, poll: () => void, setPhase: (p: Phase) => void, setOut: (s: string) => void) {
+  setPhase("running");
+  setOut("");
+  setBusy((n) => n + 1);
+  poll();
+  let r: { ok: boolean; out: string };
+  try { r = await api<{ ok: boolean; out: string }>(path, body); } catch (e) { r = { ok: false, out: (e as Error).message }; }
+  setBusy((n) => n - 1);
+  poll();
+  setOut(r.out);
+  setPhase(r.ok ? "done" : "failed");
+  return r.ok;
+}
+
+function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => void; poll: () => void }) {
+  const [phase, setPhaseNow] = createSignal<Phase>("form");
+  const [out, setOutNow] = createSignal("");
+  const [target, setTarget] = createSignal("");
+  let session = 0; // a run started before the sheet was closed doesn't write into the next one
+  const guard = <T,>(f: (v: T) => void) => { const s = session; return (v: T) => { if (s === session) f(v); }; };
+  // an update the daily check started, or one started before the sheet was closed, shows here too, and stays
+  // shown once it finishes until the sheet closes
+  const job = () => props.row && jobFor(props.row.app);
+  const [watching, setWatching] = createSignal(false);
+  createEffect(() => { if (running(job())) setWatching(true); });
+  const close = () => { session++; setPhaseNow("form"); setWatching(false); props.onClose(); };
+  const showing = () => phase() !== "form" || watching();
+  const ended = () => phase() === "done" || (phase() === "form" && job()?.done && !job()?.error);
   return (
-    <Sheet open={!!props.row} title={props.row?.app ?? ""} onClose={props.onClose}>
+    <Sheet open={!!props.row} title={props.row?.app ?? ""} onClose={close}
+      footer={<Show when={showing()}><button class="btn btn-secondary" onClick={close}>{phase() === "running" || running(job()) ? "Hide" : "Close"}</button></Show>}>
       <Show when={props.row}>
         {(r) => (
+          <Show when={!showing()} fallback={
+            <div class="stack">
+              <p class="update-versions"><span class="mono">{job()?.from ?? r().version}</span> <span aria-hidden="true">→</span> <strong class="mono">{job()?.to ?? target()}</strong></p>
+              <JobProgress job={job()?.to === (target() || job()?.to) ? job() : undefined} />
+              <Show when={ended()}><p class="note">{r().app} is on {job()?.to ?? target()}.</p></Show>
+              <Show when={phase() === "failed" && out()}><pre class="output">{out()}</pre></Show>
+              <Show when={running(job()) || phase() === "running"}><p class="hint">You can close this; it keeps going, and the Store list shows where it is.</p></Show>
+            </div>
+          }>
           <div class="stack">
             <dl class="facts">
               <dt>App</dt><dd>{r().name}</dd>
@@ -288,33 +349,52 @@ function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => v
             </Field>
             <div class="actions-grid">
               <Show when={r().available}>
-                <button class="btn" onClick={async () => { const a = r().app, v = r().latest; props.onClose(); await runCmd(`Updated ${a} to ${v}`, `/api/store/${a}/update`, {}); props.onDone(); }}>Update to {r().latest}</button>
+                <button class="btn" onClick={async () => { const a = r().app; setTarget(r().latest); await run(`/api/store/${a}/update`, {}, props.poll, guard(setPhaseNow), guard(setOutNow)); props.onDone(); }}>Update to {r().latest}</button>
               </Show>
               <A class="btn btn-secondary" href={`/apps/${r().app}/env`}>Settings</A>
             </div>
           </div>
+          </Show>
         )}
       </Show>
     </Sheet>
   );
 }
 
-function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string> }) {
+function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string>; poll: () => void }) {
+  const [phase, setPhaseNow] = createSignal<Phase>("form");
+  const [out, setOutNow] = createSignal("");
+  const [name, setName] = createSignal("");
+  let session = 0;
+  const guard = <T,>(f: (v: T) => void) => { const s = session; return (v: T) => { if (s === session) f(v); }; };
+  const finished = () => phase() === "done" || phase() === "failed";
+  const close = () => { session++; const ok = phase() === "done"; setPhaseNow("form"); props.onClose(); if (ok) props.onDone(); };
+  const job = () => { const j = jobFor(name()); return j && j.action === "install" && j.to === props.app?.version ? j : undefined; };
   return (
-    <Sheet open={!!props.app} title={props.app ? `Install ${props.app.name}` : ""} onClose={props.onClose}
-      footer={<><button type="button" class="btn btn-secondary" onClick={props.onClose}>Cancel</button><button class="btn" type="submit" form="store-install">Install</button></>}>
+    <Sheet open={!!props.app} title={props.app ? (phase() === "failed" ? `${props.app.name} didn't install` : `Install ${props.app.name}`) : ""} onClose={close}
+      footer={<Show when={phase() === "form"} fallback={<button type="button" class="btn btn-secondary" onClick={close}>{finished() ? "Close" : "Hide"}</button>}>
+        <button type="button" class="btn btn-secondary" onClick={close}>Cancel</button><button class="btn" type="submit" form="store-install">Install</button>
+      </Show>}>
       <Show when={props.app}>
         {(a) => (
+          <Show when={phase() === "form"} fallback={
+            <div class="stack">
+              <p class="update-versions"><strong>{name()}</strong> <span class="mono">{a().version}</span></p>
+              <JobProgress job={job()} />
+              <Show when={phase() === "done"}><p class="note">Installed. It's on the Installed tab, and on the Apps page as {name()}.</p></Show>
+              <Show when={phase() === "failed" && out()}><pre class="output">{out()}</pre></Show>
+              <Show when={phase() === "running"}><p class="hint">You can close this; it keeps going, and the Store list shows where it is.</p></Show>
+            </div>
+          }>
           <form id="store-install" onSubmit={async (e) => {
             e.preventDefault();
-            const app = a(); // read everything before the sheet closes and the accessor goes away
+            const app = a();
             const f = new FormData(e.currentTarget);
             const env: Record<string, string> = {};
             for (const fld of app.env ?? []) env[fld.key] = String(f.get(`env.${fld.key}`) ?? "");
             const body = { catalog: app.catalog, id: app.id, app: String(f.get("app")), site: String(f.get("site")), policy: String(f.get("policy")), set: env };
-            props.onClose();
-            const r = await runCmd(`Installed ${app.name}`, "/api/store/install", body);
-            if (r.ok) props.onDone();
+            setName(body.app);
+            await run("/api/store/install", body, props.poll, guard(setPhaseNow), guard(setOutNow));
           }}>
             <Show when={a().official} fallback={
               <div class="note note-warn"><span>From the community catalog <strong>{a().catalogName}</strong>, not the official one. nook doesn't review it, so install it only if you trust whoever runs that catalog.</span></div>
@@ -338,6 +418,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
               )}
             </For>
           </form>
+          </Show>
         )}
       </Show>
     </Sheet>

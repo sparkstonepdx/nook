@@ -82,6 +82,15 @@ func settings() (repo, token, notify string) {
 var client = &http.Client{Timeout: 5 * time.Minute}
 
 func get(url, token, accept string) ([]byte, error) {
+	var b bytes.Buffer
+	if err := getTo(url, token, accept, &b, 200<<20, nil); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
+
+// getTo streams the body into w, refusing anything over max bytes.
+func getTo(url, token, accept string, w io.Writer, max int64, size func(int64)) error {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", accept)
 	req.Header.Set("User-Agent", "nook-updater")
@@ -90,16 +99,23 @@ func get(url, token, accept string) ([]byte, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
-		return nil, errors.New("not found (private repo? put a read-only GITHUB_TOKEN in " + config.UpdateEnv + ")")
+		return errors.New("not found (private repo? put a read-only GITHUB_TOKEN in " + config.UpdateEnv + ")")
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("GitHub returned %s", resp.Status)
+		return fmt.Errorf("GitHub returned %s", resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, 200<<20))
+	if size != nil && resp.ContentLength > 0 {
+		size(resp.ContentLength)
+	}
+	n, err := io.Copy(w, io.LimitReader(resp.Body, max+1))
+	if err == nil && n > max {
+		err = fmt.Errorf("download over %d MB", max>>20)
+	}
+	return err
 }
 
 func latest() (*release, string, error) {

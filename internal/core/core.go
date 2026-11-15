@@ -114,6 +114,30 @@ func (u *AppUser) AsApp(max int64, args ...string) ([]byte, error) {
 	return data, nil
 }
 
+// AsAppStream runs nook as the app's user and hands its output to read as it comes, so nothing big is held in
+// memory. If read stops early the rest is drained, so the child never blocks on a full pipe.
+func (u *AppUser) AsAppStream(read func(io.Reader) error, args ...string) error {
+	cmd := exec.Command(config.AppBin, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(u.UID), Gid: uint32(u.GID), Groups: []uint32{}}}
+	cmd.Dir = "/"
+	cmd.Env = []string{"HOME=" + u.Home, "USER=nook-" + u.Name, "PATH=/usr/local/bin:/usr/bin:/bin"}
+	errb := &limited{&bytes.Buffer{}, 64 << 10}
+	cmd.Stderr = errb
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	rerr := read(out)
+	io.Copy(io.Discard, out)
+	if werr := cmd.Wait(); werr != nil {
+		return fmt.Errorf("%v: %s", werr, strings.TrimSpace(errb.b.String()))
+	}
+	return rerr
+}
+
 // Lock serializes everything that edits app state (the same lock the old scripts used).
 func Lock() (func(), error) {
 	os.MkdirAll(filepath.Dir(config.LockFile), 0o755)

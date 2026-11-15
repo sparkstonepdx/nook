@@ -4,8 +4,8 @@
 package precompress
 
 import (
-	"bytes"
 	"compress/gzip"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -55,29 +55,48 @@ func Dir(root string) (int, error) {
 	})
 	n := 0
 	for _, p := range files {
-		b, err := os.ReadFile(p)
+		wrote, err := sidecar(p)
 		if err != nil {
 			keep(err)
-			continue
 		}
-		if len(b) < MinSize {
-			continue
+		if wrote {
+			n++
 		}
-		var buf bytes.Buffer
-		w, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-		w.Write(b)
-		if err := w.Close(); err != nil {
-			keep(err)
-			continue
-		}
-		if buf.Len() > len(b)*9/10 {
-			continue
-		}
-		if err := os.WriteFile(p+".gz", buf.Bytes(), 0o644); err != nil {
-			keep(err)
-			continue
-		}
-		n++
 	}
 	return n, first
+}
+
+// sidecar gzips p into p.gz, streaming file to file, and keeps it only if it saves at least a tenth.
+func sidecar(p string) (bool, error) {
+	in, err := os.Open(p)
+	if err != nil {
+		return false, err
+	}
+	defer in.Close()
+	fi, err := in.Stat()
+	if err != nil || fi.Size() < MinSize {
+		return false, err
+	}
+	out, err := os.CreateTemp(filepath.Dir(p), ".gz-*")
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(out.Name()) // a no-op once renamed
+	w, _ := gzip.NewWriterLevel(out, gzip.BestCompression)
+	_, err = io.Copy(w, in)
+	if cerr := w.Close(); err == nil {
+		err = cerr
+	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return false, err
+	}
+	gz, err := os.Stat(out.Name())
+	if err != nil || gz.Size() > fi.Size()*9/10 {
+		return false, err
+	}
+	os.Chmod(out.Name(), 0o644)
+	return true, os.Rename(out.Name(), p+".gz")
 }

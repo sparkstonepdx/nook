@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -448,13 +449,12 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 			return nil
 		}
 	}
-	data, err := u.AsApp(h.S.SiteMaxBytes+(64<<20), "internal-pack", filepath.Join(u.Home, "sites", site), strconv.FormatInt(h.S.SiteMaxBytes, 10))
-	if err != nil {
-		return fmt.Errorf("couldn't copy the site (%v); kept the previous copy", err)
-	}
+	// streamed: the app's user packs the site, root unpacks it as it arrives, and only a tar block is in memory
 	tmp := filepath.Join(config.WWWDir, app, ".new-"+site)
 	os.RemoveAll(tmp)
-	if err := tarx.Extract(bytes.NewReader(data), tmp, h.S.SiteMaxBytes); err != nil {
+	err := u.AsAppStream(func(r io.Reader) error { return tarx.Extract(r, tmp, h.S.SiteMaxBytes) },
+		"internal-pack", filepath.Join(u.Home, "sites", site), strconv.FormatInt(h.S.SiteMaxBytes, 10))
+	if err != nil {
 		os.RemoveAll(tmp)
 		return fmt.Errorf("couldn't copy the site (%v); kept the previous copy", err)
 	}

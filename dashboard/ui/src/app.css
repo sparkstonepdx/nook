@@ -218,6 +218,19 @@ img.app-coin { background: var(--surface-2, transparent); }
 .token-steps ol { margin: 0; padding-inline-start: 1.25rem; display: grid; gap: var(--space-2xs); }
 .token-steps .btn { justify-self: start; }
 
+/* store install and update progress (storejobs.tsx) */
+.job-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm); }
+.job-step { display: grid; grid-template-columns: 1.5rem 1fr; gap: var(--space-sm); align-items: start; }
+.job-text { display: grid; gap: var(--space-xs); min-width: 0; }
+.job-mark { width: 1.5rem; height: 1.5rem; border-radius: 999px; display: grid; place-items: center; font-size: var(--text-sm); font-weight: 700; border: var(--border-width) solid var(--line); color: var(--muted); }
+.job-todo { color: var(--muted); }
+.job-done .job-mark { background: var(--accent-text); border-color: var(--accent-text); color: var(--surface); }
+.job-now .job-mark { border: 2px solid var(--accent-text); border-inline-end-color: transparent; animation: job-spin 0.9s linear infinite; }
+.job-now .job-text > span:first-child { font-weight: 600; }
+.job-failed .job-mark { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+@keyframes job-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .job-now .job-mark { animation: none; border-inline-end-color: var(--accent-text); } }
+
 /* nested wildcards: full-width lines under their parent's row */
 .cert-item { display: block; }
 .nested-certs { list-style: none; margin: 0; padding: 0 var(--space-md) var(--space-sm) calc(var(--space-md) + var(--space-md)); display: grid; gap: var(--space-2xs); }
