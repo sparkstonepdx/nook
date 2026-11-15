@@ -240,7 +240,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		if UpdateHooks.Check == nil {
 			return data(nil, errors.New("updates aren't available"))
 		}
-		return data(UpdateHooks.Check())
+		st, err := UpdateHooks.Check()
+		if err != nil {
+			return data(nil, err)
+		}
+		return data(withStoreUpdates(st))
 	case "updateStatus":
 		if UpdateHooks.Status == nil {
 			return data(nil, errors.New("updates aren't available"))
@@ -362,4 +366,29 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	}
 	_ = h
 	return rpc.Response{Error: "unknown operation", Status: 404}
+}
+
+// withStoreUpdates adds the store apps with a newer version to an update check's answer, after fetching every
+// catalog fresh, so one "Check for updates" covers nook and the apps it installed.
+func withStoreUpdates(st any) (map[string]any, error) {
+	b, err := json.Marshal(st)
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]any{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	v := StoreOverview(true)
+	apps := []map[string]string{}
+	for _, r := range v.Installed {
+		if r.Available {
+			apps = append(apps, map[string]string{"app": r.App, "name": r.Name, "version": r.Version, "latest": r.Latest})
+		}
+	}
+	m["apps"] = apps
+	if v.Error != "" {
+		m["storeError"] = v.Error
+	}
+	return m, nil
 }

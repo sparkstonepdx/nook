@@ -7,6 +7,8 @@ import { applyUpdate, updateReady } from "./update";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 
 type UpdateStatus = { current: string; latest: string; available: boolean; url: string; notes: string; checkedAt: string; error?: string };
+/** A check's answer: nook's own status, plus the store apps with a newer version (the catalogs are fetched fresh for it). */
+type CheckResult = UpdateStatus & { apps?: { app: string; name: string; version: string; latest: string }[]; storeError?: string };
 
 // Updating, in one place: the banner and the footer both open the update sheet.
 const [updateOpen, setUpdateOpen] = createSignal(false);
@@ -121,14 +123,21 @@ export function UpdateBanner(props: { s: () => UpdateStatus | null | undefined }
 // The version this server runs, when it last looked for a release, and a way to look now.
 export function UpdateFooter(props: { s: () => UpdateStatus | null | undefined; mutate: (v: UpdateStatus | null) => void }) {
   const [checking, setChecking] = createSignal(false);
+  const navigate = useNavigate();
   const check = async () => {
     setChecking(true);
     try {
-      const r = await api<UpdateStatus>("/api/update/check", {});
+      const { apps = [], storeError, ...r } = await api<CheckResult>("/api/update/check", {});
       props.mutate(r);
       if (r.error) say("Couldn't check for updates", { kind: "error", detail: r.error });
       else if (r.available) setUpdateOpen(true); // found one: go straight to installing it
-      else say("nook is up to date", { kind: "success" });
+      else if (apps.length) say(apps.length === 1 ? `${apps[0].name} ${apps[0].latest} is out` : `${apps.length} store apps have updates`, {
+        kind: "warning",
+        detail: `nook is up to date. ${apps.map((a) => `${a.name} ${a.version} → ${a.latest}`).join(", ")}.`,
+        action: { label: "Open Store", run: () => navigate("/store") },
+      });
+      else if (storeError) say("nook is up to date", { kind: "warning", detail: `Couldn't check the Store: ${storeError}` });
+      else say("nook and its store apps are up to date", { kind: "success" });
     } catch (e) { say("Couldn't check for updates", { kind: "error", detail: (e as Error).message }); }
     setChecking(false);
   };
