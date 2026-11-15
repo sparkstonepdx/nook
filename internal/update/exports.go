@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -27,6 +28,18 @@ func Download(url string) ([]byte, error) {
 		token = ""
 	}
 	return get(url, token, "application/octet-stream")
+}
+
+// DownloadTo streams url into w, up to max bytes, with Download's rules.
+func DownloadTo(url string, w io.Writer, max int64) error {
+	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, apiBase()) {
+		return fmt.Errorf("refusing a non-https download: %s", url)
+	}
+	_, token, _ := settings()
+	if !strings.HasPrefix(url, "https://api.github.com/") {
+		token = ""
+	}
+	return getTo(url, token, "application/octet-stream", w, max)
 }
 
 // ReleaseDownloadBase is where the repo's release assets are served (overridable for tests with UPDATE_API).

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -46,16 +47,16 @@ func tgz(t *testing.T, files map[string]string) []byte {
 
 func TestSitePackage(t *testing.T) {
 	art := tgz(t, map[string]string{"pkg-1.0/README": "x", "pkg-1.0/bin/thing": "ELF", "../../etc/passwd": "evil"})
-	bin, err := extractBinary(art, "tar.gz", "thing")
+	bin, err := extractBytes(t, art, "tar.gz", "thing")
 	if err != nil || string(bin) != "ELF" {
 		t.Fatalf("extract: %q %v", bin, err)
 	}
-	if _, err := extractBinary(art, "tar.gz", "missing"); err == nil {
+	if _, err := extractBytes(t, art, "tar.gz", "missing"); err == nil {
 		t.Fatal("missing binary not reported")
 	}
 	a := CatalogApp{ID: "thing", Name: "Thing", Version: "v1.0.0", Binary: "thing", Kind: "service", Needs: []string{"postgres"},
 		Files: map[string]string{"run": "#!/bin/sh\nexec ./thing --port $PORT\n"}}
-	pkg, err := buildSitePackage(a, bin)
+	pkg, err := packageBytes(t, a, bin)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,14 +116,14 @@ func TestExtractZip(t *testing.T) {
 		w.Write([]byte(body))
 	}
 	zw.Close()
-	bin, err := extractBinary(buf.Bytes(), "zip", "pocketbase")
+	bin, err := extractBytes(t, buf.Bytes(), "zip", "pocketbase")
 	if err != nil || string(bin) != "\x7fELF binary" {
 		t.Fatalf("got %q %v", bin, err)
 	}
-	if _, err := extractBinary(buf.Bytes(), "zip", "missing"); err == nil {
+	if _, err := extractBytes(t, buf.Bytes(), "zip", "missing"); err == nil {
 		t.Fatal("found a file that isn't there")
 	}
-	if b, _ := extractBinary(buf.Bytes(), "zip", "passwd"); string(b) == "nope" {
+	if b, _ := extractBytes(t, buf.Bytes(), "zip", "passwd"); string(b) == "nope" {
 		t.Log("a path's base name matches, but nothing is ever written to that path") // the binary is only ever read into memory
 	}
 }
@@ -163,7 +164,7 @@ func TestCatalogImages(t *testing.T) {
 func TestCatalogTokenAuth(t *testing.T) {
 	a := CatalogApp{ID: "push", Name: "push", Version: "v0.1.0", Binary: "push", Auth: "nook-token", Open: []string{"/v1/health", "/v1/send/*"},
 		Artifacts: map[string]Artifact{}}
-	pkg, err := buildSitePackage(a, []byte("ELF"))
+	pkg, err := packageBytes(t, a, []byte("ELF"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,4 +214,31 @@ func TestBindRules(t *testing.T) {
 	if strings.Contains(got, "20000-29999") || strings.Contains(got, ":1-") {
 		t.Errorf("listen any must keep out of nook's app ports and privileged ones: %q", got)
 	}
+}
+
+// extractBytes runs extractBinary on an artifact held in memory, through temp files as pkgFor does.
+func extractBytes(t *testing.T, art []byte, format, name string) ([]byte, error) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "art")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.Write(art)
+	var out bytes.Buffer
+	err = extractBinary(f, format, name, &out)
+	return out.Bytes(), err
+}
+
+func packageBytes(t *testing.T, a CatalogApp, bin []byte) ([]byte, error) {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	f.Write(bin)
+	var out bytes.Buffer
+	err = buildSitePackage(a, f, &out)
+	return out.Bytes(), err
 }

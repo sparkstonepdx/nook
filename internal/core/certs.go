@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -389,12 +388,12 @@ func wildcardStatus(domain string, limit time.Time) (status, detail, expires, re
 	if limit.After(time.Now()) {
 		return "limited", "Let's Encrypt's weekly limit for this domain is used up. Hosts that don't have a certificate yet wait for the wildcard, so it gets the first one.", "", limit.UTC().Format(time.RFC3339)
 	}
-	out, _ := exec.Command("journalctl", "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager").Output()
-	last := ""
-	for _, l := range strings.Split(string(out), "\n") {
-		if strings.Contains(l, "*."+domain) && strings.Contains(strings.ToLower(l), "error") {
-			last = l
-		}
+	out, _ := journalLines(func(l string) bool {
+		return strings.Contains(l, "*."+domain) && strings.Contains(strings.ToLower(l), "error")
+	}, "-u", "caddy", "--since", "-6h", "-o", "cat", "--no-pager")
+	last := out
+	if i := strings.LastIndexByte(out, '\n'); i >= 0 {
+		last = out[i+1:]
 	}
 	if last != "" {
 		var e struct {
