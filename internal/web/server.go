@@ -210,7 +210,7 @@ func (s *Server) routes() []route {
 			if params != nil {
 				req.Params = params(c)
 			}
-			if op == "envApply" || op == "bind" || op == "storeInstall" {
+			if op == "envApply" || op == "bind" || op == "storeInstall" || op == "backupSetup" {
 				req.Set, req.Unset = map[string]string{}, []string{}
 				if m, ok := c.body["set"].(map[string]any); ok {
 					for k, v := range m {
@@ -326,6 +326,12 @@ func (s *Server) routes() []route {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveIcon(w, r, name) }), nil
 	})
 	add("GET", "/api/store/jobs", false, helper("storeJobs", nil, false))
+	add("GET", "/api/backup", false, helper("backupStatus", nil, false))
+	add("POST", "/api/backup/setup", false, helper("backupSetup", p("repo", "key", "time", "keep"), false))
+	add("POST", "/api/backup/run", false, helper("backupRun", nil, false))
+	add("GET", "/api/backup/snapshots", false, helper("backupSnapshots", p("app", "from"), false))
+	add("POST", "/api/apps/:app/restore", false, helper("backupRestore", p("app", "snapshot"), true))
+	add("POST", "/api/apps/:app/backup-skip", false, helper("backupSkip", p("app", "skip"), true))
 	add("POST", "/api/store/install", false, helper("storeInstall", p("catalog", "id", "app", "site", "policy"), true))
 	add("POST", "/api/store/catalogs", false, helper("catalogAdd", p("source"), false))
 	add("POST", "/api/store/catalogs/:id/remove", false, helper("catalogRemove", p("id"), false))

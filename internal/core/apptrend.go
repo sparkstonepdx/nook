@@ -271,5 +271,8 @@ func sizeText(b float64) string {
 	if b >= 1<<30 {
 		return fmt.Sprintf("%.1f GB", b/(1<<30))
 	}
+	if b < 1<<20 {
+		return fmt.Sprintf("%d KB", int(math.Round(b/1024)))
+	}
 	return fmt.Sprintf("%d MB", int(math.Round(b/(1<<20))))
 }

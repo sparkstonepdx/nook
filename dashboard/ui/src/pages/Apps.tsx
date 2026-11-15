@@ -6,6 +6,7 @@ import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
 import { AppCharts, refreshTrends, sizeText, trendFor } from "../appcharts";
+import { AppBackupRow } from "../backups";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
@@ -278,6 +279,7 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             }} />
             <span><span>Nook login</span><small>{a().loginApp ? "This app asks for it itself: its sites need a nook login, or a deploy token for scripts. Admins and users given this app get in." : "Every site of this app, previews too, asks for a nook login first. Admins and users given this app get in; deploy tokens still work for scripts."}</small></span>
           </label>
+          <AppBackupRow app={a().name} after={props.after} />
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>
             <div class="field-row">

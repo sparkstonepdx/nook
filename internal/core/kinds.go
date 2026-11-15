@@ -34,6 +34,7 @@ type Manifest struct {
 	Auth     string                 `json:"auth,omitempty"`     // web: "nook-token" lets in only requests with a deploy token from this server; "nook-login" also lets in dashboard users allowed on the app
 	Open     []string               `json:"open,omitempty"`     // with auth: paths anyone may reach without a token, like "/v1/subscribe/*"
 	Listen   string                 `json:"listen,omitempty"`   // "any": may listen on unprivileged ports outside nook's app range too (CI runners)
+	Backup   *BackupSpec            `json:"backup,omitempty"`   // what a backup runs first, and leaves out (backup.go)
 	calendar string
 }
 

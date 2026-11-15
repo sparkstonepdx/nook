@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -27,6 +28,7 @@ var UpdateHooks struct {
 	Status func() (any, error)
 	Check  func() (any, error) // ask GitHub now
 	Now    func(out *bytes.Buffer) error
+	Notify func(title, msg string) error // a push to the admin's phone (update.Notify)
 }
 
 // ServeHelper runs the root helper: a unix socket only root and the dashboard's user may use.
@@ -290,6 +292,34 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(Headroom(p["range"]), nil)
 	case "setLimits":
 		return command("nook-admin limits "+p["app"], func(h *Host) error { return h.SetLimits(p["app"], p["memory"], p["cpu"], p["tasks"]) })
+	case "backupStatus":
+		return data(GetBackupStatus(), nil)
+	case "backupSetup":
+		var out bytes.Buffer
+		pw, err := New(&out).SetBackup(BackupSetup{Repo: p["repo"], KeyID: p["key"], Secret: req.Set["secret"], Time: p["time"], Keep: p["keep"], Password: req.Set["password"]})
+		return data(map[string]any{"password": pw, "out": out.String()}, err)
+	case "backupRun":
+		if !LoadBackupConfig().Configured() {
+			return data(nil, errors.New("backups aren't set up yet"))
+		}
+		if backupLocked() {
+			return data(nil, errors.New("a backup is already running"))
+		}
+		// it runs on after this answers; the dashboard follows it in the status
+		go func() {
+			if err := New(io.Discard).BackupRun("by hand"); err != nil {
+				log.Printf("backup: %v", err)
+			}
+		}()
+		return data(map[string]any{"started": true}, nil)
+	case "backupSnapshots":
+		s, err := BackupSnapshots(p["app"], p["from"])
+		return data(map[string]any{"snapshots": s}, err)
+	case "backupRestore":
+		return command("nook-admin backup restore "+p["app"]+" "+cmpOr(p["snapshot"], "latest"), func(h *Host) error { return h.BackupRestoreApp(p["app"], p["snapshot"]) })
+	case "backupSkip":
+		on := p["skip"] == "true"
+		return command("nook-admin backup skip "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetBackupSkip(p["app"], on) })
 	case "storeJobs":
 		return data(map[string]any{"jobs": StoreJobs()}, nil)
 	case "storeInstall":
