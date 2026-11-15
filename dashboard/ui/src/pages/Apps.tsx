@@ -3,6 +3,8 @@ import { A } from "@solidjs/router";
 import { api, runCmd, setResult, type CmdResult } from "../api";
 import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../components";
 import Server from "./Server";
+import Launcher from "./Launcher";
+import { directory, setListed } from "../directory";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][] };
@@ -96,6 +98,7 @@ export default function Apps() {
         <button class="btn" onClick={() => setCreating(true)}>New app</button>
       </PageHead>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
+      <Launcher />
 
       <Show when={(data()?.apps.length ?? 0) > 1}>
         <div class="apps-tools"><button class="btn btn-ghost btn-sm" onClick={() => setAll(!allOpen())}>{allOpen() ? "Collapse all" : "Expand all"}</button></div>
@@ -221,6 +224,17 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
               <Show when={mb(s().MemoryCurrent)}><dt>Memory</dt><dd>{mb(s().MemoryCurrent)}</dd></Show>
               <dt>Folder</dt><dd class="mono">sites/{s().name}</dd>
             </dl>
+            <Show when={s().host && s().live}>
+              {(() => {
+                const card = () => directory()?.find((c) => c.host === s().host);
+                return (
+                  <label class="switch-row">
+                    <input type="checkbox" role="switch" checked={!!card()?.listed} disabled={!card()} onChange={(e) => setListed(s().host, e.currentTarget.checked)} />
+                    <span><span>List in directory</span><small>{card()?.installable === false ? "Shown with its page title and icon: it has no web manifest." : "Anyone can see it in the public directory, with the name and icon from its manifest."}</small></span>
+                  </label>
+                );
+              })()}
+            </Show>
             <div class="actions-grid">
               <Show when={s().host && s().live}><a class="btn" href={`https://${s().host}`} target="_blank" rel="noopener">Open site</a></Show>
               <Show when={s().kind === "cron"}><button class="btn btn-secondary" onClick={() => op("restart", `Started ${s().name}`)}>Run now</button></Show>

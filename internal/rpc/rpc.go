@@ -42,6 +42,7 @@ var Ops = map[string]bool{
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
 	"services": true, "subduction": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "ciEnv": true,
 	"store": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "headroom": true, "setLimits": true, "catalogRemove": true, "storeImage": true, "certs": true, "certSet": true, "certRemove": true, "caddyPlugin": true, "caddyUpgrade": true,
+	"directory": true, "directorySet": true,
 }
 
 const maxMessage = 4 << 20

@@ -267,6 +267,12 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(map[string]any{"type": t, "data": b}, err)
 	case "certs":
 		return data(Certs(), nil)
+	case "directory":
+		return data(Directory(), nil)
+	case "directorySet":
+		on := p["listed"] == "true"
+		verb := map[bool]string{true: "add", false: "rm"}[on]
+		return command("nook-admin directory "+verb+" "+p["host"], func(h *Host) error { return h.SetListed(p["host"], on) })
 	case "certSet":
 		return command("nook-admin certs set "+p["domain"]+" --provider "+p["provider"], func(h *Host) error { return h.SetWildcard(p["domain"], p["provider"], p["token"]) })
 	case "certRemove":

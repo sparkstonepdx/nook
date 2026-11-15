@@ -97,3 +97,11 @@ func TestHeadroomSeries(t *testing.T) {
 		t.Fatalf("%d %d %v", len(sr), len(sr[0].Points), sr[0].Points[:1])
 	}
 }
+
+func TestPreviewHosts(t *testing.T) {
+	for h, want := range map[string]bool{"blog-pr-12.example.com": true, "pr-3.client.com": true, "blog.example.com": false, "april.example.com": false, "pr.example.com": false} {
+		if previewRE.MatchString(h) != want {
+			t.Errorf("%s: want preview %v", h, want)
+		}
+	}
+}

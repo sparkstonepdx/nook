@@ -39,6 +39,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin certs [list] | set DOMAIN [--provider cloudflare] (token on stdin) | rm DOMAIN
   nook-admin certs plugin PROVIDER | upgrade-caddy   add a DNS plugin to Caddy (and hold it) / upgrade Caddy keeping plugins
   nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
+  nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
   nook-admin grant add|rm APP domain|sub|host NAME
@@ -194,6 +195,23 @@ func main() {
 				trend += ", full " + time.Unix(a.FullAt, 0).Format("Mon Jan 2")
 			}
 			fmt.Printf("  %-16s %6d MB  %-8s %5.1f%% CPU  %s\n", a.App, a.Mem>>20, limit, a.CPU, trend)
+		}
+	case "directory":
+		needRoot()
+		switch {
+		case len(args) == 2 && (args[0] == "add" || args[0] == "rm"):
+			die(h.SetListed(args[1], args[0] == "add"))
+		case len(args) == 0:
+			for _, e := range core.Directory() {
+				mark := " "
+				if e.Listed {
+					mark = "*"
+				}
+				fmt.Printf("%s %-40s %s\n", mark, e.Host, e.App)
+			}
+			fmt.Println("(* listed in the directory)")
+		default:
+			die(fmt.Errorf("usage: nook-admin directory [add|rm HOST]"))
 		}
 	case "instructions":
 		needRoot()
