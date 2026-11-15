@@ -7,6 +7,8 @@ package web
 //	    204 + X-Nook-App    a deploy token, as with {"auth": "nook-token"}
 //	    302 to https://D/sso  a browser opening a page: log in at the dashboard
 //	    401 / 403           anything else
+//	Every 204 carries both headers, the one that doesn't apply empty: Caddy 2.6's copy_headers passes the
+//	placeholder's own text ("{http.reverse_proxy.header.X-Nook-User}") for a header the answer lacks.
 //	GET https://D/sso?...   on the dashboard: with a session that may use the app, a one-time ticket back to
 //	                        the site; without one, the login page first
 //	GET https://H/.nook/callback?t=TICKET&path=P   trades the ticket for the site's own cookie
@@ -153,6 +155,9 @@ func (srv *Server) loginCheck(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 400, "bad login check")
 		return
 	}
+	// both headers on every answer (see above); tokenCheck fills in X-Nook-App
+	w.Header()["X-Nook-App"] = []string{""}
+	w.Header()["X-Nook-User"] = []string{""}
 	if k := r.Header.Get("X-Nook-Card"); k != "" && subtle.ConstantTimeCompare([]byte(k), []byte(srv.Store.cardKey())) == 1 {
 		w.WriteHeader(204)
 		return
