@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -84,8 +85,18 @@ var siteClient = &http.Client{
 
 var siteAddr = "127.0.0.1:443"
 
+// cardKey gets nook-web's reads past the login check of sites behind nook's login (see login.go).
+var cardKey atomic.Value
+
 func get(u string, max int64) ([]byte, string, error) {
-	resp, err := siteClient.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if k, _ := cardKey.Load().(string); k != "" {
+		req.Header.Set("X-Nook-Card", k)
+	}
+	resp, err := siteClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -322,6 +333,7 @@ func saveIcon(u string) string {
 // directory is every live site with its card, from the helper's list and the cache (read again after an hour, or
 // when fresh is set). Several sites are read at once.
 func (s *Server) directory(fresh bool) ([]card, error) {
+	cardKey.Store(s.Store.cardKey())
 	resp, err := rpc.Call(s.Socket, rpc.Request{Op: "directory", By: "web"}, 10*time.Second)
 	if err != nil {
 		return nil, err

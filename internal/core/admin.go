@@ -124,7 +124,11 @@ func (h *Host) SetDashboardHost(host string) error {
 		}
 	}
 	config.Set(config.DashboardEnv, "DASHBOARD_HOST", host)
-	return h.AdminCaddy()
+	if err := h.AdminCaddy(); err != nil {
+		return err
+	}
+	h.syncLoginApps() // their sites send people to log in at this address
+	return nil
 }
 
 func (h *Host) SetIPAccess(on bool) error {
@@ -221,6 +225,8 @@ type AppInfo struct {
 	Sites     []SiteInfo `json:"sites"`
 	Redirects []string   `json:"redirects"`
 	Grants    [][]string `json:"grants"`
+	Login     bool       `json:"login"`    // sites behind nook's login
+	LoginApp  bool       `json:"loginApp"` // a site's nook.json asks for the login itself ("auth": "nook-login")
 }
 
 func mb(v string) string {
@@ -248,7 +254,7 @@ func (h *Host) Overview() map[string]any {
 		if watcher == "" {
 			watcher = "?"
 		}
-		info := AppInfo{Name: a, Memory: mb(slice["MemoryCurrent"]), MemoryMax: mb(slice["MemoryMax"]), CPU: slice["CPUQuotaPerSecUSec"], Watcher: watcher, Redirects: red, Sites: []SiteInfo{}, Grants: [][]string{}}
+		info := AppInfo{Name: a, Memory: mb(slice["MemoryCurrent"]), MemoryMax: mb(slice["MemoryMax"]), CPU: slice["CPUQuotaPerSecUSec"], Watcher: watcher, Redirects: red, Sites: []SiteInfo{}, Grants: [][]string{}, Login: AppLogin(a)}
 		if info.Redirects == nil {
 			info.Redirects = []string{}
 		}
@@ -285,6 +291,9 @@ func (h *Host) Overview() map[string]any {
 					p := UnitProps(UnitName(a, s), "ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts")
 					si.Active, si.Sub, si.PID, si.Memory, si.Restarts = p["ActiveState"], p["SubState"], p["MainPID"], p["MemoryCurrent"], p["NRestarts"]
 					si.Health = SiteHealthPath(a, s)
+					if m, err := u.readManifest(s); err == nil && m.Auth == "nook-login" {
+						info.LoginApp = true
+					}
 				}
 				if port := PortOf(a, s); port > 0 {
 					si.Port = strconv.Itoa(port)

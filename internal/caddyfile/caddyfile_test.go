@@ -1,6 +1,9 @@
 package caddyfile
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,5 +96,72 @@ func TestTokenAuthOpenPaths(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestLoginRunning(t *testing.T) {
+	out := Render("x", []Site{{Host: "notes.example.com", Port: 20003, Login: "notes", Dashboard: "admin.example.com"}}, nil, nil)
+	for _, want := range []string{
+		"\thandle /.nook/* {\n\t\treverse_proxy unix//run/nook-web.sock {\n\t\t\theader_up X-Nook-Dash admin.example.com\n\t\t}\n\t}\n",
+		"uri /api/v1/login-check?app=notes&host=notes.example.com&dash=admin.example.com",
+		"copy_headers X-Nook-App X-Nook-User",
+		"\t\t\treverse_proxy 127.0.0.1:20003 {\n\t\t\t\theader_up -X-Nook-Card\n\t\t\t}\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "header_up -Authorization") {
+		t.Errorf("a login-only app keeps its own Authorization headers:\n%s", out)
+	}
+	if i, j := strings.Index(out, "request_header -X-Nook-User"), strings.Index(out, "forward_auth"); i > j {
+		t.Errorf("the client's X-Nook-User must go before the check:\n%s", out)
+	}
+	if live, _ := Hosts(out); len(live) != 1 || live[0] != "notes.example.com" {
+		t.Errorf("Hosts = %v", live)
+	}
+}
+
+func TestLoginStaticWithRules(t *testing.T) {
+	rules, _ := redirects.Parse("/old /new 301\n/app/* /app.html 200\n")
+	out := Render("x", []Site{{Host: "docs.example.com", Root: "/var/lib/nook/www/docs/docs", Login: "docs", Dashboard: "admin.example.com", Rules: rules}}, nil, nil)
+	// the check runs before any rule or file, inside one route
+	check, firstRule := strings.Index(out, "forward_auth"), strings.Index(out, "@nook_r0")
+	if check < 0 || firstRule < 0 || check > firstRule {
+		t.Errorf("the login check must come before the rules:\n%s", out)
+	}
+	if !strings.Contains(out, "\thandle_errors {") {
+		t.Errorf("static sites keep their 404 handling:\n%s", out)
+	}
+}
+
+func TestLoginTokenOpen(t *testing.T) {
+	out := Render("x", []Site{{Host: "push.example.com", Port: 20004, TokenAuth: true, Open: []string{"/v1/health"}, Login: "push", Dashboard: "admin.example.com"}}, nil, nil)
+	open, check := strings.Index(out, "handle @nook_open"), strings.Index(out, "forward_auth")
+	if open < 0 || open > check {
+		t.Errorf("open paths skip the check:\n%s", out)
+	}
+	if strings.Count(out, "header_up -Authorization") != 2 {
+		t.Errorf("token sites drop the token on both paths:\n%s", out)
+	}
+}
+
+// With a real Caddy on PATH (CI doesn't have one), the login blocks must adapt.
+func TestLoginAdapts(t *testing.T) {
+	bin, err := exec.LookPath("caddy")
+	if err != nil {
+		t.Skip("no caddy")
+	}
+	rules, _ := redirects.Parse("/old /new 301\n/app/* /app.html 200\n")
+	out := Render("x", []Site{
+		{Host: "notes.example.com", Port: 20003, Login: "notes", Dashboard: "admin.example.com"},
+		{Host: "docs.example.com", Root: "/tmp", Login: "docs", Dashboard: "admin.example.com", Rules: rules, CORS: true},
+		{Host: "plain.example.com", Root: "/tmp", Login: "docs", Dashboard: "admin.example.com"},
+		{Host: "push.example.com", Port: 20004, TokenAuth: true, Open: []string{"/v1/health"}, Login: "push", Dashboard: "admin.example.com"},
+	}, nil, nil)
+	f := filepath.Join(t.TempDir(), "Caddyfile")
+	os.WriteFile(f, []byte(out), 0o644)
+	if b, err := exec.Command(bin, "adapt", "--config", f, "--adapter", "caddyfile").CombinedOutput(); err != nil {
+		t.Fatalf("caddy adapt: %v\n%s\n%s", err, b, out)
 	}
 }

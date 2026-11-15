@@ -1,5 +1,23 @@
 # nook
 
+## 1.25.0
+
+### Minor Changes
+
+- 3c9e075: Apps can ask for the nook login themselves: `{"auth": "nook-login"}` in a site's `nook.json` or a catalog entry puts it behind the dashboard login (or a deploy token, for scripts), with `"open"` paths still public. The app's login switch shows on and locked. Without a dashboard address the site is token-only, never open. For the Files store app, whose downloads now need a login.
+
+## 1.24.1
+
+### Patch Changes
+
+- 13e34f6: Fix: behind the Nook login, a request with a deploy token (or a directory card read) no longer reaches the app with `X-Nook-User` set to Caddy's placeholder text (`{http.reverse_proxy.header.X-Nook-User}`). nook-web now answers with both `X-Nook-App` and `X-Nook-User`; the one that doesn't apply is empty, so apps should treat empty as absent.
+
+## 1.24.0
+
+### Minor Changes
+
+- ccd5b66: Nook login for apps: an app's new Nook login switch puts all its sites behind the dashboard's login, with deploy tokens still working for scripts. Users can now be invited for only some apps: they get a launcher of those apps' sites instead of the dashboard.
+
 ## 1.23.0
 
 ### Minor Changes

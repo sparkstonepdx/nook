@@ -4,7 +4,7 @@ import { Show, onMount, type ParentProps } from "solid-js";
 import "@sparkstone/css";
 import "./tokens.css";
 import "./app.css";
-import { api, user, setUser } from "./api";
+import { admin, loadSession, user } from "./api";
 import { Nav, Notices, ReloadBanner, ResultSheet, UpdateBanner, UpdateFooter, sayIfUpdated, useUpdate } from "./components";
 import { setupInstall } from "./install";
 import { watchForUpdates } from "./update";
@@ -18,9 +18,10 @@ import Store from "./pages/Store";
 import Users from "./pages/Users";
 import Env from "./pages/Env";
 import Deploy from "./pages/Deploy";
+import MemberHome from "./pages/MemberHome";
 
 function Shell(props: ParentProps) {
-  onMount(() => api<{ user: string | null }>("/api/session").then((s) => setUser(s.user)).catch(() => setUser(null)));
+  onMount(loadSession);
   return <>{props.children}<ResultSheet /><Notices /></>;
 }
 
@@ -29,8 +30,10 @@ function Authed(props: ParentProps) {
   return (
     <Show when={user() !== undefined}>
       <Show when={user()} fallback={<Navigate href={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} />}>
-        <Nav />
-        <Page>{props.children}</Page>
+        <Show when={admin()} fallback={<MemberHome />}>
+          <Nav />
+          <Page>{props.children}</Page>
+        </Show>
       </Show>
     </Show>
   );

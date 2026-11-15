@@ -37,6 +37,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin certs [list] | set DOMAIN [--provider cloudflare] (token on stdin) | rm DOMAIN
   nook-admin certs plugin PROVIDER | upgrade-caddy   add a DNS plugin to Caddy (and hold it) / upgrade Caddy keeping plugins
   nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
+  nook-admin login NAME [on|off]                 put an app's sites behind the dashboard login (or show it)
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
@@ -167,6 +168,9 @@ func main() {
 	case "headroom":
 		needRoot()
 		headroomCmd(args)
+	case "login":
+		needRoot()
+		loginCmd(h, args)
 	case "directory":
 		needRoot()
 		directoryCmd(h, args)

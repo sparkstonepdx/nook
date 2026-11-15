@@ -1,6 +1,6 @@
 import { Show, createResource, createSignal } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { api, setUser } from "../api";
+import { api, loadSession } from "../api";
 import { ErrorAlert, Field, Logo } from "../components";
 
 export default function Invite() {
@@ -15,8 +15,8 @@ export default function Invite() {
     const f = new FormData(e.currentTarget as HTMLFormElement);
     setBusy(true); setError("");
     try {
-      const r = await api<{ user: string }>("/api/invite", { token: token(), user: f.get("user"), password: f.get("password"), password2: f.get("password2") });
-      setUser(r.user); navigate("/", { replace: true });
+      await api<{ user: string }>("/api/invite", { token: token(), user: f.get("user"), password: f.get("password"), password2: f.get("password2") });
+      await loadSession(); navigate("/", { replace: true });
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return (

@@ -195,3 +195,15 @@ func instructionsCmd(args []string) {
 	}
 	fmt.Print(core.Instructions(app, tok, site))
 }
+
+// nook-admin login NAME [on|off]: an app's Nook login switch.
+func loginCmd(h *core.Host, args []string) {
+	switch {
+	case len(args) == 1:
+		fmt.Println(map[bool]string{true: "on", false: "off"}[core.AppLogin(args[0])])
+	case len(args) == 2 && (args[1] == "on" || args[1] == "off"):
+		die(h.SetLogin(args[0], args[1] == "on"))
+	default:
+		die(fmt.Errorf("usage: nook-admin login NAME [on|off]"))
+	}
+}

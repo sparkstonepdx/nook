@@ -31,7 +31,7 @@ type Manifest struct {
 	Provides map[string]ProvideSpec `json:"provides,omitempty"` // services: interfaces it implements
 	Health   string                 `json:"health,omitempty"`   // web and service: a path that answers under 400 when it's working
 	CORS     bool                   `json:"cors,omitempty"`     // static: any origin may read its files (Access-Control-Allow-Origin: *)
-	Auth     string                 `json:"auth,omitempty"`     // web: "nook-token" lets in only requests with a deploy token from this server
+	Auth     string                 `json:"auth,omitempty"`     // web: "nook-token" lets in only requests with a deploy token from this server; "nook-login" also lets in dashboard users allowed on the app
 	Open     []string               `json:"open,omitempty"`     // with auth: paths anyone may reach without a token, like "/v1/subscribe/*"
 	Listen   string                 `json:"listen,omitempty"`   // "any": may listen on unprivileged ports outside nook's app range too (CI runners)
 	calendar string
@@ -56,14 +56,14 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	if m.Health != "" && !healthPathRE.MatchString(m.Health) {
 		return m, fmt.Errorf("nook.json: health must be a path like /healthz, not %q", m.Health)
 	}
-	if m.Auth != "" && m.Auth != "nook-token" {
-		return m, fmt.Errorf(`nook.json: auth can only be "nook-token", not %q`, m.Auth)
+	if m.Auth != "" && m.Auth != "nook-token" && m.Auth != "nook-login" {
+		return m, fmt.Errorf(`nook.json: auth can only be "nook-token" or "nook-login", not %q`, m.Auth)
 	}
 	if m.Listen != "" && m.Listen != "any" {
 		return m, fmt.Errorf(`nook.json: listen can only be "any", not %q`, m.Listen)
 	}
 	if len(m.Open) > 0 && m.Auth == "" {
-		return m, fmt.Errorf(`nook.json: open lists paths that skip the token check, so it needs "auth": "nook-token"`)
+		return m, fmt.Errorf(`nook.json: open lists paths that skip the token check, so it needs "auth": "nook-token" or "nook-login"`)
 	}
 	if len(m.Open) > 20 {
 		return m, fmt.Errorf("nook.json: at most 20 open paths")

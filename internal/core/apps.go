@@ -198,6 +198,7 @@ func (h *Host) Delete(app, confirm string) error {
 	for _, p := range []string{
 		filepath.Join(config.CaddyAppsDir, app+".caddy"), filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app+".user.env"),
 		filepath.Join(config.SSHKeysDir, "nook-"+app),
+		loginPath(app), // a new app with this name starts open
 	} {
 		os.Remove(p)
 	}
