@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/names"
 	"github.com/sparkstonepdx/nook/internal/scrypt"
 )
 
@@ -39,7 +41,17 @@ type User struct {
 	Gen       int    `json:"gen"`
 	Created   string `json:"created"`
 	InvitedBy string `json:"invitedBy"`
+	// Role is "" (an admin: the whole dashboard, every app) or "member": no dashboard, only the sites of Apps.
+	Role string   `json:"role,omitempty"`
+	Apps []string `json:"apps,omitempty"`
 }
+
+const Member = "member"
+
+func (u User) Admin() bool { return u.Role != Member }
+
+// CanUse: whether u may open the sites of app when its login switch is on.
+func (u User) CanUse(app string) bool { return u.Admin() || slices.Contains(u.Apps, app) }
 
 // readNoFollow refuses symlinks, so even root reading this folder can't be pointed elsewhere.
 func readNoFollow(path string) ([]byte, error) {
@@ -115,7 +127,7 @@ func (s *Store) SetPassword(name, pw, invitedBy string) User {
 	prev, existed := m[name]
 	salt := make([]byte, 16)
 	rand.Read(salt)
-	u := User{Salt: hex.EncodeToString(salt), Gen: prev.Gen + 1, Created: prev.Created, InvitedBy: prev.InvitedBy}
+	u := User{Salt: hex.EncodeToString(salt), Gen: prev.Gen + 1, Created: prev.Created, InvitedBy: prev.InvitedBy, Role: prev.Role, Apps: prev.Apps}
 	u.Hash = hashPassword(pw, u.Salt)
 	if !existed {
 		u.Created, u.InvitedBy = time.Now().UTC().Format(time.RFC3339), invitedBy
@@ -123,6 +135,35 @@ func (s *Store) SetPassword(name, pw, invitedBy string) User {
 	m[name] = u
 	s.saveUsers(m)
 	return u
+}
+
+// SetAccess makes name an admin (role "") or a member who may use apps.
+func (s *Store) SetAccess(name, role string, apps []string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.users()
+	u, ok := m[name]
+	if !ok {
+		return false
+	}
+	u.Role, u.Apps = role, nil
+	if role == Member {
+		u.Apps = cleanApps(apps)
+	}
+	m[name] = u
+	s.saveUsers(m)
+	return true
+}
+
+func cleanApps(apps []string) []string {
+	out := []string{}
+	for _, a := range apps {
+		if names.App(a) && !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func (s *Store) Remove(name string) bool {
@@ -179,17 +220,26 @@ func (s *Store) SessionUser(cookie string) string {
 }
 
 // Invites are signed, so `nook-admin invite` (root) can mint one without writing to this folder.
-// Format: base64url(expiresUnix|by|nonce).mac; used nonces are remembered until they expire.
-func (s *Store) MakeInvite(by string) string {
+// Format: base64url(expiresUnix|by|nonce[|role|apps]).mac; used nonces are remembered until they expire.
+// Without a role it makes an admin; a member invite carries the apps, comma-separated.
+func (s *Store) MakeInvite(by string) string { return s.MakeRoleInvite(by, "", nil) }
+
+func (s *Store) MakeRoleInvite(by, role string, apps []string) string {
 	nonce := make([]byte, 12)
 	rand.Read(nonce)
-	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d|%s|%s", time.Now().Add(inviteHours*time.Hour).Unix(), by, hex.EncodeToString(nonce))))
+	raw := fmt.Sprintf("%d|%s|%s", time.Now().Add(inviteHours*time.Hour).Unix(), by, hex.EncodeToString(nonce))
+	if role == Member {
+		raw += "|" + Member + "|" + strings.Join(cleanApps(apps), ",")
+	}
+	payload := base64.RawURLEncoding.EncodeToString([]byte(raw))
 	return payload + "." + s.mac("invite:"+payload)
 }
 
 type invite struct {
 	By, Nonce string
 	Expires   int64
+	Role      string
+	Apps      []string
 }
 
 func (s *Store) checkInvite(tok string) (*invite, bool) {
@@ -201,8 +251,8 @@ func (s *Store) checkInvite(tok string) (*invite, bool) {
 	if err != nil {
 		return nil, false
 	}
-	f := strings.SplitN(string(raw), "|", 3)
-	if len(f) != 3 {
+	f := strings.Split(string(raw), "|")
+	if len(f) != 3 && len(f) != 5 {
 		return nil, false
 	}
 	exp, _ := strconv.ParseInt(f[0], 10, 64)
@@ -213,7 +263,11 @@ func (s *Store) checkInvite(tok string) (*invite, bool) {
 	if _, ok := used[f[2]]; ok {
 		return nil, false
 	}
-	return &invite{By: f[1], Nonce: f[2], Expires: exp}, true
+	inv := &invite{By: f[1], Nonce: f[2], Expires: exp}
+	if len(f) == 5 && f[3] == Member {
+		inv.Role, inv.Apps = Member, cleanApps(strings.Split(f[4], ","))
+	}
+	return inv, true
 }
 
 func (s *Store) usedInvites() map[string]int64 {

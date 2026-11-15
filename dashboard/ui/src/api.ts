@@ -8,6 +8,15 @@ export class ApiError extends Error {
 
 // undefined = not checked yet, null = logged out
 export const [user, setUser] = createSignal<string | null | undefined>(undefined);
+// admins get the whole dashboard; members only a launcher of their apps' sites
+export const [admin, setAdmin] = createSignal(false);
+export type Session = { user: string | null; admin?: boolean; apps?: string[] };
+export async function loadSession() {
+  try {
+    const s = await api<Session>("/api/session");
+    setAdmin(!!s.admin); setUser(s.user);
+  } catch { setUser(null); }
+}
 
 export async function api<T = any>(path: string, body?: unknown): Promise<T> {
   const post = body !== undefined;
