@@ -31,6 +31,11 @@ type Site struct {
 	Open []string
 	// Rules are the static site's _redirects, in order.
 	Rules []redirects.Rule
+	// Login, the app's name, puts the site behind nook's own login (the app's login switch on the dashboard):
+	// every request goes past nook-web's login check first, which lets in a dashboard user allowed on the app,
+	// or a deploy token as TokenAuth does. Dashboard is the dashboard's hostname, where people log in.
+	Login     string
+	Dashboard string
 }
 
 const redirectMark = " { # redirect"
@@ -45,7 +50,9 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 		if s.Folder != "" {
 			fmt.Fprintf(&b, "# site %s %s\n", s.Folder, s.Version)
 		}
-		if s.Port > 0 && s.TokenAuth && len(s.Open) > 0 {
+		if s.Login != "" {
+			login(&b, s, tlsLine(s.Host, ownCert))
+		} else if s.Port > 0 && s.TokenAuth && len(s.Open) > 0 {
 			fmt.Fprintf(&b, "%s {\n%s\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:%d {\n\t\t\t\theader_up -Authorization\n\t\t\t}\n\t\t}\n\t}\n\thandle {\n%s\t}\n}\n",
 				s.Host, tlsLine(s.Host, ownCert), strings.Join(s.Open, " "), s.Port, indent(fmt.Sprintf(tokenAuth, TokenCheck, s.Port)))
 		} else if s.Port > 0 && s.TokenAuth {
@@ -102,7 +109,14 @@ func static(b *strings.Builder, s Site, tls string) {
 	if s.CORS {
 		b.WriteString("\theader Access-Control-Allow-Origin *\n")
 	}
-	fmt.Fprintf(b, "\troot * %s\n", s.Root)
+	b.WriteString(staticBody(s))
+	b.WriteString(staticErrors())
+}
+
+// staticBody serves the files. Written in the order Caddy runs them, so it reads the same inside a route.
+func staticBody(s Site) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\troot * %s\n", s.Root)
 	// the rules file is settings, not content
 	b.WriteString("\thandle /_redirects {\n\t\terror 404\n\t}\n")
 	if len(s.Rules) == 0 {
@@ -110,21 +124,58 @@ func static(b *strings.Builder, s Site, tls string) {
 	} else {
 		for i, r := range s.Rules {
 			m := fmt.Sprintf("nook_r%d", i)
-			fmt.Fprintf(b, "\t@%s {\n\t\tpath_regexp %s `%s`\n", m, m, r.Regexp)
+			fmt.Fprintf(&b, "\t@%s {\n\t\tpath_regexp %s `%s`\n", m, m, r.Regexp)
 			if !r.Force {
 				b.WriteString("\t\tnot file\n")
 			}
-			fmt.Fprintf(b, "\t}\n\thandle @%s {\n", m)
+			fmt.Fprintf(&b, "\t}\n\thandle @%s {\n", m)
 			if r.Redirect() {
-				fmt.Fprintf(b, "\t\tredir %s %d\n", r.Target(m), r.Status)
+				fmt.Fprintf(&b, "\t\tredir %s %d\n", r.Target(m), r.Status)
 			} else {
-				fmt.Fprintf(b, "\t\trewrite * %s\n\t\t%s\n", r.Target(m), strings.ReplaceAll(serve, "\n", "\n\t"))
+				fmt.Fprintf(&b, "\t\trewrite * %s\n\t\t%s\n", r.Target(m), strings.ReplaceAll(serve, "\n", "\n\t"))
 			}
 			b.WriteString("\t}\n")
 		}
 		b.WriteString("\thandle {\n\t\ttry_files {path} {path}/ /200.html\n\t\t" + strings.ReplaceAll(serve, "\n", "\n\t") + "\n\t}\n")
 	}
-	fmt.Fprintf(b, "\thandle_errors {\n\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html\n\t\t\tfile_server {\n\t\t\t\tprecompressed gzip\n\t\t\t}\n\t\t}\n\t\thandle {\n\t\t\troot * %s\n\t\t\trewrite * /404.html\n\t\t\tfile_server\n\t\t}\n\t}\n}\n", notfound.Dir)
+	return b.String()
+}
+
+func staticErrors() string {
+	return fmt.Sprintf("\thandle_errors {\n\t\t@own file /404.html\n\t\thandle @own {\n\t\t\trewrite * /404.html\n\t\t\tfile_server {\n\t\t\t\tprecompressed gzip\n\t\t\t}\n\t\t}\n\t\thandle {\n\t\t\troot * %s\n\t\t\trewrite * /404.html\n\t\t\tfile_server\n\t\t}\n\t}\n}\n", notfound.Dir)
+}
+
+// login writes a site behind nook's login. /.nook/* (the login hand-off and log out) goes to nook-web, told the
+// dashboard's address (set here, so a client can't send its own); paths in
+// Open skip the check; everything else runs in one route, in written order: the client's own X-Nook-App and
+// X-Nook-User are dropped, nook-web answers 2xx with whichever applies (or sends the browser to log in), then
+// the site is served. The upstream never sees X-Nook-Card, the key nook-web uses to read sites for their cards.
+func login(b *strings.Builder, s Site, tls string) {
+	fmt.Fprintf(b, "%s {\n%s", s.Host, tls)
+	if s.CORS {
+		b.WriteString("\theader Access-Control-Allow-Origin *\n")
+	}
+	fmt.Fprintf(b, "\thandle /.nook/* {\n\t\treverse_proxy %s {\n\t\t\theader_up X-Nook-Dash %s\n\t\t}\n\t}\n", TokenCheck, s.Dashboard)
+	body := staticBody(s)
+	if s.Port > 0 {
+		body = fmt.Sprintf("\treverse_proxy 127.0.0.1:%d {\n\t\theader_up -X-Nook-Card\n", s.Port)
+		if s.TokenAuth {
+			body += "\t\theader_up -Authorization\n"
+		}
+		body += "\t}\n"
+		if len(s.Open) > 0 {
+			fmt.Fprintf(b, "\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\trequest_header -X-Nook-User\n%s\t\t}\n\t}\n",
+				strings.Join(s.Open, " "), indent(indent(body)))
+		}
+	}
+	fmt.Fprintf(b, "\thandle {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\trequest_header -X-Nook-User\n"+
+		"\t\t\tforward_auth %s {\n\t\t\t\turi /api/v1/login-check?app=%s&host=%s&dash=%s\n\t\t\t\tcopy_headers X-Nook-App X-Nook-User\n\t\t\t}\n%s\t\t}\n\t}\n",
+		TokenCheck, s.Login, s.Host, s.Dashboard, indent(indent(body)))
+	if s.Port > 0 {
+		b.WriteString("}\n")
+	} else {
+		b.WriteString(staticErrors())
+	}
 }
 
 // Hosts returns the hostnames a generated file serves for real, and the ones it only redirects.

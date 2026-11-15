@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { api, setUser } from "../api";
+import { api, loadSession } from "../api";
 import { ErrorAlert, Field, Logo } from "../components";
 
 export default function Login() {
@@ -15,8 +15,10 @@ export default function Login() {
     const f = new FormData(e.currentTarget as HTMLFormElement);
     setBusy(true); setError("");
     try {
-      const r = await api<{ user: string }>("/api/login", { user: f.get("user"), password: f.get("password") });
-      setUser(r.user); navigate(next(), { replace: true });
+      await api<{ user: string }>("/api/login", { user: f.get("user"), password: f.get("password") });
+      // a site's login hand-off is served by the server, not this app
+      if (next().startsWith("/sso?")) { location.replace(next()); return; }
+      await loadSession(); navigate(next(), { replace: true });
     } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
   };
   return (

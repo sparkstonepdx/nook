@@ -39,6 +39,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin certs [list] | set DOMAIN [--provider cloudflare] (token on stdin) | rm DOMAIN
   nook-admin certs plugin PROVIDER | upgrade-caddy   add a DNS plugin to Caddy (and hold it) / upgrade Caddy keeping plugins
   nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
+  nook-admin login NAME [on|off]                 put an app's sites behind the dashboard login (or show it)
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
@@ -195,6 +196,16 @@ func main() {
 				trend += ", full " + time.Unix(a.FullAt, 0).Format("Mon Jan 2")
 			}
 			fmt.Printf("  %-16s %6d MB  %-8s %5.1f%% CPU  %s\n", a.App, a.Mem>>20, limit, a.CPU, trend)
+		}
+	case "login":
+		needRoot()
+		switch {
+		case len(args) == 1:
+			fmt.Println(map[bool]string{true: "on", false: "off"}[core.AppLogin(args[0])])
+		case len(args) == 2 && (args[1] == "on" || args[1] == "off"):
+			die(h.SetLogin(args[0], args[1] == "on"))
+		default:
+			die(fmt.Errorf("usage: nook-admin login NAME [on|off]"))
 		}
 	case "directory":
 		needRoot()

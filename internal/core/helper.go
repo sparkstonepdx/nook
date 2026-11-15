@@ -251,6 +251,9 @@ func Dispatch(req *rpc.Request) rpc.Response {
 			return data(nil, err)
 		}
 		return data(map[string]any{"text": InstructionsNoToken(p["app"], p["site"]), "repo": AppRepo(p["app"]), "sites": SiteNames(p["app"])}, nil)
+	case "setLogin":
+		on := p["on"] == "true"
+		return command("nook-admin login "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetLogin(p["app"], on) })
 	case "setRepo":
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)

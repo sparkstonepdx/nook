@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,8 @@ type Server struct {
 	fails  map[string]*failState
 	recent []time.Time     // every failed attempt in the last globalWindow
 	good   map[string]bool // client keys that have logged in since start; not paused by the global limit
+
+	tickets map[string]int64 // spent login tickets (nonce -> expiry), so each works once
 }
 
 type failState struct {
@@ -85,6 +88,7 @@ type route struct {
 	re     *regexp.Regexp
 	keys   []string
 	open   bool
+	member bool // members (no dashboard, a few apps) may call it too; everything else is for admins
 	fn     func(*ctx) (any, error)
 }
 
@@ -93,14 +97,20 @@ func (s *Server) routes() []route {
 	add := func(method, pattern string, open bool, fn func(*ctx) (any, error)) {
 		var keys []string
 		re := regexp.MustCompile(`:(\w+)`).ReplaceAllStringFunc(pattern, func(m string) string { keys = append(keys, m[1:]); return `([^/]+)` })
-		rs = append(rs, route{method, regexp.MustCompile("^" + re + "$"), keys, open, fn})
+		rs = append(rs, route{method, regexp.MustCompile("^" + re + "$"), keys, open, false, fn})
+	}
+	// for members as well as admins
+	both := func(method, pattern string, fn func(*ctx) (any, error)) {
+		add(method, pattern, false, fn)
+		rs[len(rs)-1].member = true
 	}
 	// --- auth (open) ---
 	add("GET", "/api/session", true, func(c *ctx) (any, error) {
 		if c.me == "" {
 			return map[string]any{"user": nil}, nil
 		}
-		return map[string]any{"user": c.me}, nil
+		u := s.Store.Users()[c.me]
+		return map[string]any{"user": c.me, "admin": u.Admin(), "apps": orEmpty(u.Apps)}, nil
 	})
 	add("POST", "/api/login", true, func(c *ctx) (any, error) {
 		user := c.str("user")
@@ -146,22 +156,34 @@ func (s *Server) routes() []route {
 			return nil, fail(410, "This invite was already used or has expired.")
 		}
 		u := s.Store.SetPassword(user, pw, inv.By)
+		if inv.Role == Member {
+			s.Store.SetAccess(user, Member, inv.Apps)
+		}
 		c.w.Header().Add("Set-Cookie", s.Store.SessionCookie(user, u.Gen))
 		return map[string]any{"user": user}, nil
 	})
 	// --- users (handled here, not by root) ---
 	add("GET", "/api/users", false, func(c *ctx) (any, error) {
-		var list []map[string]any
+		list := []map[string]any{}
 		for name, u := range s.Store.Users() {
-			list = append(list, map[string]any{"name": name, "created": u.Created, "invitedBy": u.InvitedBy, "me": name == c.me})
+			list = append(list, map[string]any{"name": name, "created": u.Created, "invitedBy": u.InvitedBy, "me": name == c.me, "admin": u.Admin(), "apps": orEmpty(u.Apps)})
 		}
-		if list == nil {
-			list = []map[string]any{}
-		}
+		sort.Slice(list, func(i, j int) bool { return list[i]["name"].(string) < list[j]["name"].(string) })
 		return map[string]any{"users": list, "inviteHours": inviteHours}, nil
 	})
 	add("POST", "/api/users/invite", false, func(c *ctx) (any, error) {
-		return map[string]any{"link": "https://" + c.r.Host + "/invite?t=" + url.QueryEscape(s.Store.MakeInvite(c.me))}, nil
+		role, apps := c.role()
+		return map[string]any{"link": "https://" + c.r.Host + "/invite?t=" + url.QueryEscape(s.Store.MakeRoleInvite(c.me, role, apps))}, nil
+	})
+	add("POST", "/api/users/:user/access", false, func(c *ctx) (any, error) {
+		if c.params["user"] == c.me {
+			return nil, fail(400, "You can't change your own access.")
+		}
+		role, apps := c.role()
+		if !s.Store.SetAccess(c.params["user"], role, apps) {
+			return nil, fail(404, "No such user.")
+		}
+		return map[string]any{}, nil
 	})
 	add("POST", "/api/users/:user/remove", false, func(c *ctx) (any, error) {
 		if c.params["user"] == c.me {
@@ -172,7 +194,7 @@ func (s *Server) routes() []route {
 		}
 		return map[string]any{}, nil
 	})
-	add("POST", "/api/password", false, func(c *ctx) (any, error) {
+	both("POST", "/api/password", func(c *ctx) (any, error) {
 		pw := c.str("password")
 		if len(pw) < 12 || pw != c.str("password2") {
 			return nil, fail(400, "Passwords must match and be 12+ characters.")
@@ -261,6 +283,7 @@ func (s *Server) routes() []route {
 	add("GET", "/api/apps/:app/sync-log", false, helper("syncLog", p("app"), false))
 	add("GET", "/api/apps/:app/instructions", false, helper("instructions", p("app", "site"), false))
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
+	add("POST", "/api/apps/:app/login", false, helper("setLogin", p("app", "on"), true))
 	add("GET", "/api/store", false, helper("store", p("refresh"), false))
 	add("GET", "/api/store/image/:catalog/:sha", false, func(c *ctx) (any, error) {
 		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "storeImage", By: c.me, Params: map[string]string{"catalog": c.params["catalog"], "sha": c.params["sha"]}}, time.Minute)
@@ -279,15 +302,26 @@ func (s *Server) routes() []route {
 		}
 		return image(img), nil
 	})
-	add("GET", "/api/directory", false, func(c *ctx) (any, error) {
+	both("GET", "/api/directory", func(c *ctx) (any, error) {
 		cs, err := s.directory(c.r.URL.Query().Get("fresh") == "1")
 		if err != nil {
 			return nil, fail(502, err.Error())
 		}
+		if u := s.Store.Users()[c.me]; !u.Admin() {
+			// a member's launcher: the sites of their apps, without which app serves them
+			mine := []card{}
+			for _, cd := range cs {
+				if u.CanUse(cd.App) && !cd.Preview {
+					cd.App = ""
+					mine = append(mine, cd)
+				}
+			}
+			cs = mine
+		}
 		return map[string]any{"sites": cs}, nil
 	})
 	add("POST", "/api/directory/listed", false, helper("directorySet", p("host", "listed"), true))
-	add("GET", "/api/directory/icon/:name", false, func(c *ctx) (any, error) {
+	both("GET", "/api/directory/icon/:name", func(c *ctx) (any, error) {
 		name := c.params["name"]
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveIcon(w, r, name) }), nil
 	})
@@ -318,10 +352,33 @@ func (s *Server) routes() []route {
 	add("POST", "/api/caddy/plugin", false, helper("caddyPlugin", p("provider"), true))
 	add("POST", "/api/caddy/upgrade", false, helper("caddyUpgrade", nil, true))
 	add("GET", "/api/update", false, helper("updateStatus", nil, false))
-	add("GET", "/api/version", false, func(c *ctx) (any, error) { return map[string]string{"version": s.Version}, nil })
+	both("GET", "/api/version", func(c *ctx) (any, error) { return map[string]string{"version": s.Version}, nil })
 	add("POST", "/api/update", false, helper("updateNow", nil, true))
 	add("POST", "/api/update/check", false, helper("updateCheck", nil, false))
 	return rs
+}
+
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+// role reads {"admin": bool, "apps": [...]} from the body: an admin, or a member who may use apps.
+func (c *ctx) role() (string, []string) {
+	if admin, _ := c.body["admin"].(bool); admin {
+		return "", nil
+	}
+	var apps []string
+	if a, ok := c.body["apps"].([]any); ok {
+		for _, v := range a {
+			if s, ok := v.(string); ok {
+				apps = append(apps, s)
+			}
+		}
+	}
+	return Member, apps
 }
 
 func fmtFloat(f float64) string {
@@ -427,6 +484,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]string{"error": "internal error"})
 		}
 	}()
+	switch {
+	case r.URL.Path == "/api/v1/login-check":
+		s.loginCheck(w, r)
+		return
+	case strings.HasPrefix(r.URL.Path, "/.nook/"):
+		s.nookPath(w, r)
+		return
+	case r.URL.Path == "/sso" && r.Method == "GET":
+		s.sso(w, r)
+		return
+	case r.URL.Path == "/logout" && r.Method == "GET":
+		s.logout(w, r)
+		return
+	}
 	if r.URL.Path == "/api/v1/directory" || strings.HasPrefix(r.URL.Path, "/api/v1/directory/") {
 		s.publicDirectory(w, r)
 		return
@@ -481,6 +552,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if !rt.open && c.me == "" {
 			writeJSON(w, 401, map[string]string{"error": "Logged out."})
+			return
+		}
+		if !rt.open && !rt.member && !s.Store.Users()[c.me].Admin() {
+			writeJSON(w, 403, map[string]string{"error": "Only admins can do that."})
 			return
 		}
 		c.params = map[string]string{}
