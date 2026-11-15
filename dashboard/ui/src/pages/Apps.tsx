@@ -7,7 +7,7 @@ import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
-type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean };
+type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
 const mb = (v?: string) => (v && /^\d+$/.test(v) ? `${Math.round(Number(v) / 1048576)}M` : "");
@@ -114,7 +114,7 @@ export default function Apps() {
                     <span class="app-chev" aria-hidden="true">›</span>
                     <span class="row-main">
                       <span class="app-name">{app.name}</span>
-                      <small><Show when={app.login}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</small>
+                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</small>
                     </span>
                     <span class="row-end"><Show when={issues()}><StatusBadge ok={false}>{issues()} {issues() === 1 ? "problem" : "problems"}</StatusBadge></Show></span>
                   </button>
@@ -269,11 +269,11 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             <li><A class="row" href="/domains"><span class="row-main"><span>Domains</span><small>{a().grants.length ? a().grants.map(([, k, n]) => grantLabel(k, n)).join(", ") : "Nothing allowed yet"}</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
           </ul>
           <label class="switch-row">
-            <input type="checkbox" role="switch" checked={a().login} onChange={(e) => {
+            <input type="checkbox" role="switch" checked={a().login || a().loginApp} disabled={a().loginApp} onChange={(e) => {
               const on = e.currentTarget.checked;
               props.after(runCmd(on ? `${a().name} needs a nook login` : `${a().name} is open again`, `/api/apps/${a().name}/login`, { on }));
             }} />
-            <span><span>Nook login</span><small>Every site of this app, previews too, asks for a nook login first. Admins and users given this app get in; deploy tokens still work for scripts.</small></span>
+            <span><span>Nook login</span><small>{a().loginApp ? "This app asks for it itself: its sites need a nook login, or a deploy token for scripts. Admins and users given this app get in." : "Every site of this app, previews too, asks for a nook login first. Admins and users given this app get in; deploy tokens still work for scripts."}</small></span>
           </label>
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>

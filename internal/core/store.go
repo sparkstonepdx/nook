@@ -67,7 +67,7 @@ type CatalogApp struct {
 	Site        string              `json:"site,omitempty"` // default site name (default: the id)
 	Schedule    string              `json:"schedule,omitempty"`
 	Health      string              `json:"health,omitempty"` // path answering < 400 when it's up
-	Auth        string              `json:"auth,omitempty"`   // "nook-token": only requests with a deploy token from this server
+	Auth        string              `json:"auth,omitempty"`   // "nook-token": only requests with a deploy token from this server; "nook-login": those or a nook login
 	Open        []string            `json:"open,omitempty"`   // with auth: paths that skip the token check
 	Listen      string              `json:"listen,omitempty"` // "any": may listen on ports outside nook's app range (CI runners)
 	Memory      string              `json:"memory,omitempty"`
@@ -160,8 +160,8 @@ func (a CatalogApp) check() error {
 	if a.Site != "" && !names.Site(a.Site) {
 		return fmt.Errorf("catalog entry %s: bad site", a.ID)
 	}
-	if a.Auth != "" && (a.Auth != "nook-token" || a.kind() != "web") {
-		return fmt.Errorf(`catalog entry %s: auth can only be "nook-token", on a web app`, a.ID)
+	if a.Auth != "" && (a.Auth != "nook-token" && a.Auth != "nook-login" || a.kind() != "web") {
+		return fmt.Errorf(`catalog entry %s: auth can only be "nook-token" or "nook-login", on a web app`, a.ID)
 	}
 	if len(a.Open) > 0 && a.Auth == "" || len(a.Open) > 20 {
 		return fmt.Errorf("catalog entry %s: open needs auth, and at most 20 paths", a.ID)
