@@ -69,6 +69,7 @@ type CatalogApp struct {
 	Health      string              `json:"health,omitempty"` // path answering < 400 when it's up
 	Auth        string              `json:"auth,omitempty"`   // "nook-token": only requests with a deploy token from this server
 	Open        []string            `json:"open,omitempty"`   // with auth: paths that skip the token check
+	Listen      string              `json:"listen,omitempty"` // "any": may listen on ports outside nook's app range (CI runners)
 	Memory      string              `json:"memory,omitempty"`
 	CPU         string              `json:"cpu,omitempty"`
 	Needs       []string            `json:"needs,omitempty"`
@@ -164,6 +165,9 @@ func (a CatalogApp) check() error {
 	}
 	if len(a.Open) > 0 && a.Auth == "" || len(a.Open) > 20 {
 		return fmt.Errorf("catalog entry %s: open needs auth, and at most 20 paths", a.ID)
+	}
+	if a.Listen != "" && a.Listen != "any" {
+		return fmt.Errorf(`catalog entry %s: listen can only be "any"`, a.ID)
 	}
 	for _, o := range a.Open {
 		if !openPathRE.MatchString(o) {
@@ -340,6 +344,9 @@ func buildSitePackage(a CatalogApp, bin []byte) ([]byte, error) {
 	}
 	if len(a.Open) > 0 {
 		man["open"] = a.Open
+	}
+	if a.Listen != "" {
+		man["listen"] = a.Listen
 	}
 	manJSON, _ := json.MarshalIndent(man, "", "  ")
 	files := map[string][]byte{a.Binary: bin, "nook.json": manJSON}
