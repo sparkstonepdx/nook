@@ -94,6 +94,8 @@ details summary { position: relative; padding-block: var(--space-xs); }
 .danger-text { color: var(--bad); }
 
 /* Server: headroom */
+/* the Server section after the apps list: a clear break, more than between rows */
+.section.server { margin-top: var(--space-2xl); padding-top: var(--space-lg); border-top: var(--border-width) solid var(--line); }
 .server-summary { display: flex; align-items: baseline; gap: var(--space-sm); margin: 0; font-size: var(--text-lg); line-height: 1.35; }
 .status-dot { flex: none; width: 0.625rem; height: 0.625rem; border-radius: 50%; background: var(--good); transform: translateY(-0.05em); }
 .status-watch { background: var(--warn); }
