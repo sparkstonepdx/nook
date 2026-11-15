@@ -49,8 +49,9 @@ type card struct {
 	Description string `json:"description,omitempty"`
 	Theme       string `json:"theme,omitempty"`
 	Background  string `json:"background,omitempty"`
-	Icon        string `json:"icon,omitempty"`    // a file name under directory-icons: <sha256>.<ext>
-	Favicon     string `json:"favicon,omitempty"` // the browser-tab icon (the launcher's tiles), same naming
+	Icon        string `json:"icon,omitempty"`     // a file name under directory-icons: <sha256>.<ext>
+	Maskable    string `json:"maskable,omitempty"` // the manifest's maskable icon: what Android shows for an installed PWA
+	Favicon     string `json:"favicon,omitempty"`  // the browser-tab icon, for tiles with nothing bigger
 	Screenshots []shot `json:"screenshots,omitempty"`
 	Image       string `json:"image,omitempty"` // og:image or twitter:image, absolute, on the site's own host
 	Installable bool   `json:"installable"`     // it has a web manifest
@@ -303,16 +304,23 @@ func readCard(host string) card {
 					c.Theme = t
 				}
 				c.Background = color(m.Background)
-				var mi []iconRef
+				var mi, mask []iconRef
 				for _, i := range m.Icons {
+					u := sameHost(mbase, i.Src, host)
+					if u == "" {
+						continue
+					}
 					p := strings.Fields(strings.ToLower(i.Purpose))
+					if slices.Contains(p, "maskable") {
+						mask = append(mask, iconRef{u, iconSize(i.Sizes)})
+					}
 					if len(p) > 0 && !slices.Contains(p, "any") { // a maskable-only icon is cropped for launchers, not for cards
 						continue
 					}
-					if u := sameHost(mbase, i.Src, host); u != "" {
-						mi = append(mi, iconRef{u, iconSize(i.Sizes)})
-					}
+					mi = append(mi, iconRef{u, iconSize(i.Sizes)})
 				}
+				// the launcher's tiles crop to a rounded square, as Android does: the maskable icon fills it
+				c.Maskable = firstIcon(ranked(mask))
 				if len(mi) > 0 {
 					icons = mi
 				}
