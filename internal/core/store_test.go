@@ -191,3 +191,18 @@ func TestCatalogTokenAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestBindRules(t *testing.T) {
+	if got := bindRules(20001, false, 20000, 29999); got != "SocketBindAllow=tcp:20001\nSocketBindDeny=any\n" {
+		t.Fatalf("default: %q", got)
+	}
+	got := bindRules(20001, true, 20000, 29999)
+	for _, want := range []string{"SocketBindAllow=tcp:20001\n", "SocketBindAllow=tcp:1024-19999\n", "SocketBindAllow=tcp:30000-65535\n", "SocketBindAllow=udp:1024-19999\n", "SocketBindDeny=any\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("listen any: missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "20000-29999") || strings.Contains(got, ":1-") {
+		t.Errorf("listen any must keep out of nook's app ports and privileged ones: %q", got)
+	}
+}

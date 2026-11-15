@@ -33,6 +33,7 @@ type Manifest struct {
 	CORS     bool                   `json:"cors,omitempty"`     // static: any origin may read its files (Access-Control-Allow-Origin: *)
 	Auth     string                 `json:"auth,omitempty"`     // web: "nook-token" lets in only requests with a deploy token from this server
 	Open     []string               `json:"open,omitempty"`     // with auth: paths anyone may reach without a token, like "/v1/subscribe/*"
+	Listen   string                 `json:"listen,omitempty"`   // "any": may listen on unprivileged ports outside nook's app range too (CI runners)
 	calendar string
 }
 
@@ -57,6 +58,9 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if m.Auth != "" && m.Auth != "nook-token" {
 		return m, fmt.Errorf(`nook.json: auth can only be "nook-token", not %q`, m.Auth)
+	}
+	if m.Listen != "" && m.Listen != "any" {
+		return m, fmt.Errorf(`nook.json: listen can only be "any", not %q`, m.Listen)
 	}
 	if len(m.Open) > 0 && m.Auth == "" {
 		return m, fmt.Errorf(`nook.json: open lists paths that skip the token check, so it needs "auth": "nook-token"`)

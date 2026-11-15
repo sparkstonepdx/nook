@@ -246,7 +246,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health)
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any")
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -283,7 +283,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health)
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any")
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -519,7 +519,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny bool) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -552,7 +552,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, fmt.Sprintf("SocketBindAllow=tcp:%d\nSocketBindDeny=any\n", port)), healthLine)
+		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), healthLine)
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil
@@ -561,6 +561,25 @@ WantedBy=multi-user.target
 }
 
 // sandbox is the confinement every app process gets; bind says which ports it may listen on.
+// bindRules is where a running site may listen: its own port, or with nook.json {"listen": "any"} (CI runners,
+// whose jobs start test servers on ports of their choosing) any unprivileged port outside nook's app range, so it
+// still can't take another app's port.
+func bindRules(port int, any bool, min, max int) string {
+	if !any {
+		return fmt.Sprintf("SocketBindAllow=tcp:%d\nSocketBindDeny=any\n", port)
+	}
+	r := fmt.Sprintf("SocketBindAllow=tcp:%d\n", port)
+	for _, proto := range []string{"tcp", "udp"} {
+		if min > 1024 {
+			r += fmt.Sprintf("SocketBindAllow=%s:1024-%d\n", proto, min-1)
+		}
+		if max < 65535 {
+			r += fmt.Sprintf("SocketBindAllow=%s:%d-65535\n", proto, max+1)
+		}
+	}
+	return r + "SocketBindDeny=any\n"
+}
+
 func sandbox(home, app, bind string) string {
 	return `# network: may only listen on its own port (if any); ordinary sockets only
 ` + bind + `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
