@@ -98,7 +98,7 @@ func DispatchDeploy(req *rpc.Request, file *os.File) rpc.Response {
 			return deployFail(400, "env: %v", err)
 		}
 	}
-	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", filepath.Join(u.Home, "builds", name), name)
+	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", "--move", filepath.Join(u.Home, "builds", name), name)
 	res := DeployResult{App: app, Site: name, URL: "https://" + names.HostOf(name, s.BaseDomain), Output: strings.TrimSpace(string(out))}
 	res.Live = err == nil
 	for marker, kind := range map[string]string{"(running app)": "web", "(static)": "static", "(cron job)": "cron", "(service)": "service"} {
