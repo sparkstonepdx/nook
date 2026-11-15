@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,7 +251,7 @@ func readCard(host string) card {
 				var mi []iconRef
 				for _, i := range m.Icons {
 					p := strings.Fields(strings.ToLower(i.Purpose))
-					if len(p) > 0 && !contains(p, "any") { // a maskable-only icon is cropped for launchers, not for cards
+					if len(p) > 0 && !slices.Contains(p, "any") { // a maskable-only icon is cropped for launchers, not for cards
 						continue
 					}
 					if u := sameHost(mbase, i.Src, host); u != "" {
@@ -277,15 +278,6 @@ func readCard(host string) card {
 	}
 	c.Icon = saveIcon(best(icons))
 	return c
-}
-
-func contains(l []string, s string) bool {
-	for _, x := range l {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // saveIcon downloads an icon (up to 512 KB of PNG, JPEG, WebP, GIF, ICO or SVG) and returns its file name.
