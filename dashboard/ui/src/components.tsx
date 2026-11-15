@@ -13,6 +13,7 @@ const links = [
   { href: "/services", label: "Services" },
   { href: "/store", label: "Store" },
   { href: "/users", label: "Users" },
+  { href: "/backups", label: "Backups" },
 ];
 
 // On a wide screen the sections are in the top bar; on a phone they move to a dock under the thumb.

@@ -72,7 +72,7 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
   };
   const diskTrend = () => {
     const a = t()!;
-    if (a.diskPerDay <= 0) return a.diskPoints.length > 1 ? "Steady this week" : "Measured hourly; the trend shows after a day";
+    if (a.diskPerDay <= 0) return a.diskPoints.length > 1 ? "Steady this week" : "Measured every 15 minutes; the trend shows after a day";
     const rate = `Up ${sizeText(a.diskPerDay)} a day this week`;
     if (a.diskDaysLeft < 0 || a.diskDaysLeft > 365) return rate; // a date years out says nothing
     return `${rate} · the disk is full ${a.diskDaysLeft < 1 ? "within a day" : `around ${dayText(a.diskFullAt)}`} at this rate`;

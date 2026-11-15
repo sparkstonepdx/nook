@@ -3,7 +3,7 @@ import { api, attempt, runCmd, say } from "./api";
 import { Confirm, Field, Sheet } from "./components";
 
 // Backups (core/backup.go): set up once with an S3-compatible bucket, then daily, before each update, and on
-// demand. Shown in the Server section; each app's Manage sheet has its own switch and Restore.
+// demand. Its own page (/backups); each app's Manage sheet has its own switch and Restore.
 type AppBackup = { app: string; snapshot?: string; added: number; size: number; files: number; frozen?: boolean; hooks?: number; error?: string };
 export type BackupStatus = {
   configured: boolean; repo?: string; serverId: string; time: string; keep: string; skip: string[];
@@ -28,7 +28,6 @@ export function Backups() {
   onCleanup(() => clearInterval(timer));
   return (
     <div class="stack backups">
-      <div class="chart-head"><span class="eyebrow">Backups</span></div>
       <Show when={status()} fallback={<p class="hint">Reading…</p>}>
         {(s) => <Show when={s().configured} fallback={<BackupSetup />}><BackupState s={s()} /></Show>}
       </Show>
