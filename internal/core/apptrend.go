@@ -183,6 +183,9 @@ func diskTrend(t *AppTrend, week, shown []Sample, last Sample, x AppSample, now 
 	t.Disk, t.DiskFree = x.Disk, diskFree(last)
 	if d, ok := lastAppDisk(t.App); ok {
 		t.DiskParts = &d
+		if d.At > last.T { // measured since the last sample (the dashboard asked): the newer figure
+			t.Disk = d.Total
+		}
 	}
 	t.DiskPoints = appPoints(shown, t.App, 120, func(x AppSample) uint64 { return x.Disk })
 	h := hourly(week, t.App, func(x AppSample) uint64 { return x.Disk })

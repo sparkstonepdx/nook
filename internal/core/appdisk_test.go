@@ -103,3 +103,16 @@ func TestDiskTrendSkipsAReadingWithoutDisk(t *testing.T) {
 		t.Fatalf("%d MB, %d points", f.Disk>>20, len(f.DiskPoints))
 	}
 }
+
+func TestNormLimits(t *testing.T) {
+	for in, want := range map[string]string{"2g": "2G", "2 GB": "2G", "512mb": "512M", "512MiB": "512M", "1.5G": "1536M", "256M": "256M", " 1g ": "1G", "": ""} {
+		if got := normMemory(in); got != want || (want != "" && !memRE.MatchString(got)) {
+			t.Errorf("memory %q: %q, want %q", in, got, want)
+		}
+	}
+	for in, want := range map[string]string{"50": "50%", "50 %": "50%", "200%": "200%"} {
+		if got := normCPU(in); got != want {
+			t.Errorf("cpu %q: %q", in, got)
+		}
+	}
+}

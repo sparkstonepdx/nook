@@ -318,8 +318,8 @@ function LimitsSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
           }}>
             <p class="hint">{mb(a().memory) ? `Using ${mb(a().memory)} now. ` : ""}Changes apply at once, without restarting it.</p>
             <div class="field-row">
-              <Field label="Memory" hint="512M, 2G"><input class="input" name="memory" value={/^\d+[KMG]$/.test(a().memoryMax || "") ? a().memoryMax : ""} placeholder="keep" pattern="\d+[KMG]" /></Field>
-              <Field label="CPU" hint="100% is one core"><input class="input" name="cpu" value={/^\d+%$/.test(cpuPct(a().cpu)) ? cpuPct(a().cpu) : ""} placeholder="keep" pattern="\d+%" /></Field>
+              <Field label="Memory" hint="512M, 2G"><input class="input" name="memory" value={/^\d+[KMG]$/.test(a().memoryMax || "") ? a().memoryMax : ""} placeholder="keep" pattern="\s*\d+(\.\d)?\s*[KkMmGg]([Ii]?[Bb])?\s*" title="A number and K, M or G, like 512M or 2g" /></Field>
+              <Field label="CPU" hint="100% is one core"><input class="input" name="cpu" value={/^\d+%$/.test(cpuPct(a().cpu)) ? cpuPct(a().cpu) : ""} placeholder="keep" pattern="\s*\d+\s*%?\s*" title="A percent, like 50% (100% is one core)" /></Field>
             </div>
             <Field label="Processes and threads" hint="Empty fields keep what's set now."><input class="input" name="tasks" placeholder="keep" pattern="\d+" /></Field>
           </form>

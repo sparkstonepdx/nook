@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -24,10 +25,34 @@ type CreateOpts struct{ Name, Memory, CPU, Tasks, Repo string }
 
 // SetLimits changes an app's memory, CPU and task limits: the slice file for good, and the running slice
 // at once, so nothing restarts. An empty value keeps the current one.
+// normMemory and normCPU take what people type: 2g, 2 GB, 512mb, 1.5G; 50, 50 %.
+func normMemory(s string) string {
+	s = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(s), " ", ""))
+	s = strings.TrimSuffix(strings.TrimSuffix(s, "IB"), "B")
+	if m := regexp.MustCompile(`^(\d+)\.(\d)([KMG])$`).FindStringSubmatch(s); m != nil { // 1.5G is 1536M
+		whole, _ := strconv.Atoi(m[1])
+		tenth, _ := strconv.Atoi(m[2])
+		down := map[string]string{"G": "M", "M": "K"}[m[3]]
+		if down != "" {
+			return strconv.Itoa((whole*10+tenth)*1024/10) + down
+		}
+	}
+	return s
+}
+
+func normCPU(s string) string {
+	s = strings.ReplaceAll(strings.TrimSpace(s), " ", "")
+	if numRE.MatchString(s) {
+		return s + "%"
+	}
+	return s
+}
+
 func (h *Host) SetLimits(app, memory, cpu, tasks string) error {
 	if _, err := LookupApp(app); err != nil {
 		return err
 	}
+	memory, cpu, tasks = normMemory(memory), normCPU(cpu), strings.TrimSpace(tasks)
 	if (memory != "" && !memRE.MatchString(memory)) || (cpu != "" && !cpuRE.MatchString(cpu)) || (tasks != "" && !numRE.MatchString(tasks)) {
 		return fmt.Errorf("memory like 512M or 2G, cpu like 50%% (100%% is one core), tasks a number")
 	}
@@ -73,13 +98,14 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 	if o.Tasks == "" {
 		o.Tasks = h.S.TasksMax
 	}
+	o.Memory, o.CPU = normMemory(o.Memory), normCPU(o.CPU)
 	if o.Repo == "" {
 		o.Repo = "OWNER/REPO"
 	}
 	switch {
 	case !names.App(o.Name):
 		return "", fmt.Errorf("name: a lowercase letter, then 1-23 of a-z 0-9 -")
-	case !memRE.MatchString(o.Memory) || !cpuRE.MatchString(o.CPU) || !numRE.MatchString(o.Tasks):
+	case !memRE.MatchString(normMemory(o.Memory)) || !cpuRE.MatchString(normCPU(o.CPU)) || !numRE.MatchString(o.Tasks):
 		return "", fmt.Errorf("memory like 256M, cpu like 50%%, tasks a number")
 	case !repoRE.MatchString(o.Repo):
 		return "", fmt.Errorf("repo must look like owner/name")
