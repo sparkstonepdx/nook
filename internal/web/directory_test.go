@@ -141,3 +141,28 @@ func TestReadCardOpenGraphName(t *testing.T) {
 		t.Fatalf("%+v", c)
 	}
 }
+
+// A site with an app icon in its manifest and a favicon keeps both: the tiles show the favicon.
+func TestReadCardFavicon(t *testing.T) {
+	iconDir = t.TempDir()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Write([]byte(`<title>Kinlog</title><link rel="manifest" href="/m.json"><link rel="icon" href="/favicon.svg" type="image/svg+xml">`))
+		case "/m.json":
+			w.Write([]byte(`{"name":"Kinlog","icons":[{"src":"/i192.png","sizes":"192x192"}]}`))
+		case "/i192.png":
+			w.Write(png1)
+		case "/favicon.svg":
+			w.Write(svg1)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	siteAddr = strings.TrimPrefix(srv.URL, "https://")
+	c := readCard("kinlog.example.com")
+	if !strings.HasSuffix(c.Icon, ".png") || !strings.HasSuffix(c.Favicon, ".svg") {
+		t.Fatalf("icon %q, favicon %q", c.Icon, c.Favicon)
+	}
+}
