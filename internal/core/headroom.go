@@ -468,6 +468,9 @@ func analyse(all []Sample, now time.Time) HeadroomView {
 			v.Advice = append(v.Advice, a)
 		}
 	}
+	if a, ok := backupAdvice(GetBackupStatus(), now); ok {
+		v.Advice = append(v.Advice, a)
+	}
 
 	for _, r := range v.Resources {
 		v.Status = worse(v.Status, r.Status)

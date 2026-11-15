@@ -243,6 +243,19 @@ Every site on the server, with its own name, icon and colors, read from its web 
 - **Icons:** the manifest's, then the page's `<link rel="icon">` and `apple-touch-icon`, then `/apple-touch-icon.png`, `/favicon.svg` and `/favicon.ico`, the first that's really an image (a single-page app answers every path with its page). A site that doesn't answer `/` with a page, like a token-only API, still gets its favicon. A store app that serves no icon gets its catalog icon. Only the site's own URLs are used for icons and screenshots, colors that aren't plain CSS colors are dropped, and icons (PNG, JPEG, WebP, GIF, ICO, SVG up to 512 KB) are kept in `/var/lib/nook-web/directory-icons`. SVGs are served so they can't run script.
 - **Catalog env:** a catalog entry's env default can use `{dashboard_url}`, the dashboard's `https://` address.
 
+## Backups
+
+Daily, before each nook update, and on demand, nook backs up to an S3-compatible bucket (Cloudflare R2, Backblaze B2, any S3) with [restic](https://restic.net): encrypted, deduplicated, incremental. Set it up in the Server section's **Backups**, or `nook-admin backup setup --repo s3:https://ENDPOINT/BUCKET/nook --key KEY_ID` (the secret on stdin).
+
+- **What's in it:** one snapshot of the server (`/etc/nook`, the dashboard's users, nook's state, Caddy's certificates, deploy keys, each app's limits, and each app's uid), and one per app (`/srv/nook/APP`, less `builds/` and what it leaves out). The backup password file itself stays out.
+- **Running apps:** a site's `nook.json` `{"backup": {"run": "./backup.sh"}}` runs first, as the app user with the site's environment and `NOOK_BACKUP=1`, to write a consistent dump into `data/` (`sqlite3 .backup`, `pg_dump`). An app with no hook is frozen (its cgroup paused; nothing restarts) while it's read.
+- **Leaving things out:** `{"backup": {"skip": ["data/cache"]}}` in a site's `nook.json` (paths under the app's home), or the **Back up** switch on an app's Manage sheet (`nook-admin backup skip APP on`) for the whole app.
+- **Password:** made at setup and shown once; keep it somewhere other than the server. nook keeps it in `/etc/nook/backup.env` (0600) so scheduled backups run unattended. Connecting to an existing repository (another server's, or this one's before a reinstall) takes its password instead.
+- **Kept:** 7 daily, 4 weekly, 6 monthly (`BACKUP_KEEP`). A sample is read back weekly (`restic check --read-data-subset=5%`). A failure is advice on the Server page and a push.
+- **Several servers, one bucket:** each server has an id (`/etc/nook/server-id`), its snapshots' restic host. A server forgets and prunes only its own, and `nook-admin backup snapshots APP --from SERVER` lists another server's, the start of moving and adopting apps between servers.
+- **Restoring an app:** **Restore from a backup** on its Manage sheet, or `nook-admin backup restore APP [SNAPSHOT]`. Its `data/` comes back from the snapshot and it restarts; what was there is kept as `data.before-restore-TIME`. restic writes into a root-only folder first and ownership is set there, so nothing the app can touch is written through.
+- **restic:** nook installs the version it pins (0.19.1) from GitHub's releases, checked against the SHA-256 digest GitHub publishes, at `/usr/local/lib/nook/restic`.
+
 ## Headroom
 
 The Server section of the dashboard (and `nook-admin headroom`) says whether this server has room to spare and, if not, what to upgrade.

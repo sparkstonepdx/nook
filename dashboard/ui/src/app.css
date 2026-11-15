@@ -289,3 +289,8 @@ img.app-coin { background: var(--surface-2, transparent); }
 .pick { display: inline-flex; align-items: center; gap: var(--space-2xs); cursor: pointer; }
 .app-picks { display: flex; flex-wrap: wrap; gap: var(--space-xs) var(--space-md); }
 .stack > .seg { align-self: flex-start; }
+
+/* backups (backups.tsx) */
+.backups { margin-top: var(--space-lg); overflow-wrap: anywhere; }
+.actions-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
+.restore-open { justify-self: start; }

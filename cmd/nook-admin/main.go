@@ -37,6 +37,8 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin certs [list] | set DOMAIN [--provider cloudflare] (token on stdin) | rm DOMAIN
   nook-admin certs plugin PROVIDER | upgrade-caddy   add a DNS plugin to Caddy (and hold it) / upgrade Caddy keeping plugins
   nook-admin headroom [24h|7d|30d]               how full this server is, and what to add
+  nook-admin backup [status|setup|run|snapshots [APP]|restore APP [SNAPSHOT]|skip APP on|off]
+                                                 backups to an S3-compatible bucket (restic)
   nook-admin login NAME [on|off]                 put an app's sites behind the dashboard login (or show it)
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
@@ -80,7 +82,16 @@ func needRoot() {
 func main() {
 	update.Version = version
 	core.UpdateHooks.Status = update.CurrentStatus
-	core.UpdateHooks.Now = func(out *bytes.Buffer) error { return update.Apply(out, false) }
+	core.UpdateHooks.Now = func(out *bytes.Buffer) error {
+		// a backup first, when they're set up; one that fails is said, not a reason to hold the update back
+		if core.LoadBackupConfig().Configured() {
+			if err := core.New(out).BackupRun("before update"); err != nil {
+				fmt.Fprintf(out, "backup before the update: %v\n", err)
+			}
+		}
+		return update.Apply(out, false)
+	}
+	core.UpdateHooks.Notify = update.Notify
 	core.UpdateHooks.Check = func() (any, error) {
 		update.Check(io.Discard, false) // the error is recorded in the status
 		return update.CurrentStatus()
@@ -168,6 +179,9 @@ func main() {
 	case "headroom":
 		needRoot()
 		headroomCmd(args)
+	case "backup":
+		needRoot()
+		backupCmd(h, args)
 	case "login":
 		needRoot()
 		loginCmd(h, args)
