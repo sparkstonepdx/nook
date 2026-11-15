@@ -16,6 +16,7 @@ import Domains from "./pages/Domains";
 import Services from "./pages/Services";
 import Store from "./pages/Store";
 import Users from "./pages/Users";
+import Backups from "./pages/Backups";
 import Env from "./pages/Env";
 import Deploy from "./pages/Deploy";
 import MemberHome from "./pages/MemberHome";
@@ -70,6 +71,7 @@ render(() => (
       <Route path="/store/catalogs" component={Store} />
       <Route path="/store/apps/:catalog/:id" component={Store} />
       <Route path="/users" component={Users} />
+      <Route path="/backups" component={Backups} />
     </Route>
   </Router>
 ), document.getElementById("root")!);
