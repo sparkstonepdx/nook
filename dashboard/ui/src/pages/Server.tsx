@@ -7,8 +7,7 @@ type Advice = { level: "watch" | "tight"; title: string; detail: string; app?: s
 type Point = { t: number; v: number };
 type Series = { name: string; unit: string; points: Point[]; max: number };
 type SubductionId = { installed: boolean; url?: string; peerId?: string; peerIdHex?: string; card?: string; problem?: string };
-type AppTrend = { app: string; mem: number; limit: number; ownLimit: boolean; cpu: number; perDay: number; daysLeft: number; fullAt: number; kills: number; points: Point[]; projection: Point[] };
-type Headroom = { status: "ok" | "watch" | "tight" | "learning"; summary: string; resources: Resource[]; advice: Advice[]; series: Series[]; apps?: AppTrend[]; since?: number; samples: number };
+type Headroom = { status: "ok" | "watch" | "tight" | "learning"; summary: string; resources: Resource[]; advice: Advice[]; series: Series[]; since?: number; samples: number };
 
 const statusWord = { ok: "plenty", watch: "watch", tight: "tight" } as const;
 
@@ -79,12 +78,6 @@ export default function Server(props: { caddy: string; onLimits: (app: string) =
                 <For each={v().series}>{(s) => <LineChart series={s} hover={hover()} setHover={setHover} range={range()} />}</For>
               </div>
               <ChartTable series={v().series} />
-            </Show>
-            <Show when={v().apps?.length}>
-              <span class="eyebrow">Apps</span>
-              <ul class="list app-trends">
-                <For each={v().apps}>{(a) => <AppTrendRow a={a} onLimits={props.onLimits} />}</For>
-              </ul>
             </Show>
             <Show when={v().status !== "learning" && v().samples < 12}><p class="hint">The graph fills in as nook takes a reading every 5 minutes.</p></Show>
           </div>
@@ -176,50 +169,6 @@ function LineChart(props: { series: Series; hover: number | null; setHover: (t: 
         <text class="tick" x={W() - padR} y={H - 4}>now</text>
       </svg>
     </figure>
-  );
-}
-
-const mbText = (b: number) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : `${Math.round(b / (1 << 20))} MB`);
-const dayText = (unix: number) => new Date(unix * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
-
-// One app: its memory now, which way it's heading since it last restarted, and when it reaches its limit at that
-// rate. The chart is its memory over the range, its limit (dashed hairline) and the projection (dashed, to a week).
-function AppTrendRow(props: { a: AppTrend; onLimits: (app: string) => void }) {
-  const a = () => props.a;
-  const soon = () => a().daysLeft >= 0 && a().daysLeft <= 14;
-  const W = 300, H = 40;
-  const t0 = () => a().points[0]?.t ?? 0;
-  const t1 = () => Math.max(a().points[a().points.length - 1]?.t ?? 1, a().projection[1]?.t ?? 0);
-  const limitMB = () => a().limit / (1 << 20);
-  const top = () => {
-    const vals = [...a().points, ...a().projection].map((p) => p.v);
-    const peak = Math.max(1, ...vals);
-    return a().ownLimit ? Math.max(limitMB(), peak) * 1.05 : peak * 1.25;
-  };
-  const x = (t: number) => ((t - t0()) / Math.max(1, t1() - t0())) * W;
-  const y = (v: number) => H - 2 - (v / top()) * (H - 4);
-  const path = (ps: Point[]) => ps.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
-  const trend = () => {
-    if (a().perDay <= 0) return "Steady";
-    const rate = `Up ${mbText(a().perDay)} a day`;
-    if (a().daysLeft < 0) return rate;
-    return `${rate} · ${a().ownLimit ? "reaches its limit" : "would fill the server's memory"} ${a().daysLeft < 1 ? "within a day" : `around ${dayText(a().fullAt)}`}`;
-  };
-  return (
-    <li class="row app-trend" classList={{ soon: soon() }}>
-      <span class="row-main">
-        <span>{a().app} <small class="figures">{mbText(a().mem)}{a().ownLimit ? ` of ${mbText(a().limit)}` : ""} · {a().cpu}% CPU</small></span>
-        <small class={soon() ? "trend-soon" : ""}>{trend()}<Show when={a().kills > 0}> · stopped {a().kills} {a().kills === 1 ? "time" : "times"} by its limit this week</Show></small>
-      </span>
-      <Show when={a().points.length > 1}>
-        <svg class="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`${a().app} memory: ${trend()}`}>
-          <Show when={a().ownLimit}><line class="limit" x1="0" x2={W} y1={y(limitMB())} y2={y(limitMB())} /></Show>
-          <path class="line" d={path(a().points)} />
-          <Show when={a().projection.length === 2}><path class="projection" d={path(a().projection)} /></Show>
-        </svg>
-      </Show>
-      <Show when={soon() && a().ownLimit}><span class="row-end"><button class="btn btn-secondary btn-sm" onClick={() => props.onLimits(a().app)}>Change limit</button></span></Show>
-    </li>
   );
 }
 

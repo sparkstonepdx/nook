@@ -252,13 +252,19 @@ img.app-coin { background: var(--surface-2, transparent); }
 .row-end:has(> .confirm) > :not(.confirm) { display: none; }
 .next-try { font-weight: 600; color: var(--ink); }
 /* Apps under Server (pages/Server.tsx AppTrendRow): memory, its limit, and where it's heading */
-.app-trend { flex-wrap: wrap; }
-.app-trend .figures { color: var(--muted); font-weight: normal; font-variant-numeric: tabular-nums; }
-.app-trend .trend-soon { color: var(--ink); font-weight: 600; }
-.app-trend .spark { flex: 1 1 100%; order: 3; width: 100%; height: 2.5rem; overflow: visible; }
-.app-trend .spark .line { fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.app-trend .spark .limit { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-.app-trend .spark .projection { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+/* an app's memory and disk over the week, inside its row (appcharts.tsx) */
+.app-charts { display: grid; gap: var(--space-md); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); padding: var(--space-xs) var(--space-md) var(--space-md) calc(var(--space-md) + 1rem + var(--space-sm)); }
+.app-chart { margin: 0; display: grid; gap: var(--space-xs); align-content: start; }
+.app-chart figcaption { display: grid; gap: var(--space-2xs); }
+.app-chart figcaption > span { font-weight: 600; }
+.app-chart small { color: var(--muted); }
+.app-chart .figures { font-weight: normal; font-variant-numeric: tabular-nums; }
+.app-chart .trend-soon { color: var(--ink); font-weight: 600; }
+.app-chart .btn { justify-self: start; }
+.app-chart .spark { width: 100%; height: 3rem; overflow: visible; }
+.app-chart .spark .line { fill: none; stroke: var(--accent-text); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.app-chart .spark .limit { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.app-chart .spark .projection { fill: none; stroke: var(--warn); stroke-width: 2; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
 /* Launcher (pages/Launcher.tsx): every site as a tile, its own icon on its own colors */
 .launcher { display: grid; grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr)); gap: var(--space-md) var(--space-sm); margin-bottom: var(--space-xs); }
 .launcher-more { display: block; margin: 0 auto var(--space-lg); }
