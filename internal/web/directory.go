@@ -49,7 +49,8 @@ type card struct {
 	Description string `json:"description,omitempty"`
 	Theme       string `json:"theme,omitempty"`
 	Background  string `json:"background,omitempty"`
-	Icon        string `json:"icon,omitempty"` // a file name under directory-icons: <sha256>.<ext>
+	Icon        string `json:"icon,omitempty"`    // a file name under directory-icons: <sha256>.<ext>
+	Favicon     string `json:"favicon,omitempty"` // the browser-tab icon (the launcher's tiles), same naming
 	Screenshots []shot `json:"screenshots,omitempty"`
 	Image       string `json:"image,omitempty"` // og:image or twitter:image, absolute, on the site's own host
 	Installable bool   `json:"installable"`     // it has a web manifest
@@ -211,6 +212,7 @@ func readCard(host string) card {
 		}
 		// it answered, just not with a page (an API, a token-only site): its favicon may still be there
 		c.Icon = firstIcon(fallbackIcons(host))
+		c.Favicon = c.Icon
 		return c
 	}
 	base, _ := url.Parse(final)
@@ -249,7 +251,7 @@ func readCard(host string) card {
 			c.Name = n
 		}
 	}
-	var icons []iconRef
+	var icons, favs []iconRef
 	manifest := ""
 	for _, tag := range linkRE.FindAllString(text, -1) {
 		a := attrs(tag)
@@ -265,6 +267,7 @@ func readCard(host string) card {
 			case "icon":
 				if u := sameHost(base, a["href"], host); u != "" {
 					icons = append(icons, iconRef{u, iconSize(a["sizes"])})
+					favs = append(favs, iconRef{u, iconSize(a["sizes"])})
 				}
 			}
 		}
@@ -328,6 +331,9 @@ func readCard(host string) card {
 	// the page's own icons best first, then the usual paths: a single-page app answers every path with its
 	// page, so each candidate is only kept if it's really an image
 	c.Icon = firstIcon(append(ranked(icons), fallbackIcons(host)...))
+	// the favicon: the page's rel=icon (an SVG or the largest first), else /favicon.svg or /favicon.ico; a site
+	// without one shows its app icon instead
+	c.Favicon = firstIcon(append(ranked(favs), "https://"+host+"/favicon.svg", "https://"+host+"/favicon.ico"))
 	return c
 }
 
