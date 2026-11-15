@@ -52,6 +52,7 @@ func ServeHelper() error {
 		}
 	}()
 	go WatchWildcards()
+	go SweepStoreScratch()
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
 	log.Printf("helper listening on %s", config.HelperSocket)
@@ -288,6 +289,8 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(Headroom(p["range"]), nil)
 	case "setLimits":
 		return command("nook-admin limits "+p["app"], func(h *Host) error { return h.SetLimits(p["app"], p["memory"], p["cpu"], p["tasks"]) })
+	case "storeJobs":
+		return data(map[string]any{"jobs": StoreJobs()}, nil)
 	case "storeInstall":
 		from := ""
 		if p["catalog"] != "" && p["catalog"] != OfficialCatalog {

@@ -83,14 +83,14 @@ var client = &http.Client{Timeout: 5 * time.Minute}
 
 func get(url, token, accept string) ([]byte, error) {
 	var b bytes.Buffer
-	if err := getTo(url, token, accept, &b, 200<<20); err != nil {
+	if err := getTo(url, token, accept, &b, 200<<20, nil); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
 }
 
 // getTo streams the body into w, refusing anything over max bytes.
-func getTo(url, token, accept string, w io.Writer, max int64) error {
+func getTo(url, token, accept string, w io.Writer, max int64, size func(int64)) error {
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Accept", accept)
 	req.Header.Set("User-Agent", "nook-updater")
@@ -107,6 +107,9 @@ func getTo(url, token, accept string, w io.Writer, max int64) error {
 	}
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("GitHub returned %s", resp.Status)
+	}
+	if size != nil && resp.ContentLength > 0 {
+		size(resp.ContentLength)
 	}
 	n, err := io.Copy(w, io.LimitReader(resp.Body, max+1))
 	if err == nil && n > max {
