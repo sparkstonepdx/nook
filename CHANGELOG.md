@@ -1,5 +1,11 @@
 # nook
 
+## 1.28.2
+
+### Patch Changes
+
+- 9fa6d82: The Server section on the Apps page has room above it: a larger gap and a hairline after the apps list.
+
 ## 1.28.1
 
 ### Patch Changes
