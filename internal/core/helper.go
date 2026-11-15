@@ -56,6 +56,7 @@ func ServeHelper() error {
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
 	log.Printf("helper listening on %s", config.HelperSocket)
+	go RunDiskSampler()
 	go RunSampler()
 	for {
 		c, err := ln.Accept()

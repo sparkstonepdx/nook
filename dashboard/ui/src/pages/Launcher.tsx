@@ -8,10 +8,10 @@ const FIRST = 8;
 export default function Launcher() {
   onMount(loadDirectory);
   const [all, setAll] = createSignal(false);
-  // listed sites in their order, then installable ones (a manifest), then the rest
+  // listed sites in their order, then installable ones (a manifest), then ones with an icon, then the rest
   const sites = () => {
     const l = (directory() ?? []).filter((c) => !c.preview);
-    const rank = (c: DirCard) => (c.listed ? 0 : c.installable ? 1 : 2);
+    const rank = (c: DirCard) => (c.listed ? 0 : c.installable ? 1 : c.icon ? 2 : 3);
     return l.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map((x) => x.c);
   };
   const shown = () => (all() ? sites() : sites().slice(0, FIRST));

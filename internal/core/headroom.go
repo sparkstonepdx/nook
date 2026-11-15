@@ -54,7 +54,8 @@ type AppSample struct {
 	Mem    uint64 `json:"mem"`
 	MemMax uint64 `json:"memMax,omitempty"` // 0: no limit
 	CPUNs  uint64 `json:"cpuNs"`
-	OOM    uint64 `json:"oom"` // kills by its own memory limit, a running count
+	OOM    uint64 `json:"oom"`            // kills by its own memory limit, a running count
+	Disk   uint64 `json:"disk,omitempty"` // bytes on disk, measured hourly (appdisk.go); 0 until the first
 }
 
 type Sample struct {
@@ -144,6 +145,9 @@ func appSample(app string) AppSample {
 	p := UnitProps("nook-"+app+".slice", "MemoryCurrent", "MemoryMax", "CPUUsageNSec", "ControlGroup")
 	num := func(k string) uint64 { n, _ := strconv.ParseUint(p[k], 10, 64); return n } // "[not set]", "infinity" -> 0
 	a := AppSample{Mem: num("MemoryCurrent"), MemMax: num("MemoryMax"), CPUNs: num("CPUUsageNSec")}
+	if d, ok := lastAppDisk(app); ok {
+		a.Disk = d.Total
+	}
 	if cg := p["ControlGroup"]; cg != "" {
 		if b, err := os.ReadFile(filepath.Join("/sys/fs/cgroup", cg, "memory.events")); err == nil {
 			for _, l := range strings.Split(string(b), "\n") {
@@ -181,6 +185,10 @@ func numCPU() int { return runtime.NumCPU() }
 // RunSampler takes a sample now and every 5 minutes, keeps 30 days of them, and tells you when the
 // headroom advice changes. Run inside the helper.
 func RunSampler() {
+	select { // the disk pass usually takes seconds; don't hold the first sample back for a slow one
+	case <-diskReady:
+	case <-time.After(2 * time.Minute):
+	}
 	for {
 		recordSample(sampleNow())
 		notifyIfChanged()

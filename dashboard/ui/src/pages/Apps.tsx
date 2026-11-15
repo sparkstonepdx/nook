@@ -5,6 +5,7 @@ import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../compo
 import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
+import { AppCharts, refreshTrends, sizeText, trendFor } from "../appcharts";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
@@ -80,6 +81,7 @@ export default function Apps() {
   const timer = setInterval(() => !document.hidden && refetch(), 10_000);
   onCleanup(() => clearInterval(timer));
   const after = async (p?: Promise<unknown>) => { await p; refetch(); };
+  refreshTrends();
   const [creating, setCreating] = createSignal(false);
   const [site, setSite] = createSignal<{ app: string; name: string } | null>(null);
   const [manage, setManage] = createSignal<string | null>(null);
@@ -114,7 +116,7 @@ export default function Apps() {
                     <span class="app-chev" aria-hidden="true">›</span>
                     <span class="row-main">
                       <span class="app-name">{app.name}</span>
-                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}</small>
+                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}<Show when={trendFor(app.name)?.disk}>{(d) => <> · {sizeText(d())} disk</>}</Show></small>
                     </span>
                     <span class="row-end"><Show when={issues()}><StatusBadge ok={false}>{issues()} {issues() === 1 ? "problem" : "problems"}</StatusBadge></Show></span>
                   </button>
@@ -129,6 +131,7 @@ export default function Apps() {
                           <button class="btn btn-ghost btn-sm" onClick={() => setManage(app.name)}>Manage</button>
                         </span>
                       </div>
+                      <AppCharts app={app.name} onLimits={(a) => setLimits(a)} />
                       <Show when={app.sites.length} fallback={<p class="empty">No sites yet. <A class="link" href={`/apps/${app.name}/deploy`}>How to deploy</A></p>}>
                         <ul class="site-list">
                           <For each={sortedSites(app.sites)}>

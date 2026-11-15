@@ -155,8 +155,14 @@ func site(args []string) int {
 	}
 	switch args[0] {
 	case "deploy":
+		// --move takes DIR instead of copying it: what the deploy API and store installs use, since their
+		// upload is unpacked fresh each time. A DIR rsync keeps updating (SSH deploys) is copied and kept.
+		move := len(args) == 4 && args[1] == "--move"
+		if move {
+			args = append(args[:1], args[2:]...)
+		}
 		if len(args) != 3 {
-			die("usage: nook site deploy DIR SITE")
+			die("usage: nook site deploy [--move] DIR SITE")
 		}
 		src, s := args[1], args[2]
 		check(s)
@@ -166,7 +172,11 @@ func site(args []string) int {
 		next, old := filepath.Join(sites, ".new-"+s), filepath.Join(sites, ".old-"+s)
 		os.RemoveAll(next)
 		os.RemoveAll(old)
-		if out, err := exec.Command("cp", "-a", src, next).CombinedOutput(); err != nil {
+		if move {
+			if err := os.Rename(src, next); err != nil {
+				die("%v", err)
+			}
+		} else if out, err := exec.Command("cp", "-a", src, next).CombinedOutput(); err != nil {
 			die("copy failed: %s", out)
 		}
 		exec.Command("chmod", "-R", "u+rwX,go-w", next).Run()

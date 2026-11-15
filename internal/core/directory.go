@@ -25,6 +25,20 @@ type DirectoryEntry struct {
 	App     string `json:"app"`
 	Listed  bool   `json:"listed"`
 	Preview bool   `json:"preview"` // a PR preview (blog-pr-12.example.com): left out of the launcher
+	// StoreIcon is the catalog icon of the store app serving it, for a site that has no icon of its own
+	// (catalog/sha256: the dashboard fetches it through the helper, which checks the hash).
+	StoreIcon string `json:"storeIcon,omitempty"`
+}
+
+// storeIcons maps each app installed from the store to its catalog icon, as catalog/sha256.
+func storeIcons() map[string]string {
+	out := map[string]string{}
+	for app, rec := range readInstalled() {
+		if a, err := findCatalogApp(rec.Catalog, rec.ID); err == nil && a.Icon != nil && a.Icon.SHA256 != "" {
+			out[app] = a.Catalog + "/" + a.Icon.SHA256
+		}
+	}
+	return out
 }
 
 var previewRE = regexp.MustCompile(`^([^.]*-)?pr-\d+\.`)
@@ -42,6 +56,7 @@ func readListed() []string {
 // Directory is every live site: listed ones first, in their order, then the rest by host.
 func Directory() []DirectoryEntry {
 	listed := readListed()
+	icons := storeIcons()
 	var out []DirectoryEntry
 	files, _ := filepath.Glob(filepath.Join(config.CaddyAppsDir, "*.caddy"))
 	for _, f := range files {
@@ -52,7 +67,7 @@ func Directory() []DirectoryEntry {
 		app := strings.TrimSuffix(filepath.Base(f), ".caddy")
 		live, _ := caddyfile.Hosts(string(b))
 		for _, h := range live {
-			out = append(out, DirectoryEntry{Host: h, App: app, Listed: slices.Contains(listed, h), Preview: previewRE.MatchString(h)})
+			out = append(out, DirectoryEntry{Host: h, App: app, Listed: slices.Contains(listed, h), Preview: previewRE.MatchString(h), StoreIcon: icons[app]})
 		}
 	}
 	rank := func(h string) int {

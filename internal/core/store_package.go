@@ -239,7 +239,7 @@ func deployPackage(app, site, pkg string) (string, error) {
 	if out, err := u.asAppIn(f, 64<<10, "internal-unpack", site, strconv.FormatInt(s.SiteMaxBytes, 10)); err != nil {
 		return "", fmt.Errorf("%s", cmp.Or(strings.TrimSpace(string(out)), err.Error()))
 	}
-	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", filepath.Join(u.Home, "builds", site), site)
+	out, err := u.asAppIn(nil, 64<<10, "site", "deploy", "--move", filepath.Join(u.Home, "builds", site), site)
 	return strings.TrimSpace(string(out)), err
 }
 

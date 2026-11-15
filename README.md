@@ -234,12 +234,13 @@ Over `https://`, an unknown hostname fails the TLS handshake instead, because Ca
 
 ## Directory
 
-Every site on the server, with its own name, icon and colors, read from its web manifest.
+Every site on the server, with its own name, icon and colors, read from its web manifest and its page's meta tags.
 
-- **Launcher:** the top of the dashboard's Apps page is a tile per site; one tap opens it. Listed sites come first, then sites with a manifest, then the rest; PR previews are left out. The first 8 show, with **Show all**.
+- **Launcher:** the top of the dashboard's Apps page is a tile per site; one tap opens it. Listed sites come first, then sites with a manifest, then sites with an icon, then the rest; PR previews are left out. The first 8 show, with **Show all**.
 - **Listing:** **List in directory** on a site's sheet (or `nook-admin directory add|rm HOST`) puts it in the public list, in the order listed. The list is `/etc/nook/directory.json`.
-- **Public list:** `GET /api/v1/directory` on the dashboard address (no login, CORS open) gives the listed sites: host, URL, name, short name, description, theme and background colors, icon, screenshots, and whether it's installable. Icons are served at `/api/v1/directory/icon/NAME`. The Directory app in the catalog shows this list as a page anyone can visit.
-- **Cards:** nook-web reads each site's page and manifest from Caddy on the same machine and keeps them an hour (a site it couldn't reach, a minute). Only the site's own URLs are used for icons and screenshots, colors that aren't plain CSS colors are dropped, and icons (PNG, JPEG, WebP, GIF, ICO, SVG up to 512 KB) are kept in `/var/lib/nook-web/directory-icons`. SVGs are served so they can't run script.
+- **Public list:** `GET /api/v1/directory` on the dashboard address (no login, CORS open) gives the listed sites: host, URL, name, short name, description, theme and background colors, icon, screenshots, share image (`image`, from `og:image`) and whether it's installable. Icons are served at `/api/v1/directory/icon/NAME`. The Directory app in the catalog shows this list as a page anyone can visit.
+- **Cards:** nook-web reads each site's page and manifest from Caddy on the same machine and keeps them an hour (a site it couldn't reach, a minute). The page's Open Graph and Twitter tags give the share image, and a description or name the page doesn't otherwise have.
+- **Icons:** the manifest's, then the page's `<link rel="icon">` and `apple-touch-icon`, then `/apple-touch-icon.png`, `/favicon.svg` and `/favicon.ico`, the first that's really an image (a single-page app answers every path with its page). A site that doesn't answer `/` with a page, like a token-only API, still gets its favicon. A store app that serves no icon gets its catalog icon. Only the site's own URLs are used for icons and screenshots, colors that aren't plain CSS colors are dropped, and icons (PNG, JPEG, WebP, GIF, ICO, SVG up to 512 KB) are kept in `/var/lib/nook-web/directory-icons`. SVGs are served so they can't run script.
 - **Catalog env:** a catalog entry's env default can use `{dashboard_url}`, the dashboard's `https://` address.
 
 ## Headroom
@@ -251,7 +252,8 @@ The Server section of the dashboard (and `nook-admin headroom`) says whether thi
 - **CPU:** tight when programs wait for CPU 25% of the time in over a quarter of the day's samples; watch at 10%. Advice: more or faster cores.
 - **Disk:** tight under 10% free, under 14 days to full at the current rate, or under 5% of inodes free; watch at 20%, 60 days or 15%. Advice: more storage.
 - **Apps:** an app killed for hitting its own memory limit, or using over 90% of it, gets "raise its limit" rather than "add RAM".
-- **App trends:** each app's memory over the chosen range, with a line through its hourly lowest reading since it last restarted (up to 7 days; a drop under 60% of the previous hour counts as a restart). The floor is what a leak raises; short spikes don't tilt it. Growing at least 1 MB a day gives a date it reaches its own limit, or the server's memory if it has none. Under 14 days is "watch" and under 3 is "tight", in the advice, the status and the push. The Server section lists every app with its memory, CPU over the last day, trend and a chart (memory, its limit dashed, the projection dashed); `nook-admin headroom` prints the same.
+- **App trends:** each app's memory over the chosen range, with a line through its hourly lowest reading since it last restarted (up to 7 days; a drop under 60% of the previous hour counts as a restart). The floor is what a leak raises; short spikes don't tilt it. Growing at least 1 MB a day gives a date it reaches its own limit, or the server's memory if it has none. Under 14 days is "watch" and under 3 is "tight", in the advice, the status and the push. Each app's row on the Apps page, expanded, shows its memory, CPU over the last day, trend and a chart of the last week (memory, its limit dashed, the projection dashed); `nook-admin headroom` prints the same.
+- **App disk:** everything nook keeps for each app, measured hourly: its sites and their served copies, builds, the rest of its home folder (data), logs, and store rollback copies, with hard links counted once. The expanded row shows the total, the parts over 1 MB, a chart of the week, and its growth: at least 1 MB a day gives the date the disk it's on is full at that rate. Under 30 days is "watch" and under 7 is "tight", in the advice.
 - **Notifications:** a push when the overall status changes.
 
 
@@ -274,6 +276,7 @@ App users, and deploy keys through the SSH gate (`nook`):
 
 ```
 nook site deploy DIR SITE    # atomic swap into sites/SITE; exits 2 if SITE didn't go live
+nook site deploy --move DIR SITE  # the same, moving DIR in instead of copying it (deploy API and store installs)
 nook site rm SITE            # SITE: "blog" (subdomain of the default domain) or "client.com" (exact)
 nook site restart SITE
 nook site list
