@@ -230,6 +230,16 @@ Any hostname that points here but isn't a site (or the dashboard) gets a plain 4
 
 Over `https://`, an unknown hostname fails the TLS handshake instead, because Caddy only has certificates for names it serves.
 
+## Directory
+
+Every site on the server, with its own name, icon and colors, read from its web manifest.
+
+- **Launcher:** the top of the dashboard's Apps page is a tile per site; one tap opens it. Listed sites come first, then sites with a manifest, then the rest; PR previews are left out. The first 8 show, with **Show all**.
+- **Listing:** **List in directory** on a site's sheet (or `nook-admin directory add|rm HOST`) puts it in the public list, in the order listed. The list is `/etc/nook/directory.json`.
+- **Public list:** `GET /api/v1/directory` on the dashboard address (no login, CORS open) gives the listed sites: host, URL, name, short name, description, theme and background colors, icon, screenshots, and whether it's installable. Icons are served at `/api/v1/directory/icon/NAME`. The Directory app in the catalog shows this list as a page anyone can visit.
+- **Cards:** nook-web reads each site's page and manifest from Caddy on the same machine and keeps them an hour (a site it couldn't reach, a minute). Only the site's own URLs are used for icons and screenshots, colors that aren't plain CSS colors are dropped, and icons (PNG, JPEG, WebP, GIF, ICO, SVG up to 512 KB) are kept in `/var/lib/nook-web/directory-icons`. SVGs are served so they can't run script.
+- **Catalog env:** a catalog entry's env default can use `{dashboard_url}`, the dashboard's `https://` address.
+
 ## Headroom
 
 The Server section of the dashboard (and `nook-admin headroom`) says whether this server has room to spare and, if not, what to upgrade.

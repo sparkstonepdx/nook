@@ -483,7 +483,11 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			return fmt.Errorf("%s needs %s (%s)", a.Name, f.Key, f.Desc)
 		}
 		if v != "" {
-			env[f.Key] = strings.NewReplacer("{site_host}", names.HostOf(o.Site, h.S.BaseDomain), "{site}", o.Site).Replace(v)
+			dash := ""
+			if d := config.LoadDashboard(); d.Host != "" {
+				dash = "https://" + d.Host
+			}
+			env[f.Key] = strings.NewReplacer("{site_host}", names.HostOf(o.Site, h.S.BaseDomain), "{site}", o.Site, "{dashboard_url}", dash).Replace(v)
 		}
 	}
 	if !a.Official {

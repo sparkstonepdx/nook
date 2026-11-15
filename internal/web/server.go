@@ -279,6 +279,18 @@ func (s *Server) routes() []route {
 		}
 		return image(img), nil
 	})
+	add("GET", "/api/directory", false, func(c *ctx) (any, error) {
+		cs, err := s.directory(c.r.URL.Query().Get("fresh") == "1")
+		if err != nil {
+			return nil, fail(502, err.Error())
+		}
+		return map[string]any{"sites": cs}, nil
+	})
+	add("POST", "/api/directory/listed", false, helper("directorySet", p("host", "listed"), true))
+	add("GET", "/api/directory/icon/:name", false, func(c *ctx) (any, error) {
+		name := c.params["name"]
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveIcon(w, r, name) }), nil
+	})
 	add("POST", "/api/store/install", false, helper("storeInstall", p("catalog", "id", "app", "site", "policy"), true))
 	add("POST", "/api/store/catalogs", false, helper("catalogAdd", p("source"), false))
 	add("POST", "/api/store/catalogs/:id/remove", false, helper("catalogRemove", p("id"), false))
@@ -415,6 +427,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]string{"error": "internal error"})
 		}
 	}()
+	if r.URL.Path == "/api/v1/directory" || strings.HasPrefix(r.URL.Path, "/api/v1/directory/") {
+		s.publicDirectory(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		s.serveDeployAPI(w, r)
 		return
@@ -479,6 +495,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			} else {
 				writeJSON(w, 500, map[string]string{"error": err.Error()})
 			}
+			return
+		}
+		if f, ok := res.(http.HandlerFunc); ok { // writes its own response (directory icons)
+			f(w, r)
 			return
 		}
 		if img, ok := res.(image); ok {
