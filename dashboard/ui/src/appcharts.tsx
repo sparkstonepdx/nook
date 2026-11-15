@@ -50,7 +50,16 @@ function Spark(props: { points: Point[]; projection: Point[]; limitMB?: number; 
   );
 }
 
+// Opening an app measures its disk on the spot (at most once a minute), so files just deleted show.
+const measured = new Map<string, number>();
+async function measureDisk(app: string) {
+  if (Date.now() - (measured.get(app) ?? 0) < 60_000) return;
+  measured.set(app, Date.now());
+  try { await api(`/api/apps/${app}/disk`, {}); refetch(); } catch { /* the next pass catches up */ }
+}
+
 export function AppCharts(props: { app: string; onLimits: (app: string) => void }) {
+  measureDisk(props.app);
   const t = () => trendFor(props.app);
   const memSoon = () => (t()?.daysLeft ?? -1) >= 0 && t()!.daysLeft <= 14;
   const diskSoon = () => (t()?.diskDaysLeft ?? -1) >= 0 && t()!.diskDaysLeft <= 30;

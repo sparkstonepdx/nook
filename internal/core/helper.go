@@ -292,6 +292,9 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(Headroom(p["range"]), nil)
 	case "setLimits":
 		return command("nook-admin limits "+p["app"], func(h *Host) error { return h.SetLimits(p["app"], p["memory"], p["cpu"], p["tasks"]) })
+	case "appDisk":
+		d, err := MeasureAppDisk(p["app"])
+		return data(d, err)
 	case "backupStatus":
 		return data(GetBackupStatus(), nil)
 	case "backupSetup":

@@ -1,6 +1,6 @@
 package core
 
-// Per-app disk use, measured once an hour by the helper and carried in every 5-minute sample, so each app's
+// Per-app disk use, measured every 15 minutes by the helper, and on the spot when the dashboard opens an app and carried in every 5-minute sample, so each app's
 // growth can be trended and projected like its memory. An app's disk is everything nook keeps for it:
 //
 //	sites   its sites folder and the copies Caddy serves (/var/lib/nook/www/APP)
@@ -31,7 +31,7 @@ type AppDisk struct {
 	At     int64  `json:"at"` // when it was measured
 }
 
-const diskEvery = time.Hour
+const diskEvery = 15 * time.Minute
 
 var appDisks struct {
 	sync.Mutex
@@ -52,7 +52,23 @@ func lastAppDisk(app string) (AppDisk, bool) {
 	return d, ok
 }
 
-// RunDiskSampler measures every app's disk now and then hourly. Run inside the helper.
+// MeasureAppDisk measures app now and keeps the figure, so a change (files deleted) shows without waiting for
+// the next pass.
+func MeasureAppDisk(app string) (AppDisk, error) {
+	if _, err := LookupApp(app); err != nil {
+		return AppDisk{}, err
+	}
+	d := measureAppDisk(app)
+	appDisks.Lock()
+	if appDisks.m == nil {
+		appDisks.m = map[string]AppDisk{}
+	}
+	appDisks.m[app] = d
+	appDisks.Unlock()
+	return d, nil
+}
+
+// RunDiskSampler measures every app's disk now and then every 15 minutes. Run inside the helper.
 func RunDiskSampler() {
 	for {
 		m := map[string]AppDisk{}

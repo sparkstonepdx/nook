@@ -327,6 +327,7 @@ func (s *Server) routes() []route {
 	})
 	add("GET", "/api/store/jobs", false, helper("storeJobs", nil, false))
 	add("GET", "/api/backup", false, helper("backupStatus", nil, false))
+	add("POST", "/api/apps/:app/disk", false, helper("appDisk", p("app"), false))
 	add("POST", "/api/backup/setup", false, helper("backupSetup", p("repo", "key", "time", "keep"), false))
 	add("POST", "/api/backup/run", false, helper("backupRun", nil, false))
 	add("GET", "/api/backup/snapshots", false, helper("backupSnapshots", p("app", "from"), false))
