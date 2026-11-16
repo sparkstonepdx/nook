@@ -38,6 +38,14 @@ func lstatAt(dirfd int, name string) (*syscall.Stat_t, error) {
 	return &st, nil
 }
 
+func (d *dirFD) stat() (*syscall.Stat_t, error) {
+	var st syscall.Stat_t
+	if err := syscall.Fstat(d.fd, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
 func (d *dirFD) lstat(name string) (*syscall.Stat_t, error) { return lstatAt(d.fd, name) }
 
 // lstatIn checks name/child relative to d without following either component.

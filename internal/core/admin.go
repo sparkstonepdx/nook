@@ -227,6 +227,7 @@ type AppInfo struct {
 	Grants    [][]string `json:"grants"`
 	Login     bool       `json:"login"`    // sites behind nook's login
 	LoginApp  bool       `json:"loginApp"` // a site's nook.json asks for the login itself ("auth": "nook-login")
+	Changed   int64      `json:"changed"`  // unix time a site of it last changed (a deploy swaps a site's folder in)
 }
 
 func mb(v string) string {
@@ -262,6 +263,9 @@ func (h *Host) Overview() map[string]any {
 			info.Grants = append(info.Grants, []string{g.App, g.Kind, g.Name})
 		}
 		if sites, err := openDirNoFollow(filepath.Join(u.Home, "sites")); err == nil {
+			if st, err := sites.stat(); err == nil {
+				info.Changed = max(st.Mtim.Sec, st.Ctim.Sec)
+			}
 			for _, s := range sites.names() {
 				if strings.HasPrefix(s, ".") {
 					continue
@@ -270,6 +274,7 @@ func (h *Host) Overview() map[string]any {
 				if err != nil || !isDir(st) || !names.Site(s) {
 					continue
 				}
+				info.Changed = max(info.Changed, st.Mtim.Sec, st.Ctim.Sec)
 				si := SiteInfo{Name: s, Host: names.HostOf(s, h.S.BaseDomain), Kind: "static"}
 				si.Live = liveSet[si.Host]
 				timer := filepath.Join("/etc/systemd/system", CronUnit(a, s)+".timer")

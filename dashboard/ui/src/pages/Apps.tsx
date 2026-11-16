@@ -10,7 +10,7 @@ import { AppBackupRow } from "../backups";
 import { SubductionIdentity } from "../subduction";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
-type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
+type App = { name: string; changed: number; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
 const mb = (v?: string) => (v && /^\d+$/.test(v) ? `${Math.round(Number(v) / 1048576)}M` : "");
@@ -47,6 +47,18 @@ function readOpen(): Set<string> {
 function writeOpen(v: Set<string>) {
   try { localStorage.setItem(OPEN_KEY, JSON.stringify([...v])); } catch { /* storage off */ }
 }
+
+// The list shows the apps changed most recently (and any with a problem) until you ask for all of them.
+const RECENT = 5;
+const ALL_KEY = "nook-all-apps";
+const changedText = (t: number) => {
+  const s = Date.now() / 1000 - t;
+  if (!t) return "";
+  if (s < 3600) return "changed just now";
+  if (s < 86400) return `changed ${Math.round(s / 3600)} h ago`;
+  if (s < 86400 * 60) return `changed ${Math.round(s / 86400)} d ago`;
+  return `changed ${new Date(t * 1000).toLocaleDateString([], { month: "short", year: "numeric" })}`;
+};
 
 // What a site is doing, in one badge.
 function siteBadge(s: Site) {
@@ -92,8 +104,19 @@ export default function Apps() {
   const [open, setOpen] = createSignal(readOpen());
   const isOpen = (name: string) => open().has(name) || data()?.apps.length === 1;
   const toggle = (name: string) => { const v = new Set(open()); v.has(name) ? v.delete(name) : v.add(name); setOpen(v); writeOpen(v); };
-  const allOpen = () => !!data()?.apps.length && data()!.apps.every((a) => open().has(a.name));
-  const setAll = (on: boolean) => { const v = new Set(on ? data()?.apps.map((a) => a.name) : []); setOpen(v); writeOpen(v); };
+  const [showAll, setShowAll] = createSignal((() => { try { return localStorage.getItem(ALL_KEY) === "1"; } catch { return false; } })());
+  const toggleShowAll = () => { const v = !showAll(); setShowAll(v); try { localStorage.setItem(ALL_KEY, v ? "1" : "0"); } catch { /* storage off */ } };
+  const appIssues = (app: App) => app.sites.filter(siteIssue).length + (app.watcher !== "active" ? 1 : 0);
+  const trimmed = () => (data()?.apps.length ?? 0) > RECENT + 1 && !showAll();
+  const shown = () => {
+    const apps = data()?.apps ?? [];
+    if (!trimmed()) return apps;
+    const recent = [...apps].sort((a, b) => b.changed - a.changed);
+    const keep = new Set([...recent.slice(0, RECENT), ...apps.filter((a) => appIssues(a))].map((a) => a.name));
+    return recent.filter((a) => keep.has(a.name));
+  };
+  const allOpen = () => !!shown().length && shown().every((a) => open().has(a.name));
+  const setAll = (on: boolean) => { const v = new Set(on ? shown().map((a) => a.name) : []); setOpen(v); writeOpen(v); };
   const siteOf = () => { const s = site(); return s ? appOf(s.app)?.sites.find((x) => x.name === s.name) : undefined; };
 
   return (
@@ -105,20 +128,23 @@ export default function Apps() {
       <Launcher />
 
       <Show when={(data()?.apps.length ?? 0) > 1}>
-        <div class="apps-tools"><button class="btn btn-ghost btn-sm" onClick={() => setAll(!allOpen())}>{allOpen() ? "Collapse all" : "Expand all"}</button></div>
+        <div class="apps-tools">
+          <Show when={(data()?.apps.length ?? 0) > RECENT + 1}><span class="apps-scope">{trimmed() ? "Changed recently" : "All apps"}</span></Show>
+          <button class="btn btn-ghost btn-sm" onClick={() => setAll(!allOpen())}>{allOpen() ? "Collapse all" : "Expand all"}</button>
+        </div>
       </Show>
       <Show when={data()?.apps.length} fallback={<Show when={data()}><p class="empty">No apps yet.</p></Show>}>
         <ul class="list apps">
-          <For each={data()!.apps}>
+          <For each={shown()}>
             {(app) => {
-              const issues = () => app.sites.filter(siteIssue).length + (app.watcher !== "active" ? 1 : 0);
+              const issues = () => appIssues(app);
               return (
                 <li classList={{ "app-open": isOpen(app.name) }}>
                   <button class="row app-row" aria-expanded={isOpen(app.name)} aria-controls={`app-${app.name}`} onClick={() => toggle(app.name)}>
                     <span class="app-chev" aria-hidden="true">›</span>
                     <span class="row-main">
                       <span class="app-name">{app.name}</span>
-                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}<Show when={trendFor(app.name)?.disk}>{(d) => <> · {sizeText(d())} disk</>}</Show></small>
+                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}<Show when={trendFor(app.name)?.disk}>{(d) => <> · {sizeText(d())} disk</>}</Show><Show when={trimmed() && app.changed}> · {changedText(app.changed)}</Show></small>
                     </span>
                     <span class="row-end"><Show when={issues()}><StatusBadge ok={false}>{issues()} {issues() === 1 ? "problem" : "problems"}</StatusBadge></Show></span>
                   </button>
@@ -156,6 +182,9 @@ export default function Apps() {
             }}
           </For>
         </ul>
+        <Show when={(data()?.apps.length ?? 0) > RECENT + 1}>
+          <button class="btn btn-ghost btn-sm launcher-more" onClick={toggleShowAll}>{showAll() ? "Show recent" : `Show all ${data()!.apps.length} apps`}</button>
+        </Show>
       </Show>
 
       <Show when={data()}>
