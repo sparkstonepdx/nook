@@ -500,7 +500,11 @@ MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 CapabilityBoundingSet=
-RestrictAddressFamilies=AF_UNIX
+# Unix sockets, plus TCP to this machine only: the cards on the launcher and directory come from each site's own
+# page, read through Caddy at 127.0.0.1:443. Nothing beyond loopback, and the firewall keeps it off app ports.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
 MemoryMax=96M
 
 [Install]
