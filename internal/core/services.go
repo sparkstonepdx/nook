@@ -9,6 +9,7 @@ package core
 //	env:       /etc/nook/env/APP/services.env (consumer, read-only scope), .../APP/provider/SITE.env (provider)
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -266,7 +267,7 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	}
 	for _, w := range wants {
 		if !w.accepts(p.Version) {
-			return fmt.Errorf("%s needs %s; %s provides %s", app, w, providerID, cmpOr(p.Version, "no stated version"))
+			return fmt.Errorf("%s needs %s; %s provides %s", app, w, providerID, cmp.Or(p.Version, "no stated version"))
 		}
 	}
 	names := map[string]bool{}
