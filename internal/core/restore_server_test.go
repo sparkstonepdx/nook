@@ -62,8 +62,10 @@ exit 0
 
 	var out strings.Builder
 	h := New(&out)
-	if err := h.RestoreServer(ServerRestore{}); err == nil && len(Apps()) > 0 {
-		t.Fatal("restored onto a server with apps without --force")
+	if len(Apps()) > 0 { // this machine has apps: without --force it's refused
+		if err := h.RestoreServer(ServerRestore{}); err == nil {
+			t.Fatal("restored onto a server with apps without --force")
+		}
 	}
 	if err := h.RestoreServer(ServerRestore{Force: true}); err != nil {
 		t.Fatalf("restore: %v\n%s", err, out.String())
