@@ -18,6 +18,7 @@ package core
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -128,16 +129,9 @@ func restic(c BackupConfig, args ...string) ([]byte, error) {
 		if i := strings.LastIndexByte(msg, '\n'); i >= 0 {
 			msg = msg[i+1:]
 		}
-		return out, fmt.Errorf("restic %s: %s", args[0], cmpOr(msg, err.Error()))
+		return out, fmt.Errorf("restic %s: %s", args[0], cmp.Or(msg, err.Error()))
 	}
 	return out, nil
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }
 
 // ---- setup ----
@@ -590,7 +584,7 @@ func BackupSnapshots(app, from string) ([]Snapshot, error) {
 	if !c.Configured() {
 		return nil, errors.New("backups aren't set up yet")
 	}
-	host := cmpOr(from, c.ServerID)
+	host := cmp.Or(from, c.ServerID)
 	tag := "app:" + app
 	if app == "" {
 		tag = "server"

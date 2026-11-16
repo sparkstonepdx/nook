@@ -1,6 +1,7 @@
 import { For, Show, createResource, createRoot, createSignal, onCleanup } from "solid-js";
 import { api, attempt, runCmd, say } from "./api";
 import { Confirm, Field, Sheet } from "./components";
+import { bytes } from "./format";
 
 // Backups (core/backup.go): set up once with an S3-compatible bucket, then daily, before each update, and on
 // demand. Its own page (/backups); each app's Manage sheet has its own switch and Restore.
@@ -18,7 +19,6 @@ const [status, { refetch: refetchStatus }] = createRoot(() => createResource(on,
 const load = () => (on() ? refetchStatus() : setOn(true));
 export { status as backupStatus, refetchStatus };
 
-const size = (b: number) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : b >= 1 << 20 ? `${Math.round(b / (1 << 20))} MB` : b >= 1024 ? `${Math.round(b / 1024)} KB` : `${b} B`);
 const when = (unix: number) => new Date(unix * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
 
 export function Backups() {
@@ -47,7 +47,7 @@ function BackupState(props: { s: BackupStatus }) {
       <Show when={s().running} fallback={
         <Show when={s().finished} fallback={<p>Set up. The first backup runs at {s().time}, or now.</p>}>
           <Show when={s().ok} fallback={<div class="note note-bad"><span>The last backup failed ({when(s().finished!)}): {s().error}</span></div>}>
-            <p>Last backup {when(s().finished!)}: {s().apps.length + 1} snapshots, {size(added())} new. Next at {s().time}.</p>
+            <p>Last backup {when(s().finished!)}: {s().apps.length + 1} snapshots, {bytes(added())} new. Next at {s().time}.</p>
           </Show>
         </Show>
       }>
@@ -124,7 +124,7 @@ export function AppBackupRow(props: { app: string; after: (p?: Promise<unknown>)
         }} />
         <span><span>Back up</span><small>
           <Show when={!skipped()} fallback="Left out: its data isn't in the backups.">
-            <Show when={last()?.snapshot} fallback="In the next backup.">Last backup {when(s()!.finished ?? 0)}, {size(last()!.size)}{last()!.frozen ? ", paused while read" : ""}{last()!.hooks ? ", after its backup hook" : ""}.</Show>
+            <Show when={last()?.snapshot} fallback="In the next backup.">Last backup {when(s()!.finished ?? 0)}, {bytes(last()!.size)}{last()!.frozen ? ", paused while read" : ""}{last()!.hooks ? ", after its backup hook" : ""}.</Show>
           </Show>
           {" "}A site's nook.json can leave folders out: {`{"backup": {"skip": ["data/cache"]}}`}.
         </small></span>

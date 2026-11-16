@@ -1,3 +1,4 @@
+import { storedSignal } from "../storage";
 import { Show, createResource, createEffect, createMemo, createSignal } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { api, say } from "../api";
@@ -23,8 +24,7 @@ export default function Logs() {
       ? api<{ host: string; status: string; log: string }>(`/api/apps/${p.app}/sites/${encodeURIComponent(p.site)}/logs`)
       : api<{ log: string }>(`/api/apps/${p.app}/sync-log`).then((r) => ({ host: "", status: "", ...r })),
   );
-  const [raw, setRawSignal] = createSignal((() => { try { return localStorage.getItem(RAW_KEY) === "1"; } catch { return false; } })());
-  const setRaw = (on: boolean) => { setRawSignal(on); try { localStorage.setItem(RAW_KEY, on ? "1" : "0"); } catch { /* storage off */ } };
+  const [raw, setRaw] = storedSignal(RAW_KEY, false);
   const [filter, setFilter] = createSignal<Filter>("all");
 
   const lines = createMemo(() => (data()?.log ?? "").replace(/\n+$/, "").split("\n").map(parseLine));

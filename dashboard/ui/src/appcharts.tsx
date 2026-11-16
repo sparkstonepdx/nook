@@ -1,5 +1,6 @@
 import { Show, createResource, createRoot, createSignal, onCleanup } from "solid-js";
 import { api } from "./api";
+import { bytes } from "./format";
 
 // Each app's memory and disk over the last week, with where they're heading, shown inside its row on the Apps page.
 // One request for every app (the headroom view at a week), refreshed every minute while the page is open.
@@ -26,7 +27,6 @@ export function refreshTrends() {
   onCleanup(() => clearInterval(timer));
 }
 
-export const sizeText = (b: number) => (b >= 1 << 30 ? `${(b / (1 << 30)).toFixed(1)} GB` : b < 1 << 20 ? "under 1 MB" : `${Math.round(b / (1 << 20))} MB`);
 const dayText = (unix: number) => new Date(unix * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
 // A week as a line, with an optional limit (dashed hairline) and the projection (dashed, up to a week ahead).
@@ -66,14 +66,14 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
   const memTrend = () => {
     const a = t()!;
     if (a.perDay <= 0) return "Steady since it last restarted";
-    const rate = `Up ${sizeText(a.perDay)} a day since it last restarted`;
+    const rate = `Up ${bytes(a.perDay)} a day since it last restarted`;
     if (a.daysLeft < 0) return rate;
     return `${rate} · ${a.ownLimit ? "reaches its limit" : "would fill the server's memory"} ${a.daysLeft < 1 ? "within a day" : `around ${dayText(a.fullAt)}`}`;
   };
   const diskTrend = () => {
     const a = t()!;
     if (a.diskPerDay <= 0) return a.diskPoints.length > 1 ? "Steady this week" : "Measured every 15 minutes; the trend shows after a day";
-    const rate = `Up ${sizeText(a.diskPerDay)} a day this week`;
+    const rate = `Up ${bytes(a.diskPerDay)} a day this week`;
     if (a.diskDaysLeft < 0 || a.diskDaysLeft > 365) return rate; // a date years out says nothing
     return `${rate} · the disk is full ${a.diskDaysLeft < 1 ? "within a day" : `around ${dayText(a.diskFullAt)}`} at this rate`;
   };
@@ -81,7 +81,7 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
     const p = t()?.diskParts;
     if (!p) return "";
     return ([["sites", p.sites], ["builds", p.builds], ["data", p.data], ["logs", p.logs], ["rollback copies", p.store]] as const)
-      .filter(([, n]) => n >= 1 << 20).map(([k, n]) => `${k} ${sizeText(n)}`).join(" · ");
+      .filter(([, n]) => n >= 1 << 20).map(([k, n]) => `${k} ${bytes(n)}`).join(" · ");
   };
   return (
     <Show when={t()}>
@@ -89,7 +89,7 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
         <div class="app-charts">
           <figure class="app-chart" classList={{ soon: memSoon() }}>
             <figcaption>
-              <span>Memory <small class="figures">{sizeText(a().mem)}{a().ownLimit ? ` of ${sizeText(a().limit)}` : ""} · {a().cpu}% CPU</small></span>
+              <span>Memory <small class="figures">{bytes(a().mem)}{a().ownLimit ? ` of ${bytes(a().limit)}` : ""} · {a().cpu}% CPU</small></span>
               <small class={memSoon() ? "trend-soon" : ""}>{memTrend()}<Show when={a().kills > 0}> · stopped {a().kills} {a().kills === 1 ? "time" : "times"} by its limit this week</Show></small>
             </figcaption>
             <Show when={a().points.length > 1}><Spark points={a().points} projection={a().projection} limitMB={a().ownLimit ? a().limit / (1 << 20) : undefined} label={`${a().app} memory over the last week: ${memTrend()}`} /></Show>
@@ -98,7 +98,7 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
           <Show when={a().disk > 0}>
             <figure class="app-chart" classList={{ soon: diskSoon() }}>
               <figcaption>
-                <span>Disk <small class="figures">{sizeText(a().disk)} · {sizeText(a().diskFree)} free on the server</small></span>
+                <span>Disk <small class="figures">{bytes(a().disk)} · {bytes(a().diskFree)} free on the server</small></span>
                 <small class={diskSoon() ? "trend-soon" : ""}>{diskTrend()}</small>
                 <Show when={parts()}><small>{parts()}</small></Show>
               </figcaption>

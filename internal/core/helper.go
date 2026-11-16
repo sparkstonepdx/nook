@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -319,7 +320,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		s, err := BackupSnapshots(p["app"], p["from"])
 		return data(map[string]any{"snapshots": s}, err)
 	case "backupRestore":
-		return command("nook-admin backup restore "+p["app"]+" "+cmpOr(p["snapshot"], "latest"), func(h *Host) error { return h.BackupRestoreApp(p["app"], p["snapshot"]) })
+		return command("nook-admin backup restore "+p["app"]+" "+cmp.Or(p["snapshot"], "latest"), func(h *Host) error { return h.BackupRestoreApp(p["app"], p["snapshot"]) })
 	case "backupSkip":
 		on := p["skip"] == "true"
 		return command("nook-admin backup skip "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetBackupSkip(p["app"], on) })
