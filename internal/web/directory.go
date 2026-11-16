@@ -237,7 +237,7 @@ func readCard(host string) card {
 	og := map[string]string{}
 	for _, tag := range metaRE.FindAllString(text, -1) {
 		a := attrs(tag)
-		k := strings.ToLower(cmpOr(a["property"], a["name"]))
+		k := strings.ToLower(firstSet(a["property"], a["name"]))
 		if strings.HasPrefix(k, "og:") || strings.HasPrefix(k, "twitter:") {
 			if _, seen := og[k]; !seen {
 				og[k] = a["content"]
@@ -251,10 +251,10 @@ func readCard(host string) card {
 		}
 	}
 	if c.Description == "" {
-		c.Description = clean(cmpOr(og["og:description"], og["twitter:description"]), 300)
+		c.Description = clean(firstSet(og["og:description"], og["twitter:description"]), 300)
 	}
 	if titleRE.FindStringSubmatch(text) == nil {
-		if n := clean(cmpOr(og["og:site_name"], og["og:title"], og["twitter:title"]), 60); n != "" {
+		if n := clean(firstSet(og["og:site_name"], og["og:title"], og["twitter:title"]), 60); n != "" {
 			c.Name = n
 		}
 	}
@@ -396,7 +396,7 @@ func firstIcon(srcs []string) string {
 	return ""
 }
 
-func cmpOr(vs ...string) string {
+func firstSet(vs ...string) string {
 	for _, v := range vs {
 		if v = strings.TrimSpace(v); v != "" {
 			return v

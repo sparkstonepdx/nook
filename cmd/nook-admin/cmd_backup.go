@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -70,7 +71,7 @@ func backupCmd(h *core.Host, args []string) {
 			fmt.Printf("\nThe backups' password, shown once. Keep it somewhere other than this server: without it\nnobody can read the backups, you included.\n\n  %s\n\n", pw)
 		}
 	case "run":
-		die(h.BackupRun(cmpOr(flag("--reason"), "by hand")))
+		die(h.BackupRun(cmp.Or(flag("--reason"), "by hand")))
 	case "snapshots":
 		app := ""
 		if len(args) > 0 && !strings.HasPrefix(args[0], "--") {
@@ -101,11 +102,4 @@ func backupCmd(h *core.Host, args []string) {
 	default:
 		die(fmt.Errorf("usage: nook-admin backup [status|setup|run|snapshots|restore|skip]"))
 	}
-}
-
-func cmpOr(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
 }

@@ -1,3 +1,4 @@
+import { ago } from "./format";
 import { Show, createEffect, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { applyUpdate, updateReady } from "./update";
 import { api, say } from "./api";
@@ -87,15 +88,6 @@ function UpdateSheet(props: { s: () => UpdateStatus | null | undefined }) {
   );
 }
 
-const ago = (iso?: string) => {
-  if (!iso) return "never";
-  const s = (Date.now() - Date.parse(iso)) / 1000;
-  if (s < 90) return "just now";
-  if (s < 5400) return `${Math.round(s / 60)} min ago`;
-  if (s < 129600) return `${Math.round(s / 3600)} h ago`;
-  return `${Math.round(s / 86400)} days ago`;
-};
-
 // One update check shared by the banner and the footer.
 export function useUpdate() {
   const [s, { mutate }] = createResource(() => api<UpdateStatus>("/api/update").catch(() => null));
@@ -142,7 +134,7 @@ export function UpdateFooter(props: { s: () => UpdateStatus | null | undefined; 
             <span class="text-error" title="The update installed, but the dashboard's process hasn't restarted onto it. The next daily check restarts it.">{s().current} installed, not running yet</span>
           </Show>
           <Show when={!s().error} fallback={<span class="text-error" title={s().error}>update check failed</span>}>
-            <span>{s().available ? `${s().latest} is ready` : s().checkedAt ? `up to date, checked ${ago(s().checkedAt)}` : "not checked yet"}</span>
+            <span>{s().available ? `${s().latest} is ready` : s().checkedAt ? `up to date, checked ${ago(Date.parse(s().checkedAt!) / 1000)}` : "not checked yet"}</span>
           </Show>
           <Show when={s().available} fallback={<button class="btn btn-ghost btn-sm" disabled={checking()} onClick={check}>{checking() ? "Checking…" : "Check now"}</button>}>
             <button class="btn btn-sm" onClick={() => setUpdateOpen(true)}>Update</button>

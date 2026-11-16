@@ -5,7 +5,9 @@ import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../compo
 import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
-import { AppCharts, refreshTrends, sizeText, trendFor } from "../appcharts";
+import { AppCharts, refreshTrends, trendFor } from "../appcharts";
+import { ago, bytes } from "../format";
+import { readStored, storedSignal, writeStored } from "../storage";
 import { AppBackupRow } from "../backups";
 import { SubductionIdentity } from "../subduction";
 
@@ -41,24 +43,13 @@ function sortedSites(sites: Site[]) {
 
 // Which apps are open, per browser: a convenience, so a failed read just means all closed.
 const OPEN_KEY = "nook-open-apps";
-function readOpen(): Set<string> {
-  try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) || "[]")); } catch { return new Set(); }
-}
-function writeOpen(v: Set<string>) {
-  try { localStorage.setItem(OPEN_KEY, JSON.stringify([...v])); } catch { /* storage off */ }
-}
+const readOpen = () => new Set(readStored<string[]>(OPEN_KEY, []));
+const writeOpen = (v: Set<string>) => writeStored(OPEN_KEY, [...v]);
 
 // The list shows the apps changed most recently (and any with a problem) until you ask for all of them.
 const RECENT = 5;
 const ALL_KEY = "nook-all-apps";
-const changedText = (t: number) => {
-  const s = Date.now() / 1000 - t;
-  if (!t) return "";
-  if (s < 3600) return "changed just now";
-  if (s < 86400) return `changed ${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 60) return `changed ${Math.round(s / 86400)} d ago`;
-  return `changed ${new Date(t * 1000).toLocaleDateString([], { month: "short", year: "numeric" })}`;
-};
+const changedText = (t: number) => (t ? `changed ${ago(t)}` : "");
 
 // What a site is doing, in one badge.
 function siteBadge(s: Site) {
@@ -104,8 +95,8 @@ export default function Apps() {
   const [open, setOpen] = createSignal(readOpen());
   const isOpen = (name: string) => open().has(name) || data()?.apps.length === 1;
   const toggle = (name: string) => { const v = new Set(open()); v.has(name) ? v.delete(name) : v.add(name); setOpen(v); writeOpen(v); };
-  const [showAll, setShowAll] = createSignal((() => { try { return localStorage.getItem(ALL_KEY) === "1"; } catch { return false; } })());
-  const toggleShowAll = () => { const v = !showAll(); setShowAll(v); try { localStorage.setItem(ALL_KEY, v ? "1" : "0"); } catch { /* storage off */ } };
+  const [showAll, setShowAll] = storedSignal(ALL_KEY, false);
+  const toggleShowAll = () => setShowAll(!showAll());
   const appIssues = (app: App) => app.sites.filter(siteIssue).length + (app.watcher !== "active" ? 1 : 0);
   const trimmed = () => (data()?.apps.length ?? 0) > RECENT + 1 && !showAll();
   const shown = () => {
@@ -144,7 +135,7 @@ export default function Apps() {
                     <span class="app-chev" aria-hidden="true">›</span>
                     <span class="row-main">
                       <span class="app-name">{app.name}</span>
-                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}<Show when={trendFor(app.name)?.disk}>{(d) => <> · {sizeText(d())} disk</>}</Show><Show when={trimmed() && app.changed}> · {changedText(app.changed)}</Show></small>
+                      <small><Show when={app.login || app.loginApp}>login · </Show>{app.sites.length} {app.sites.length === 1 ? "site" : "sites"} · {mb(app.memory) || app.memory || "?"} of {app.memoryMax || "?"} · cpu {cpuPct(app.cpu)}<Show when={trendFor(app.name)?.disk}>{(d) => <> · {bytes(d())} disk</>}</Show><Show when={trimmed() && app.changed}> · {changedText(app.changed)}</Show></small>
                     </span>
                     <span class="row-end"><Show when={issues()}><StatusBadge ok={false}>{issues()} {issues() === 1 ? "problem" : "problems"}</StatusBadge></Show></span>
                   </button>
