@@ -11,8 +11,13 @@ import { readStored, storedSignal, writeStored } from "../storage";
 import { AppBackupRow } from "../backups";
 import { SubductionIdentity } from "../subduction";
 
+<<<<<<< HEAD
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
 type App = { name: string; changed: number; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
+=======
+type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string; relaxed?: boolean };
+type App = { name: string; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
+>>>>>>> 1e06d8e (Syscall filter for every app process (#34))
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
 const mb = (v?: string) => (v && /^\d+$/.test(v) ? `${Math.round(Number(v) / 1048576)}M` : "");
@@ -160,7 +165,7 @@ export default function Apps() {
                                   <span class={`site-name${s.host ? "" : " mono"}`}>{s.host || s.name}</span>
                                   <Show when={siteDetail(s) !== "static"}><small>{siteDetail(s)}</small></Show>
                                 </span>
-                                <span class="row-end">{siteAlert(s)}<span class="chev">›</span></span>
+                                <span class="row-end"><Show when={s.relaxed}><StatusBadge warn>relaxed sandbox</StatusBadge></Show>{siteAlert(s)}<span class="chev">›</span></span>
                               </button></li>
                             )}
                           </For>
@@ -248,6 +253,7 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
               <Show when={s().port}><dt>Port</dt><dd class="mono">{s().port}</dd></Show>
               <Show when={mb(s().MemoryCurrent)}><dt>Memory</dt><dd>{mb(s().MemoryCurrent)}</dd></Show>
               <dt>Folder</dt><dd class="mono">sites/{s().name}</dd>
+              <Show when={s().relaxed}><dt>Sandbox</dt><dd>Relaxed: its <span class="mono">nook.json</span> lets it change priorities, limits and ownership calls the others can't</dd></Show>
             </dl>
             <Show when={s().host && s().live}>
               {(() => {

@@ -194,7 +194,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any")
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.relaxed())
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -231,7 +231,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any")
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.relaxed())
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -475,7 +475,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny bool) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, relaxed bool) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -508,7 +508,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), healthLine)
+		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), relaxed), healthLine)
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil
@@ -536,7 +536,14 @@ func bindRules(port int, any bool, min, max int) string {
 	return r + "SocketBindDeny=any\n"
 }
 
-func sandbox(home, app, bind string) string {
+func sandbox(home, app, bind string, relaxed bool) string {
+	// system calls (#34): systemd's allowlist for ordinary services, minus privileged and resource-limit calls
+	// unless the site relaxed it. A blocked call fails with EPERM instead of killing the process, so a runtime
+	// probing for something optional falls back.
+	calls := "SystemCallFilter=@system-service\nSystemCallFilter=~@privileged @resources\n"
+	if relaxed {
+		calls = "SystemCallFilter=@system-service\nX-Nook-Sandbox=relaxed\n"
+	}
 	return `# network: may only listen on its own port (if any); ordinary sockets only
 ` + bind + `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # sandbox: only its own app folder is visible and writable
@@ -559,6 +566,8 @@ RestrictRealtime=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 CapabilityBoundingSet=
+# system calls
+` + calls + `SystemCallErrorNumber=EPERM
 `
 }
 

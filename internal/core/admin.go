@@ -214,6 +214,7 @@ type SiteInfo struct {
 	Health   string `json:"health,omitempty"`   // the health path it declares
 	Healthy  *bool  `json:"healthy,omitempty"`  // and whether it answered just now
 	Problem  string `json:"healthError,omitempty"`
+	Relaxed  bool   `json:"relaxed,omitempty"` // its nook.json relaxed the syscall filter
 }
 
 type AppInfo struct {
@@ -288,6 +289,7 @@ func (h *Host) Overview() map[string]any {
 					tp := UnitProps(CronUnit(a, s)+".timer", "NextElapseUSecRealtime", "LastTriggerUSec")
 					sp := UnitProps(CronUnit(a, s)+".service", "Result", "ActiveState")
 					si.Next, si.Last, si.Result, si.Active = tp["NextElapseUSecRealtime"], tp["LastTriggerUSec"], sp["Result"], sp["ActiveState"]
+					si.Relaxed = unitKey(CronUnit(a, s)+".service", "X-Nook-Sandbox") == "relaxed"
 				} else if run, err := sites.lstatIn(s, "run"); err == nil && isFile(run) && run.Mode&0o111 != 0 {
 					si.Running, si.Kind = true, "web"
 					if u, err := os.ReadFile(filepath.Join("/etc/systemd/system", UnitName(a, s))); err == nil && !strings.Contains(string(u), "SITE_HOST=") {
@@ -296,6 +298,7 @@ func (h *Host) Overview() map[string]any {
 					p := UnitProps(UnitName(a, s), "ActiveState", "SubState", "MainPID", "MemoryCurrent", "NRestarts")
 					si.Active, si.Sub, si.PID, si.Memory, si.Restarts = p["ActiveState"], p["SubState"], p["MainPID"], p["MemoryCurrent"], p["NRestarts"]
 					si.Health = SiteHealthPath(a, s)
+					si.Relaxed = unitKey(UnitName(a, s), "X-Nook-Sandbox") == "relaxed"
 					if m, err := u.readManifest(s); err == nil && m.Auth == "nook-login" {
 						info.LoginApp = true
 					}

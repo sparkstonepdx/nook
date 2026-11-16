@@ -116,3 +116,19 @@ func TestNormLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxSyscalls(t *testing.T) {
+	strict := sandbox("/srv/nook/a", "a", "", false)
+	relaxed := sandbox("/srv/nook/a", "a", "", true)
+	for _, want := range []string{"SystemCallFilter=@system-service\n", "SystemCallFilter=~@privileged @resources\n", "SystemCallErrorNumber=EPERM\n"} {
+		if !strings.Contains(strict, want) {
+			t.Errorf("strict sandbox lacks %q", want)
+		}
+	}
+	if strings.Contains(relaxed, "~@privileged") || !strings.Contains(relaxed, "SystemCallFilter=@system-service\n") || !strings.Contains(relaxed, "X-Nook-Sandbox=relaxed\n") {
+		t.Errorf("relaxed sandbox wrong:\n%s", relaxed)
+	}
+	if (Manifest{Sandbox: &SandboxSpec{Syscalls: "relaxed"}}).relaxed() != true || (Manifest{}).relaxed() {
+		t.Error("relaxed()")
+	}
+}

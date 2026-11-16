@@ -35,8 +35,17 @@ type Manifest struct {
 	Open     []string               `json:"open,omitempty"`     // with auth: paths anyone may reach without a token, like "/v1/subscribe/*"
 	Listen   string                 `json:"listen,omitempty"`   // "any": may listen on unprivileged ports outside nook's app range too (CI runners)
 	Backup   *BackupSpec            `json:"backup,omitempty"`   // what a backup runs first, and leaves out (backup.go)
+	Sandbox  *SandboxSpec           `json:"sandbox,omitempty"`  // {"syscalls": "relaxed"}: without the extra syscall deny list
 	calendar string
 }
+
+// SandboxSpec is a site's nook.json "sandbox". Syscalls "relaxed" drops the deny list on top of
+// @system-service (privileged and resource calls), for a runtime that needs one of them. The dashboard shows it.
+type SandboxSpec struct {
+	Syscalls string `json:"syscalls,omitempty"`
+}
+
+func (m Manifest) relaxed() bool { return m.Sandbox != nil && m.Sandbox.Syscalls == "relaxed" }
 
 // readManifest reads sites/SITE/nook.json as the app user. No file means a web site.
 func (u *AppUser) readManifest(site string) (Manifest, error) {
@@ -59,6 +68,9 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if m.Auth != "" && m.Auth != "nook-token" && m.Auth != "nook-login" {
 		return m, fmt.Errorf(`nook.json: auth can only be "nook-token" or "nook-login", not %q`, m.Auth)
+	}
+	if m.Sandbox != nil && m.Sandbox.Syscalls != "" && m.Sandbox.Syscalls != "relaxed" {
+		return m, fmt.Errorf(`nook.json: sandbox.syscalls can only be "relaxed", not %q`, m.Sandbox.Syscalls)
 	}
 	if m.Listen != "" && m.Listen != "any" {
 		return m, fmt.Errorf(`nook.json: listen can only be "any", not %q`, m.Listen)
@@ -129,7 +141,7 @@ Environment=HOST=127.0.0.1 SITE=%[2]s
 StandardOutput=append:%[6]s
 StandardError=append:%[6]s
 LimitFSIZE=2G
-%[7]s`, app, site, u.Home, envLines(app, site), m.Timeout, log, sandbox(u.Home, app, "SocketBindDeny=any\n"))
+%[7]s`, app, site, u.Home, envLines(app, site), m.Timeout, log, sandbox(u.Home, app, "SocketBindDeny=any\n", m.relaxed()))
 	timer := fmt.Sprintf(`[Unit]
 Description=Schedule for %[2]s (cron job of app %[1]s)
 
