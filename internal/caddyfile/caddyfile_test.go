@@ -165,3 +165,44 @@ func TestLoginAdapts(t *testing.T) {
 		t.Fatalf("caddy adapt: %v\n%s\n%s", err, b, out)
 	}
 }
+
+func TestStreamCloseDelay(t *testing.T) {
+	sites := []Site{
+		{Host: "a.x.com", Port: 20001},
+		{Host: "b.x.com", Port: 20002, TokenAuth: true},
+		{Host: "c.x.com", Port: 20003, TokenAuth: true, Open: []string{"/v1/health"}},
+		{Host: "d.x.com", Port: 20004, Login: "d", Dashboard: "admin.x.com"},
+		{Host: "e.x.com", Port: 20005, Login: "e", Dashboard: "admin.x.com", Open: []string{"/ws"}},
+		{Host: "f.x.com", Root: "/w/f"},
+	}
+	without := Render("x", sites, nil, nil)
+	if strings.Contains(without, "stream_close_delay") {
+		t.Fatal("no delay unless set (Caddy before 2.7 rejects it)")
+	}
+	StreamCloseDelay = "24h"
+	defer func() { StreamCloseDelay = "" }()
+	with := Render("x", sites, nil, nil)
+	// one per upstream proxy: a, b, c twice (open and checked), d, e twice
+	if n := strings.Count(with, "stream_close_delay 24h"); n != 7 {
+		t.Fatalf("%d stream_close_delay lines, want 7:\n%s", n, with)
+	}
+	if strings.Count(with, "{") != strings.Count(with, "}") {
+		t.Fatal("unbalanced braces")
+	}
+	live, _ := Hosts(with)
+	if len(live) != 6 {
+		t.Fatalf("hosts read back: %v", live)
+	}
+}
+
+func TestSameConfig(t *testing.T) {
+	a := Render("x", []Site{{Host: "a.x.com", Port: 20001, Folder: "a", Version: "11"}}, nil, nil)
+	b := Render("x", []Site{{Host: "a.x.com", Port: 20001, Folder: "a", Version: "12"}}, nil, nil)
+	c := Render("x", []Site{{Host: "a.x.com", Port: 20002, Folder: "a", Version: "12"}}, nil, nil)
+	if a == b || !SameConfig(a, b) {
+		t.Error("a redeploy (new folder inode only) should need no reload")
+	}
+	if SameConfig(b, c) {
+		t.Error("a new port needs a reload")
+	}
+}

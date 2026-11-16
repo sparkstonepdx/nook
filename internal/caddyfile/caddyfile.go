@@ -53,10 +53,12 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 		if s.Login != "" {
 			login(&b, s, tlsLine(s.Host, ownCert))
 		} else if s.Port > 0 && s.TokenAuth && len(s.Open) > 0 {
-			fmt.Fprintf(&b, "%s {\n%s\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:%d {\n\t\t\t\theader_up -Authorization\n\t\t\t}\n\t\t}\n\t}\n\thandle {\n%s\t}\n}\n",
-				s.Host, tlsLine(s.Host, ownCert), strings.Join(s.Open, " "), s.Port, indent(fmt.Sprintf(tokenAuth, TokenCheck, s.Port)))
+			fmt.Fprintf(&b, "%s {\n%s\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:%d {\n\t\t\t\theader_up -Authorization\n%s\t\t\t}\n\t\t}\n\t}\n\thandle {\n%s\t}\n}\n",
+				s.Host, tlsLine(s.Host, ownCert), strings.Join(s.Open, " "), s.Port, proxyOpts(4), indent(fmt.Sprintf(tokenAuth, TokenCheck, s.Port, proxyOpts(3))))
 		} else if s.Port > 0 && s.TokenAuth {
-			fmt.Fprintf(&b, "%s {\n%s"+tokenAuth+"}\n", s.Host, tlsLine(s.Host, ownCert), TokenCheck, s.Port)
+			fmt.Fprintf(&b, "%s {\n%s"+tokenAuth+"}\n", s.Host, tlsLine(s.Host, ownCert), TokenCheck, s.Port, proxyOpts(3))
+		} else if s.Port > 0 && StreamCloseDelay != "" {
+			fmt.Fprintf(&b, "%s {\n%s\treverse_proxy 127.0.0.1:%d {\n%s\t}\n}\n", s.Host, tlsLine(s.Host, ownCert), s.Port, proxyOpts(2))
 		} else if s.Port > 0 {
 			fmt.Fprintf(&b, "%s {\n%s\treverse_proxy 127.0.0.1:%d\n}\n", s.Host, tlsLine(s.Host, ownCert), s.Port)
 		} else {
@@ -67,6 +69,32 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 		fmt.Fprintf(&b, "%s%s\n%s\tredir https://%s{uri} permanent\n}\n", r[0], redirectMark, tlsLine(r[0], ownCert), r[1])
 	}
 	return b.String()
+}
+
+// StreamCloseDelay keeps websockets and other streams open this long after a config reload (Caddy 2.7+), so a
+// deploy elsewhere doesn't drop every app's live connections. "" on an older Caddy, which would reject it.
+var StreamCloseDelay = ""
+
+// proxyOpts is the lines every app's reverse_proxy block gets, at the given depth of tabs.
+func proxyOpts(tabs int) string {
+	if StreamCloseDelay == "" {
+		return ""
+	}
+	return strings.Repeat("\t", tabs) + "stream_close_delay " + StreamCloseDelay + "\n"
+}
+
+// SameConfig says whether two generated files differ only in their "# site" lines: those record each deploy's
+// folder for `nook site deploy` to wait on, and Caddy ignores them, so a redeploy needs no reload.
+func SameConfig(a, b string) bool { return withoutSiteLines(a) == withoutSiteLines(b) }
+
+func withoutSiteLines(s string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		if !strings.HasPrefix(l, "# site ") {
+			out = append(out, l)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // TokenCheck is where Caddy asks nook-web whether a request's token is good (a var so tests can see it).
@@ -82,7 +110,7 @@ const tokenAuth = `	route {
 		}
 		reverse_proxy 127.0.0.1:%d {
 			header_up -Authorization
-		}
+%s		}
 	}
 `
 
@@ -162,7 +190,7 @@ func login(b *strings.Builder, s Site, tls string) {
 		if s.TokenAuth {
 			body += "\t\theader_up -Authorization\n"
 		}
-		body += "\t}\n"
+		body += proxyOpts(2) + "\t}\n"
 		if len(s.Open) > 0 {
 			fmt.Fprintf(b, "\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\trequest_header -X-Nook-User\n%s\t\t}\n\t}\n",
 				strings.Join(s.Open, " "), indent(indent(body)))

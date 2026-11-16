@@ -87,21 +87,34 @@ var caddyVersionCache struct {
 	version string
 }
 
-// caddyForceAutomate: whether this Caddy prefers wildcards (and so understands force_automate), 2.10+.
-func caddyForceAutomate() bool {
+// caddyVersion is the installed Caddy's version, read again only when the binary changes.
+var caddyVersion = func() string {
 	bin, err := exec.LookPath("caddy")
 	if err != nil {
-		return false
+		return ""
 	}
 	st, err := os.Stat(bin)
 	if err != nil {
-		return false
+		return ""
 	}
 	if !st.ModTime().Equal(caddyVersionCache.mtime) {
 		out, _ := exec.Command(bin, "version").Output()
 		caddyVersionCache.mtime, caddyVersionCache.version = st.ModTime(), strings.TrimSpace(string(out))
 	}
-	return caddyAtLeast(caddyVersionCache.version, 2, 10)
+	return caddyVersionCache.version
+}
+
+// caddyForceAutomate: whether this Caddy prefers wildcards (and so understands force_automate), 2.10+.
+func caddyForceAutomate() bool { return caddyAtLeast(caddyVersion(), 2, 10) }
+
+// streamCloseDelay is how long live websockets outlast a reload on Caddy 2.7+ (older ones reject the setting and
+// close them at once). When it runs out Caddy closes them whatever the state, and clients reconnect through the
+// new config; two minutes keeps access changes (login, a removed site) prompt.
+func streamCloseDelay() string {
+	if caddyAtLeast(caddyVersion(), 2, 7) {
+		return "2m"
+	}
+	return ""
 }
 
 // wildcardIssued: Caddy has a current certificate for *.domain in its store.
@@ -232,6 +245,9 @@ func (h *Host) installCaddyBuild(pkgs []string, module string) error {
 		return err
 	}
 	h.say("installed Caddy %s (the previous one is kept as %s.nook-old)", strings.Fields(string(ver) + " ")[0], bin)
+	if streamCloseDelay() != "" { // 2.7+: rewrite the apps' blocks so live websockets outlast reloads
+		New(io.Discard).SyncAll()
+	}
 	return nil
 }
 
