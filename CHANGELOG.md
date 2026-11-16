@@ -1,5 +1,11 @@
 # nook
 
+## 1.28.7
+
+### Patch Changes
+
+- 93897d9: Cleanup: one way to word sizes and times across the dashboard (`format.ts`: small disk use now reads "12 KB" instead of "under 1 MB"), one helper for per-browser settings (`storage.ts`), and Go's `cmp.Or` in place of three copies of `cmpOr`.
+
 ## 1.28.6
 
 ### Patch Changes
