@@ -527,11 +527,18 @@ var hookRE = regexp.MustCompile(`^\./[A-Za-z0-9._-][A-Za-z0-9._/-]{0,100}$`)
 
 // runBackupHook runs a site's backup command as the app user, in the site's folder, for up to 10 minutes.
 func runBackupHook(u *AppUser, site, run string) error {
+	_, err := runSiteHook(u, site, run, nil, map[string]string{"NOOK_BACKUP": "1"}, 10*time.Minute)
+	return err
+}
+
+// runSiteHook runs a script in a site's folder as the app user, with the site's environment plus extra, and
+// returns what it printed on stdout (up to 64 KB). stderr goes in the error when it fails.
+func runSiteHook(u *AppUser, site, run string, args []string, extra map[string]string, timeout time.Duration) (string, error) {
 	if !hookRE.MatchString(run) || strings.Contains(run, "..") {
-		return fmt.Errorf("backup.run is a script in the site folder, like ./backup.sh, not %q", run)
+		return "", fmt.Errorf("a hook is a script in the site folder, like ./backup.sh, not %q", run)
 	}
 	dir := filepath.Join(u.Home, "sites", site)
-	cmd := exec.Command(filepath.Join(dir, run))
+	cmd := exec.Command(filepath.Join(dir, run), args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(u.UID), Gid: uint32(u.GID), Groups: []uint32{}}}
 	cmd.Dir = dir
 	// the same environment the site runs with (its database URL, bound services), general to specific
@@ -543,26 +550,30 @@ func runBackupHook(u *AppUser, site, run string) error {
 			env[k], _ = vars.Get(k)
 		}
 	}
-	env["HOME"], env["USER"], env["PATH"], env["NOOK_BACKUP"] = u.Home, "nook-"+u.Name, "/usr/local/bin:/usr/bin:/bin", "1"
+	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, "/usr/local/bin:/usr/bin:/bin"
+	for k, v := range extra {
+		env[k] = v
+	}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
-	out := &limited{b: &bytes.Buffer{}, max: 4 << 10}
-	cmd.Stdout, cmd.Stderr = out, out
+	stdout := &limited{b: &bytes.Buffer{}, max: 64 << 10}
+	stderr := &limited{b: &bytes.Buffer{}, max: 4 << 10}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Start(); err != nil {
-		return err
+		return "", err
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
 	case err := <-done:
 		if err != nil {
-			return fmt.Errorf("%v: %s", err, strings.TrimSpace(out.b.String()))
+			return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.b.String()+"\n"+stdout.b.String()))
 		}
-		return nil
-	case <-time.After(10 * time.Minute):
+		return stdout.b.String(), nil
+	case <-time.After(timeout):
 		cmd.Process.Kill()
-		return errors.New("still running after 10 minutes")
+		return "", fmt.Errorf("still running after %s", timeout)
 	}
 }
 

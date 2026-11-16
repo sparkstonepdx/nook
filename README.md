@@ -218,6 +218,11 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Who may call it:** the provider learns its callers from `NOOK_CLIENTS` (`{"alerts": {"blog": "<token>"}}`).
 - **Firewall:** opens the provider's port to exactly the bound apps.
 - **Known services:** known names (above) must provide exactly their env names, so providers are interchangeable. Any other name is a new interface that its provider defines.
+- **Versions:** a provider states `"version": "17"`. A consumer can ask for `"postgres>=15"` or `"php@8.3"` (8.3 or 8.3.x, not 8.30). Binding refuses a provider that doesn't meet it, and with no provider named, nook picks the newest one that does.
+- **Provisioning:** `"provision": "./provision.sh"` runs when an app is bound, as the provider's user in its site folder, with the app's name as its argument and in `NOOK_CONSUMER`, plus `NOOK_CONSUMER_USER` (its OS user, for Postgres peer auth) and `NOOK_CONSUMER_UID`. It sets up what that app needs (a role, a database) and prints `KEY=value` lines for the interface's env names, which the app gets in place of the templates. `"deprovision": "./deprovision.sh"` runs when the binding goes (unbound, moved to another provider, or the app deleted); data is the provider's to keep or drop. A failed provision leaves no binding.
+  ```json
+  {"kind": "service", "provides": {"postgres": {"version": "17", "env": {"DATABASE_URL": ""}, "provision": "./provision.sh", "deprovision": "./deprovision.sh"}}}
+  ```
 
 ## Store
 

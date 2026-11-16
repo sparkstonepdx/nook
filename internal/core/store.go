@@ -182,13 +182,14 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	if err := writeInstalled(m); err != nil {
 		return err
 	}
-	for _, need := range a.Needs {
-		if p := h.defaultProvider(need); p != "" {
-			if err := h.Bind(o.App, need, p, nil); err != nil {
-				h.say("couldn't bind %s: %v (grant it on the Services page)", need, err)
+	for _, s := range a.Needs {
+		n, _ := parseNeed(s) // checked with the catalog entry
+		if p := h.defaultProvider(n.Name, consumerNeeds(o.App, n.Name)); p != "" {
+			if err := h.Bind(o.App, n.Name, p, nil); err != nil {
+				h.say("couldn't bind %s: %v (grant it on the Services page)", n.Name, err)
 			}
 		} else {
-			h.say("%s needs %s: nothing provides it yet; grant it on the Services page", a.Name, need)
+			h.say("%s needs %s: nothing provides it yet; grant it on the Services page", a.Name, s)
 		}
 	}
 	j.step(StepHealth)

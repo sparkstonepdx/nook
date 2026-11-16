@@ -3,9 +3,9 @@ import { api, runCmd } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type Iface = { name: string; desc: string; env: string[] };
-type Provider = { id: string; interface: string; desc: string; ready: boolean; note?: string };
+type Provider = { id: string; interface: string; desc: string; version?: string; ready: boolean; note?: string };
 type Binding = { app: string; interface: string; provider: string; as?: Record<string, string>; env: string[]; ready: boolean };
-type Request = { app: string; interface: string; sites: string[] };
+type Request = { app: string; interface: string; wants?: string; sites: string[] };
 type View = { apps: string[]; interfaces: Iface[]; providers: Provider[]; bindings: Binding[]; requests: Request[] };
 
 const label = (id: string) => id.replace(/^app:/, "");
@@ -48,10 +48,10 @@ export default function Services() {
                 let sel!: HTMLSelectElement;
                 return (
                   <li class="row">
-                    <span class="row-main"><span>{r.app} needs <span class="mono">{r.interface}</span></span><small>for {r.sites.join(", ")}</small></span>
+                    <span class="row-main"><span>{r.app} needs <span class="mono">{r.interface}{r.wants ?? ""}</span></span><small>for {r.sites.join(", ")}</small></span>
                     <span class="row-end">
                       <Show when={ready().length} fallback={<span>nothing provides it yet</span>}>
-                        <select class="select" ref={sel} aria-label="Provider"><For each={ready()}>{(p) => <option value={p.id}>{label(p.id)}</option>}</For></select>
+                        <select class="select" ref={sel} aria-label="Provider"><For each={ready()}>{(p) => <option value={p.id}>{label(p.id)}{p.version ? ` ${p.version}` : ""}</option>}</For></select>
                         <button class="btn btn-sm" onClick={() => bind(r.app, r.interface, sel.value)}>Grant</button>
                       </Show>
                     </span>
@@ -92,7 +92,7 @@ export default function Services() {
           <For each={data()?.providers}>
             {(p) => (
               <li class="row">
-                <span class="row-main"><span>{label(p.id)} <span class="text-secondary">provides</span> {p.interface}</span><small>{p.desc}<Show when={p.note}> · {p.note}</Show></small></span>
+                <span class="row-main"><span>{label(p.id)}{p.version ? ` ${p.version}` : ""} <span class="text-secondary">provides</span> {p.interface}</span><small>{p.desc}<Show when={p.note}> · {p.note}</Show></small></span>
                 <span class="row-end"><Show when={!p.ready}><StatusBadge ok={false}>unavailable</StatusBadge></Show></span>
               </li>
             )}
@@ -122,7 +122,7 @@ export default function Services() {
             </Field>
             <Field label="From">
               <select class="select" name="provider" required>
-                <For each={providersFor(iface()).filter((p) => p.ready)}>{(p) => <option value={p.id}>{label(p.id)}</option>}</For>
+                <For each={providersFor(iface()).filter((p) => p.ready)}>{(p) => <option value={p.id}>{label(p.id)}{p.version ? ` ${p.version}` : ""}</option>}</For>
               </select>
             </Field>
           </div>

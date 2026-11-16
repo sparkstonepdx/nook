@@ -43,9 +43,16 @@ var Known = map[string]Interface{
 }
 
 // ProvideSpec is what a provider app declares for one interface: env templates using {url} {host} {port} {token}.
+// Version is what consumers' constraints are checked against ("17", "8.3"). Provision runs when an app is bound
+// (./provision.sh APP, as the provider's user, in its site folder): it sets up what that app needs (a login, a
+// database) and prints KEY=value lines for the interface's env names, which override the templates. Deprovision
+// runs when the binding goes.
 type ProvideSpec struct {
-	Desc string            `json:"desc,omitempty"`
-	Env  map[string]string `json:"env"`
+	Desc        string            `json:"desc,omitempty"`
+	Env         map[string]string `json:"env"`
+	Version     string            `json:"version,omitempty"`
+	Provision   string            `json:"provision,omitempty"`
+	Deprovision string            `json:"deprovision,omitempty"`
 }
 
 var (
@@ -59,8 +66,8 @@ func checkServices(m *Manifest) error {
 		return fmt.Errorf("nook.json: too many needs/provides")
 	}
 	for _, n := range m.Needs {
-		if !ifaceRE.MatchString(n) {
-			return fmt.Errorf("nook.json: bad service name %q in needs", n)
+		if _, ok := parseNeed(n); !ok {
+			return fmt.Errorf("nook.json: bad service %q in needs (a name, optionally @8.3 or >=15)", n)
 		}
 	}
 	if len(m.Provides) > 0 && m.Kind != "service" {
@@ -86,6 +93,14 @@ func checkServices(m *Manifest) error {
 				if _, ok := spec.Env[k]; !ok {
 					return fmt.Errorf("nook.json: %q must provide exactly %s", name, strings.Join(known.Env, ", "))
 				}
+			}
+		}
+		if spec.Version != "" && !versionRE.MatchString(spec.Version) {
+			return fmt.Errorf("nook.json: provides %q: version is like 17 or 8.3, not %q", name, spec.Version)
+		}
+		for _, hook := range []string{spec.Provision, spec.Deprovision} {
+			if hook != "" && (!hookRE.MatchString(hook) || strings.Contains(hook, "..")) {
+				return fmt.Errorf("nook.json: provides %q: hooks are scripts in the site folder, like ./provision.sh, not %q", name, hook)
 			}
 		}
 		if len(spec.Desc) > 200 {
@@ -143,6 +158,7 @@ type Binding struct {
 	Provider  string            `json:"provider"`  // "app:APP/SITE"
 	As        map[string]string `json:"as,omitempty"`
 	Token     string            `json:"token,omitempty"`
+	Values    map[string]string `json:"values,omitempty"` // what the provider's provision hook printed
 	Created   int64             `json:"created"`
 }
 
@@ -170,9 +186,11 @@ type Provider struct {
 	ID        string            `json:"id"`
 	Interface string            `json:"interface"`
 	Desc      string            `json:"desc"`
+	Version   string            `json:"version,omitempty"`
 	Ready     bool              `json:"ready"`
 	Note      string            `json:"note,omitempty"`
 	Env       map[string]string `json:"-"`
+	spec      ProvideSpec
 	app, site string
 	port      int
 }
@@ -190,7 +208,7 @@ func Providers() []Provider {
 						desc = k.Desc
 					}
 				}
-				p := Provider{ID: "app:" + app + "/" + site, Interface: iface, Desc: desc, Ready: port > 0, Env: spec.Env, app: app, site: site, port: port}
+				p := Provider{ID: "app:" + app + "/" + site, Interface: iface, Desc: desc, Version: spec.Version, Ready: port > 0, Env: spec.Env, spec: spec, app: app, site: site, port: port}
 				if port == 0 {
 					p.Note = "not running"
 				}
@@ -232,10 +250,11 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	if !ifaceRE.MatchString(iface) {
 		return fmt.Errorf("bad service name %q", iface)
 	}
+	wants := consumerNeeds(app, iface)
 	if providerID == "" {
-		providerID = h.defaultProvider(iface)
+		providerID = h.defaultProvider(iface, wants)
 		if providerID == "" {
-			return fmt.Errorf("nothing provides %q yet", iface)
+			return fmt.Errorf("nothing provides %s yet", needsText(iface, wants))
 		}
 	}
 	p, ok := findProvider(providerID, iface)
@@ -244,6 +263,11 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	}
 	if p.app == app {
 		return fmt.Errorf("an app can't bind to its own service; it can reach it already")
+	}
+	for _, w := range wants {
+		if !w.accepts(p.Version) {
+			return fmt.Errorf("%s needs %s; %s provides %s", app, w, providerID, cmpOr(p.Version, "no stated version"))
+		}
 	}
 	names := map[string]bool{}
 	for _, k := range interfaceEnv(p) {
@@ -263,21 +287,39 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	}
 	bs := readBindings()
 	var keep []Binding
+	var old *Binding
 	for _, b := range bs {
-		if !(b.App == app && b.Interface == iface) {
-			keep = append(keep, b)
+		if b.App == app && b.Interface == iface {
+			bb := b
+			old = &bb
+			continue
 		}
+		keep = append(keep, b)
 	}
 	b := Binding{App: app, Interface: iface, Provider: providerID, As: as, Created: time.Now().Unix()}
 	raw := make([]byte, 24)
 	rand.Read(raw)
 	b.Token = base64.RawURLEncoding.EncodeToString(raw)
+	if p.spec.Provision != "" {
+		h.say("%s is setting up %s for %s", providerID, iface, app)
+		vals, err := provision(p, b)
+		if err != nil {
+			unlock()
+			return fmt.Errorf("%s couldn't set up %s for %s: %v", providerID, iface, app, err)
+		}
+		b.Values = vals
+	}
 	if err := writeBindings(append(keep, b)); err != nil {
 		unlock()
 		return err
 	}
 	unlock()
 	h.say("bound %s to %s from %s", app, iface, providerID)
+	if old != nil && old.Provider != providerID { // moved to another provider: the old one lets it go
+		h.deprovision(*old)
+		oa, osite := splitAppProvider(old.Provider)
+		writeProviderEnv(oa, osite)
+	}
 	return h.applyBindings(app, p.app, p.site)
 }
 
@@ -307,6 +349,7 @@ func (h *Host) Unbind(app, iface string) error {
 		return err
 	}
 	h.say("unbound %s from %s (%s)", app, iface, gone.Provider)
+	h.deprovision(*gone)
 	papp, psite := splitAppProvider(gone.Provider)
 	return h.applyBindings(app, papp, psite)
 }
@@ -320,15 +363,23 @@ func splitAppProvider(id string) (string, string) {
 	return a, s
 }
 
-func (h *Host) defaultProvider(iface string) string {
-	var ready []string
+// defaultProvider is the one ready provider of iface that meets every constraint, or of several, the one with the
+// newest version. "" when there's none, or a tie.
+func (h *Host) defaultProvider(iface string, wants []need) string {
+	var best []Provider
 	for _, p := range Providers() {
-		if p.Interface == iface && p.Ready {
-			ready = append(ready, p.ID)
+		if p.Interface != iface || !p.Ready || !acceptsAll(wants, p.Version) {
+			continue
+		}
+		switch {
+		case len(best) == 0 || versionCmp(p.Version, best[0].Version) > 0:
+			best = []Provider{p}
+		case versionCmp(p.Version, best[0].Version) == 0:
+			best = append(best, p)
 		}
 	}
-	if len(ready) == 1 {
-		return ready[0]
+	if len(best) == 1 {
+		return best[0].ID
 	}
 	return ""
 }
@@ -390,6 +441,9 @@ func bindingValues(b Binding) map[string]string {
 	for k, t := range spec.Env {
 		out[k] = r.Replace(t)
 	}
+	for k, v := range b.Values { // what provisioning printed (only names the interface has, checked when stored)
+		out[k] = v
+	}
 	return out
 }
 
@@ -446,6 +500,8 @@ func (h *Host) dropAppBindings(app string) {
 		if b.App == app || papp == app {
 			if b.App != app {
 				affected[b.App] = true
+			} else if papp != app {
+				h.deprovision(b) // a consumer going: its provider lets it go
 			}
 			continue
 		}
@@ -477,6 +533,7 @@ type BindingRow struct {
 type Request struct {
 	App       string   `json:"app"`
 	Interface string   `json:"interface"`
+	Wants     string   `json:"wants,omitempty"` // its version constraints, like ">=15"
 	Sites     []string `json:"sites"`
 }
 
@@ -518,13 +575,19 @@ func ServicesOverview() ServicesView {
 		want := map[string][]string{}
 		for site, needs := range readAppServices(app).Needs {
 			for _, n := range needs {
-				want[n] = append(want[n], site)
+				if nd, ok := parseNeed(n); ok {
+					want[nd.Name] = append(want[nd.Name], site)
+				}
 			}
 		}
 		for iface, sites := range want {
 			if !bound[app+"/"+iface] {
 				sort.Strings(sites)
-				v.Requests = append(v.Requests, Request{App: app, Interface: iface, Sites: sites})
+				r := Request{App: app, Interface: iface, Sites: sites}
+				if w := consumerNeeds(app, iface); len(w) > 0 {
+					r.Wants = strings.TrimPrefix(needsText(iface, w), iface)
+				}
+				v.Requests = append(v.Requests, r)
 			}
 		}
 	}
