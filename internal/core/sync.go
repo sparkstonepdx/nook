@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -342,6 +341,7 @@ func (h *Host) syncLocked(app string) error {
 
 	sort.Slice(published, func(i, j int) bool { return published[i].Host < published[j].Host })
 	out := filepath.Join(config.CaddyAppsDir, app+".caddy")
+	caddyfile.StreamCloseDelay = streamCloseDelay()
 	text := caddyfile.Render(sitesPath, published, redirects, OwnCert())
 	old, oldErr := os.ReadFile(out)
 	os.MkdirAll(config.CaddyAppsDir, 0o755)
@@ -357,7 +357,9 @@ func (h *Host) syncLocked(app string) error {
 		h.say("%s: generated Caddy config failed to validate; kept the previous one\n%s", app, lastLines(msg, 5))
 		return fmt.Errorf("caddy validate failed")
 	}
-	if !bytes.Equal(old, []byte(text)) {
+	// a reload drops every live websocket on Caddy before 2.7 (and starts their close timer after), so only when
+	// Caddy's config really changed: a redeploy changes just the "# site" lines
+	if oldErr != nil || !caddyfile.SameConfig(string(old), text) {
 		systemctl("reload", "caddy")
 	}
 	refreshNested() // a host two levels under a wildcard domain gets a wildcard for its parent
