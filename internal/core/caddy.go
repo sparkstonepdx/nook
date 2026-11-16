@@ -107,12 +107,12 @@ var caddyVersion = func() string {
 // caddyForceAutomate: whether this Caddy prefers wildcards (and so understands force_automate), 2.10+.
 func caddyForceAutomate() bool { return caddyAtLeast(caddyVersion(), 2, 10) }
 
-// streamCloseDelay is how long live websockets outlast a reload: a day, on Caddy 2.7+ (older ones reject the
-// setting and close them all). Long, so the drop rarely comes at all: a connection that's still open a day after
-// the reload that replaced its config is closed then, and its client reconnects.
+// streamCloseDelay is how long live websockets outlast a reload on Caddy 2.7+ (older ones reject the setting and
+// close them at once). When it runs out Caddy closes them whatever the state, and clients reconnect through the
+// new config; two minutes keeps access changes (login, a removed site) prompt.
 func streamCloseDelay() string {
 	if caddyAtLeast(caddyVersion(), 2, 7) {
-		return "24h"
+		return "2m"
 	}
 	return ""
 }
