@@ -91,6 +91,8 @@ func backupCmd(h *core.Host, args []string) {
 			snap = args[1]
 		}
 		die(h.BackupRestoreApp(args[0], snap))
+	case "restore-server":
+		die(h.RestoreServer(core.ServerRestore{From: flag("--from"), Snapshot: flag("--snapshot"), NewID: slices.Contains(args, "--new-id"), Force: slices.Contains(args, "--force")}))
 	case "skip":
 		if len(args) != 2 || (args[1] != "on" && args[1] != "off") {
 			die(fmt.Errorf("usage: nook-admin backup skip APP on|off"))
@@ -100,6 +102,6 @@ func backupCmd(h *core.Host, args []string) {
 		b, _ := json.MarshalIndent(core.GetBackupStatus(), "", "  ")
 		fmt.Println(string(b))
 	default:
-		die(fmt.Errorf("usage: nook-admin backup [status|setup|run|snapshots|restore|skip]"))
+		die(fmt.Errorf("usage: nook-admin backup [status|setup|run|snapshots|restore|restore-server|skip]"))
 	}
 }
