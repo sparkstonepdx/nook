@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"net"
@@ -55,6 +56,7 @@ type card struct {
 	Screenshots []shot `json:"screenshots,omitempty"`
 	Image       string `json:"image,omitempty"` // og:image or twitter:image, absolute, on the site's own host
 	Installable bool   `json:"installable"`     // it has a web manifest
+	Why         string `json:"why,omitempty"`   // why there's no icon, for the tile's tooltip
 	unreachable bool   // the page couldn't be read: kept for a minute, not an hour
 }
 
@@ -209,11 +211,15 @@ func readCard(host string) card {
 		var se statusErr
 		if !errors.As(err, &se) {
 			c.unreachable = true // nothing answered: try again in a minute
+			c.Why = "Couldn't read the page: " + err.Error()
 			return c
 		}
 		// it answered, just not with a page (an API, a token-only site): its favicon may still be there
 		c.Icon = firstIcon(fallbackIcons(host))
 		c.Favicon = c.Icon
+		if c.Icon == "" {
+			c.Why = "The page answered " + err.Error() + ", and there's no /favicon.ico"
+		}
 		return c
 	}
 	base, _ := url.Parse(final)
@@ -273,8 +279,16 @@ func readCard(host string) card {
 			}
 		}
 	}
+	why := ""
+	if manifest == "" {
+		why = "The page has no <link rel=\"manifest\">, and none of its icons loaded"
+	}
 	if manifest != "" {
-		if b, mfinal, err := get(manifest, 256<<10); err == nil {
+		b, mfinal, err := get(manifest, 256<<10)
+		if err != nil {
+			why = "The manifest at " + manifest + " didn't load: " + err.Error()
+		}
+		if err == nil {
 			var m struct {
 				Name        string `json:"name"`
 				ShortName   string `json:"short_name"`
@@ -290,7 +304,10 @@ func readCard(host string) card {
 					FormFactor string `json:"form_factor"`
 				} `json:"screenshots"`
 			}
-			if json.Unmarshal(b, &m) == nil {
+			if err := json.Unmarshal(b, &m); err != nil {
+				why = "The manifest at " + manifest + " isn't JSON: " + err.Error()
+			} else {
+				why = fmt.Sprintf("The manifest lists %d icons and none of them loaded as an image", len(m.Icons))
 				c.Installable = true
 				mbase, _ := url.Parse(mfinal)
 				if n := clean(m.Name, 60); n != "" {
@@ -342,6 +359,9 @@ func readCard(host string) card {
 	// the favicon: the page's rel=icon (an SVG or the largest first), else /favicon.svg or /favicon.ico; a site
 	// without one shows its app icon instead
 	c.Favicon = firstIcon(append(ranked(favs), "https://"+host+"/favicon.svg", "https://"+host+"/favicon.ico"))
+	if c.Icon == "" && c.Maskable == "" && c.Favicon == "" {
+		c.Why = why
+	}
 	return c
 }
 

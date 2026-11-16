@@ -232,12 +232,14 @@ function SiteSheet(props: { app: string; site?: Site; onClose: () => void; after
             <Show when={s().host && s().live}>
               {(() => {
                 const card = () => directory()?.find((c) => c.host === s().host);
-                return (
+                const noIcon = () => { const c = card(); return c?.why && !c.icon && !c.maskable && !c.favicon ? c.why : ""; };
+                return (<>
+                  <Show when={noIcon()}><div class="note note-warn"><span>No icon for its tile. {noIcon()}</span></div></Show>
                   <label class="switch-row">
                     <input type="checkbox" role="switch" checked={!!card()?.listed} disabled={!card()} onChange={(e) => setListed(s().host, e.currentTarget.checked)} />
                     <span><span>List in directory</span><small>{card()?.installable === false ? "Shown with its page title and icon: it has no web manifest." : "Anyone can see it in the public directory, with the name and icon from its manifest."}</small></span>
                   </label>
-                );
+                </>);
               })()}
             </Show>
             <div class="actions-grid">
