@@ -2,7 +2,7 @@ import { createResource, createRoot, createSignal } from "solid-js";
 import { api } from "./api";
 
 // Every site on the server with its card (from its own web manifest), shared by the launcher and the site sheet.
-export type DirCard = { host: string; url: string; app: string; listed: boolean; preview: boolean; name: string; shortName?: string; description?: string; theme?: string; background?: string; icon?: string; maskable?: string; favicon?: string; installable: boolean };
+export type DirCard = { host: string; url: string; app: string; listed: boolean; preview: boolean; name: string; shortName?: string; description?: string; theme?: string; background?: string; icon?: string; maskable?: string; favicon?: string; installable: boolean; why?: string };
 
 // Fetched when the Apps page opens (not at startup, which may be the login page), and kept across pages.
 const [on, setOn] = createSignal(false);

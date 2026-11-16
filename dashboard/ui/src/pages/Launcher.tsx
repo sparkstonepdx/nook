@@ -31,7 +31,7 @@ export default function Launcher() {
 function Tile(props: { c: DirCard }) {
   const label = () => props.c.shortName || props.c.name;
   return (
-    <a class="tile" href={props.c.url} target="_blank" rel="noopener" title={`${props.c.name} · ${props.c.host}`}>
+    <a class="tile" href={props.c.url} target="_blank" rel="noopener" title={`${props.c.name} · ${props.c.host}${props.c.why && !props.c.icon && !props.c.maskable && !props.c.favicon ? `\nNo icon: ${props.c.why}` : ""}`}>
       <Switch fallback={<span class="tile-icon"><span class="tile-initial" style={{ color: props.c.theme || undefined }}>{label().slice(0, 1).toUpperCase()}</span></span>}>
         <Match when={maskableURL(props.c)}>{(src) => <span class="tile-icon" style={{ background: props.c.background || undefined }}><img src={src()} alt="" loading="lazy" /></span>}</Match>
         <Match when={iconURL(props.c)}>{(src) => <span class="tile-icon tile-padded" style={{ background: props.c.background || undefined }}><img src={src()} alt="" loading="lazy" /></span>}</Match>
