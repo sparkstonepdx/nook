@@ -1,5 +1,11 @@
 # nook
 
+## 1.28.5
+
+### Patch Changes
+
+- 65721da: A launcher tile with no icon says why: the site's sheet (and the tile's tooltip) shows whether the page couldn't be read, had no manifest link, or listed icons that didn't load.
+
 ## 1.28.4
 
 ### Patch Changes
