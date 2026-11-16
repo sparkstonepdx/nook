@@ -245,7 +245,7 @@ Every site on the server, with its own name, icon and colors, read from its web 
 
 ## Backups
 
-Daily, before each nook update, and on demand, nook backs up to an S3-compatible bucket (Cloudflare R2, Backblaze B2, any S3) with [restic](https://restic.net): encrypted, deduplicated, incremental. Set it up in the Server section's **Backups**, or `nook-admin backup setup --repo s3:https://ENDPOINT/BUCKET/nook --key KEY_ID` (the secret on stdin).
+Daily, before each nook update, and on demand, nook backs up to an S3-compatible bucket (Cloudflare R2, Backblaze B2, any S3) with [restic](https://restic.net): encrypted, deduplicated, incremental. Set it up on the dashboard's **Backups** page, or `nook-admin backup setup --repo s3:https://ENDPOINT/BUCKET/nook --key KEY_ID` (the secret on stdin).
 
 - **What's in it:** one snapshot of the server (`/etc/nook`, the dashboard's users, nook's state, Caddy's certificates, deploy keys, each app's limits, and each app's uid), and one per app (`/srv/nook/APP`, less `builds/` and what it leaves out). The backup password file itself stays out.
 - **Running apps:** a site's `nook.json` `{"backup": {"run": "./backup.sh"}}` runs first, as the app user with the site's environment and `NOOK_BACKUP=1`, to write a consistent dump into `data/` (`sqlite3 .backup`, `pg_dump`). An app with no hook is frozen (its cgroup paused; nothing restarts) while it's read.
@@ -254,6 +254,14 @@ Daily, before each nook update, and on demand, nook backs up to an S3-compatible
 - **Kept:** 7 daily, 4 weekly, 6 monthly (`BACKUP_KEEP`). A sample is read back weekly (`restic check --read-data-subset=5%`). A failure is advice on the Server page and a push.
 - **Several servers, one bucket:** each server has an id (`/etc/nook/server-id`), its snapshots' restic host. A server forgets and prunes only its own, and `nook-admin backup snapshots APP --from SERVER` lists another server's, the start of moving and adopting apps between servers.
 - **Restoring an app:** **Restore from a backup** on its Manage sheet, or `nook-admin backup restore APP [SNAPSHOT]`. Its `data/` comes back from the snapshot and it restarts; what was there is kept as `data.before-restore-TIME`. restic writes into a root-only folder first and ownership is set there, so nothing the app can touch is written through.
+- **Restoring a whole server:** on a fresh install, connect to the same repository, then restore:
+
+  ```sh
+  nook-admin backup setup --repo s3:https://ENDPOINT/BUCKET/nook --key KEY_ID --existing   # secret, then password, on stdin
+  nook-admin backup restore-server [--from OLD_SERVER_ID] [--snapshot ID] [--new-id]
+  ```
+
+  It puts back the latest server snapshot (this server's own settings are kept as `/etc/nook.before-restore-TIME`; its `SSH_HOST` stays), makes each app's user with its old uid where that's free (otherwise a new one, and the files are handed over), restores every app's folder, then turns on the watchers, firewall, wildcard certificates (getting Caddy's DNS plugin if needed), the dashboard and Caddy, and syncs every app. Then point DNS at the new server; Caddy reuses its certificates. It takes over the old server's id so backups carry on the same history; `--new-id` keeps its own, for a second server while the first still runs. It refuses a server that already has apps unless `--force` (an app already here is set aside as `APP.before-restore-TIME`).
 - **restic:** nook installs the version it pins (0.19.1) from GitHub's releases, checked against the SHA-256 digest GitHub publishes, at `/usr/local/lib/nook/restic`.
 
 ## Headroom
