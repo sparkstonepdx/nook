@@ -19,9 +19,14 @@ import (
 //	         reach it (bound apps, #12)
 //	cron     run on a schedule (systemd timer); no port, no hostname
 //
+// and a site folder without run can be:
+//
+//	runtime  binaries other apps run as themselves (#42): published root-owned to /var/lib/nook/runtimes/APP/SITE,
+//	         never run, never served; {"kind": "runtime", "provides": {"frankenphp": {"version": "1.4", "bin": "."}}}
+//
 // chosen by sites/SITE/nook.json: {"kind": "cron", "schedule": "*/15 * * * *", "timeout": 600}.
 //
-// A static site (no run) reads nook.json too, for {"cors": true} only.
+// A static site (no run) reads nook.json too, for {"cors": true} and "needs".
 
 type Manifest struct {
 	Kind     string                 `json:"kind"`
@@ -80,7 +85,7 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	switch m.Kind {
 	case "", "web":
 		m.Kind = "web"
-	case "service":
+	case "service", "runtime":
 	case "cron":
 		cal, err := schedule.OnCalendar(m.Schedule)
 		if err != nil {
@@ -97,7 +102,7 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 			m.Timeout = 86400
 		}
 	default:
-		return m, fmt.Errorf("nook.json: kind must be web, service or cron, not %q", m.Kind)
+		return m, fmt.Errorf("nook.json: kind must be web, service, cron or runtime, not %q", m.Kind)
 	}
 	return m, nil
 }
@@ -124,12 +129,12 @@ Group=nook-%[1]s
 Slice=nook-%[1]s.slice
 WorkingDirectory=%[3]s/sites/%[2]s
 ExecStart=%[3]s/sites/%[2]s/run
-Environment=HOST=127.0.0.1 SITE=%[2]s
+Environment=HOST=127.0.0.1 SITE=%[2]s%[8]s
 %[4]sTimeoutStartSec=%[5]d
 StandardOutput=append:%[6]s
 StandardError=append:%[6]s
 LimitFSIZE=2G
-%[7]s`, app, site, u.Home, envLines(app, site), m.Timeout, log, sandbox(u.Home, app, "SocketBindDeny=any\n"))
+%[7]s`, app, site, u.Home, envLines(app, site), m.Timeout, log, sandbox(u.Home, app, "SocketBindDeny=any\n"), runtimeEnv(app))
 	timer := fmt.Sprintf(`[Unit]
 Description=Schedule for %[2]s (cron job of app %[1]s)
 

@@ -2,7 +2,7 @@ package core
 
 // Versions and provisioning for services (#42 step 1).
 //
-//	needs:    "postgres", "postgres>=15", "php@8.3" (8.3.x), "frankenphp@1" (1.x)
+//	needs:    "postgres", "postgres>=15", "php@8.3" (8.3.x), "frankenphp@1" (1.x), "notify?" (optional: used if bound)
 //	provides: "version": "17", "provision": "./provision.sh", "deprovision": "./deprovision.sh"
 //
 // Provision runs as the provider's user in its site folder with the consumer's name as its argument and in
@@ -21,18 +21,23 @@ import (
 )
 
 var (
-	needRE    = regexp.MustCompile(`^([a-z][a-z0-9-]{0,30})(?:(@|>=)(\d{1,4}(?:\.\d{1,4}){0,2}))?$`)
+	needRE    = regexp.MustCompile(`^([a-z][a-z0-9-]{0,30})(?:(@|>=)(\d{1,4}(?:\.\d{1,4}){0,2}))?(\?)?$`)
 	versionRE = regexp.MustCompile(`^\d{1,4}(\.\d{1,4}){0,2}$`)
 )
 
-type need struct{ Name, Op, Version string }
+// need is one entry of "needs". Optional ones ("notify?") are used when bound and never asked for: the app works
+// without them.
+type need struct {
+	Name, Op, Version string
+	Optional          bool
+}
 
 func parseNeed(s string) (need, bool) {
 	m := needRE.FindStringSubmatch(s)
 	if m == nil {
 		return need{}, false
 	}
-	return need{m[1], m[2], m[3]}, true
+	return need{m[1], m[2], m[3], m[4] == "?"}, true
 }
 
 func (n need) String() string { return n.Name + n.Op + n.Version }

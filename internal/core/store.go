@@ -221,6 +221,8 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			if err := h.Bind(o.App, n.Name, p, nil); err != nil {
 				h.say("couldn't bind %s: %v (grant it on the Services page)", n.Name, err)
 			}
+		} else if n.Optional {
+			h.say("%s can use %s: nothing provides it yet; it works without it", a.Name, n.Name)
 		} else {
 			h.say("%s needs %s: nothing provides it yet; grant it on the Services page", a.Name, s)
 		}

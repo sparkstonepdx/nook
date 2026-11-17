@@ -29,12 +29,12 @@ func TestCheckServices(t *testing.T) {
 }
 
 func TestNeedsAndVersions(t *testing.T) {
-	for s, want := range map[string]need{"postgres": {"postgres", "", ""}, "postgres>=15": {"postgres", ">=", "15"}, "php@8.3": {"php", "@", "8.3"}} {
+	for s, want := range map[string]need{"postgres": {"postgres", "", "", false}, "postgres>=15": {"postgres", ">=", "15", false}, "php@8.3": {"php", "@", "8.3", false}, "notify?": {"notify", "", "", true}, "php@8.3?": {"php", "@", "8.3", true}} {
 		if n, ok := parseNeed(s); !ok || n != want {
 			t.Errorf("%s: %+v %v", s, n, ok)
 		}
 	}
-	for _, s := range []string{"Postgres", "pg>15", "php@8.x", "php@", ">=15"} {
+	for _, s := range []string{"Postgres", "pg>15", "php@8.x", "php@", ">=15", "?notify", "notify??"} {
 		if _, ok := parseNeed(s); ok {
 			t.Errorf("accepted need %q", s)
 		}

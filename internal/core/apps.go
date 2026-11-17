@@ -228,7 +228,7 @@ func (h *Host) Delete(app, confirm string) error {
 	} {
 		os.Remove(p)
 	}
-	for _, p := range []string{filepath.Join(config.WWWDir, app), filepath.Join(config.LogDir, app), filepath.Join(config.EnvDir, app)} {
+	for _, p := range []string{filepath.Join(config.WWWDir, app), filepath.Join(config.RuntimeDir, app), filepath.Join(config.LogDir, app), filepath.Join(config.EnvDir, app)} {
 		os.RemoveAll(p)
 	}
 	if states, _ := filepath.Glob(filepath.Join(config.StateDir, app+"--*")); states != nil {
@@ -277,7 +277,7 @@ func (h *Host) Grant(add bool, g grants.Grant) error {
 // appLeftovers reports whether anything of app is still on disk.
 func appLeftovers(app string) bool {
 	for _, p := range []string{
-		filepath.Join(config.AppsDir, app), filepath.Join(config.WWWDir, app), filepath.Join(config.CaddyAppsDir, app+".caddy"),
+		filepath.Join(config.AppsDir, app), filepath.Join(config.WWWDir, app), filepath.Join(config.RuntimeDir, app), filepath.Join(config.CaddyAppsDir, app+".caddy"),
 		filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app), filepath.Join("/etc/systemd/system", "nook-"+app+".slice"),
 	} {
 		if _, err := os.Lstat(p); err == nil {
