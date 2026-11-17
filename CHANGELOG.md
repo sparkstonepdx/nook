@@ -1,5 +1,11 @@
 # nook
 
+## 1.29.3
+
+### Patch Changes
+
+- 25deb4b: A subdomain under a wildcard certificate with no site yet shows the server's 404 page instead of a blank screen: the wildcard's catch-all block answered an empty 404.
+
 ## 1.29.2
 
 ### Patch Changes
