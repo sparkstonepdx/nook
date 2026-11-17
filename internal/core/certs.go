@@ -33,6 +33,7 @@ import (
 	"github.com/sparkstonepdx/nook/internal/caddyfile"
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/notfound"
 )
 
 var (
@@ -175,7 +176,8 @@ func renderTLS(all []wildcard) string {
 	ws := append([]wildcard(nil), all...)
 	sort.Slice(ws, func(i, j int) bool { return ws[i].Domain < ws[j].Domain })
 	for _, w := range ws {
-		fmt.Fprintf(&b, "*.%s {\n\ttls {\n\t\tdns %s {env.%s}\n\t}\n\trespond 404\n}\n", w.Domain, w.Provider, w.Env)
+		// a subdomain with no site yet gets the server's 404 page, not an empty answer (a blank screen)
+		fmt.Fprintf(&b, "*.%s {\n\ttls {\n\t\tdns %s {env.%s}\n\t}\n\terror 404\n\thandle_errors {\n\t\troot * %s\n\t\trewrite * /404.html\n\t\tfile_server\n\t}\n}\n", w.Domain, w.Provider, w.Env, notfound.Dir)
 	}
 	return b.String()
 }
