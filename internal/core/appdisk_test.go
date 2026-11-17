@@ -116,3 +116,19 @@ func TestNormLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestSandboxSyscalls(t *testing.T) {
+	plain := sandbox("/srv/nook/a", "a", "", false)
+	strict := sandbox("/srv/nook/a", "a", "", true)
+	if strings.Contains(plain, "SystemCallFilter") {
+		t.Error("the filter is opt-in: no SystemCallFilter without strict")
+	}
+	for _, want := range []string{"SystemCallFilter=@system-service\n", "SystemCallFilter=~@privileged @resources\n", "SystemCallErrorNumber=EPERM\n", "X-Nook-Sandbox=strict\n"} {
+		if !strings.Contains(strict, want) {
+			t.Errorf("strict sandbox lacks %q", want)
+		}
+	}
+	if !(Manifest{Sandbox: &SandboxSpec{Syscalls: "strict"}}).strict() || (Manifest{}).strict() {
+		t.Error("strict()")
+	}
+}

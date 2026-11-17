@@ -44,7 +44,7 @@ func TestOpenPorts(t *testing.T) {
 }
 
 func TestPublicPortUnitLines(t *testing.T) {
-	base := sandbox("/srv/nook/mail", "mail", bindRules(20001, false, 20000, 29999))
+	base := sandbox("/srv/nook/mail", "mail", bindRules(20001, false, 20000, 29999), false)
 	if withPublicPorts(base, nil) != base {
 		t.Fatal("no ports, no change")
 	}
@@ -63,5 +63,12 @@ func TestPublicPortUnitLines(t *testing.T) {
 	}
 	if strings.Index(low, "SocketBindAllow=tcp:20001") > strings.Index(low, "SocketBindDeny=any") {
 		t.Fatal("allows go before the deny")
+	}
+}
+
+func TestPublicPortsWithStrictSandbox(t *testing.T) {
+	s := withPublicPorts(sandbox("/srv/nook/mail", "mail", bindRules(20001, false, 20000, 29999), true), []int{25})
+	if !strings.Contains(s, "CapabilityBoundingSet=CAP_NET_BIND_SERVICE") || !strings.Contains(s, "SystemCallFilter=@system-service") {
+		t.Fatalf("both apply:\n%s", s)
 	}
 }

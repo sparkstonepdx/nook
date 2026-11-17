@@ -216,7 +216,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -253,7 +253,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -527,7 +527,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publ
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny bool, public []int) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, strict bool, public []int) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -560,7 +560,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		withPublicPorts(sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), public), healthLine, runtimeEnv(app))
+		withPublicPorts(sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), strict), public), healthLine, runtimeEnv(app))
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil
@@ -588,7 +588,14 @@ func bindRules(port int, any bool, min, max int) string {
 	return r + "SocketBindDeny=any\n"
 }
 
-func sandbox(home, app, bind string) string {
+func sandbox(home, app, bind string, strict bool) string {
+	// system calls (#34), for sites that opt in with {"sandbox": {"syscalls": "strict"}}: systemd's allowlist for
+	// ordinary services, minus privileged and resource-limit calls. A blocked call fails with EPERM instead of
+	// killing the process, so a runtime probing for something optional falls back.
+	calls := ""
+	if strict {
+		calls = "# system calls\nSystemCallFilter=@system-service\nSystemCallFilter=~@privileged @resources\nSystemCallErrorNumber=EPERM\nX-Nook-Sandbox=strict\n"
+	}
 	return `# network: may only listen on its own port (if any); ordinary sockets only
 ` + bind + `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 # sandbox: only its own app folder is visible and writable
@@ -611,7 +618,7 @@ RestrictRealtime=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 CapabilityBoundingSet=
-`
+` + calls
 }
 
 // envLines is the unit's EnvironmentFile lines, general to specific (see env.go).

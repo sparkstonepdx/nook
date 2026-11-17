@@ -17,13 +17,16 @@ import (
 )
 
 // SiteHealthPath is the health path a running site declared ("" if none).
-func SiteHealthPath(app, site string) string {
-	b, err := os.ReadFile(filepath.Join("/etc/systemd/system", UnitName(app, site)))
+func SiteHealthPath(app, site string) string { return unitKey(UnitName(app, site), "X-Nook-Health") }
+
+// unitKey reads a key nook wrote into a unit file under /etc/systemd/system ("" if none).
+func unitKey(unit, key string) string {
+	b, err := os.ReadFile(filepath.Join("/etc/systemd/system", unit))
 	if err != nil {
 		return ""
 	}
 	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "X-Nook-Health="); ok {
+		if v, ok := strings.CutPrefix(l, key+"="); ok {
 			return strings.TrimSpace(v)
 		}
 	}
