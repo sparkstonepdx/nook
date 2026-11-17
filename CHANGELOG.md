@@ -1,5 +1,11 @@
 # nook
 
+## 1.37.0
+
+### Minor Changes
+
+- dd1546e: Store: catalog entries can be runtimes (`"kind": "runtime"`, with `links` templated by `{version}` for apt) and can list public `ports`, which installing grants. `nook site deploy` and the deploy API report a runtime site as `(runtime)` instead of waiting for a hostname.
+
 ## 1.36.0
 
 ### Minor Changes
