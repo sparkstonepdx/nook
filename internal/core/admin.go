@@ -228,6 +228,8 @@ type AppInfo struct {
 	Login     bool       `json:"login"`    // sites behind nook's login
 	LoginApp  bool       `json:"loginApp"` // a site's nook.json asks for the login itself ("auth": "nook-login")
 	Changed   int64      `json:"changed"`  // unix time a site of it last changed (a deploy swaps a site's folder in)
+	Ports     []int      `json:"ports"`    // public ports granted to it
+	PortsAsk  []int      `json:"portsAsk"` // public ports its sites ask for and don't have
 }
 
 func mb(v string) string {
@@ -255,7 +257,7 @@ func (h *Host) Overview() map[string]any {
 		if watcher == "" {
 			watcher = "?"
 		}
-		info := AppInfo{Name: a, Memory: mb(slice["MemoryCurrent"]), MemoryMax: mb(slice["MemoryMax"]), CPU: slice["CPUQuotaPerSecUSec"], Watcher: watcher, Redirects: red, Sites: []SiteInfo{}, Grants: [][]string{}, Login: AppLogin(a)}
+		info := AppInfo{Name: a, Memory: mb(slice["MemoryCurrent"]), MemoryMax: mb(slice["MemoryMax"]), CPU: slice["CPUQuotaPerSecUSec"], Watcher: watcher, Redirects: red, Sites: []SiteInfo{}, Grants: [][]string{}, Login: AppLogin(a), Ports: orEmpty(GrantedPorts(a)), PortsAsk: orEmpty(askedPorts(a))}
 		if info.Redirects == nil {
 			info.Redirects = []string{}
 		}

@@ -225,6 +225,7 @@ func (h *Host) Delete(app, confirm string) error {
 		filepath.Join(config.CaddyAppsDir, app+".caddy"), filepath.Join(config.EnvDir, app+".env"), filepath.Join(config.EnvDir, app+".user.env"),
 		filepath.Join(config.SSHKeysDir, "nook-"+app),
 		loginPath(app), // a new app with this name starts open
+		portsPath(app), askedPath(app), // nor with its public ports
 	} {
 		os.Remove(p)
 	}

@@ -40,6 +40,7 @@ type Manifest struct {
 	Open     []string               `json:"open,omitempty"`     // with auth: paths anyone may reach without a token, like "/v1/subscribe/*"
 	Listen   string                 `json:"listen,omitempty"`   // "any": may listen on unprivileged ports outside nook's app range too (CI runners)
 	Backup   *BackupSpec            `json:"backup,omitempty"`   // what a backup runs first, and leaves out (backup.go)
+	Ports    []int                  `json:"ports,omitempty"`    // web and service: public ports it listens on itself, once granted (publicports.go)
 	calendar string
 }
 
@@ -77,6 +78,17 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	for _, p := range m.Open {
 		if !openPathRE.MatchString(p) {
 			return m, fmt.Errorf("nook.json: open path %q should look like /v1/health or /v1/send/* (letters, digits, . _ ~ - /, and * only at the end)", p)
+		}
+	}
+	if len(m.Ports) > 0 && m.Kind != "" && m.Kind != "web" && m.Kind != "service" {
+		return m, fmt.Errorf("nook.json: ports are for web sites and services; a %s doesn't listen", m.Kind)
+	}
+	if len(m.Ports) > 10 {
+		return m, fmt.Errorf("nook.json: at most 10 ports")
+	}
+	for _, p := range m.Ports {
+		if p < 1 || p > 65535 {
+			return m, fmt.Errorf("nook.json: %d isn't a port", p)
 		}
 	}
 	if m.Auth != "" && m.Kind != "" && m.Kind != "web" {
