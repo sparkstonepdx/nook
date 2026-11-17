@@ -414,7 +414,7 @@ func (h *Host) BackupRun(reason string) (err error) {
 	writeUsers()
 	h.say("server: nook's settings, users, certificates")
 	sb, err := backupPaths(c, []string{"nook", "server"}, serverPaths(),
-		[]string{config.WWWDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
+		[]string{config.WWWDir, config.RuntimeDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
 	if err != nil {
 		return fmt.Errorf("server: %v", err)
 	}
@@ -541,22 +541,7 @@ func runSiteHook(u *AppUser, site, run string, args []string, extra map[string]s
 	cmd := exec.Command(filepath.Join(dir, run), args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(u.UID), Gid: uint32(u.GID), Groups: []uint32{}}}
 	cmd.Dir = dir
-	// the same environment the site runs with (its database URL, bound services), general to specific
-	env := map[string]string{}
-	for _, f := range envFiles(u.Name, site) {
-		b, _ := os.ReadFile(f)
-		vars := envfile.Parse(string(b))
-		for _, k := range vars.Keys() {
-			env[k], _ = vars.Get(k)
-		}
-	}
-	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, "/usr/local/bin:/usr/bin:/bin"
-	for k, v := range extra {
-		env[k] = v
-	}
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
+	cmd.Env = hookEnv(u, site, extra)
 	stdout := &limited{b: &bytes.Buffer{}, max: 64 << 10}
 	stderr := &limited{b: &bytes.Buffer{}, max: 4 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
@@ -575,6 +560,30 @@ func runSiteHook(u *AppUser, site, run string, args []string, extra map[string]s
 		cmd.Process.Kill()
 		return "", fmt.Errorf("still running after %s", timeout)
 	}
+}
+
+// hookEnv is the environment the site runs with (its database URL, bound services), general to specific, then extra.
+func hookEnv(u *AppUser, site string, extra map[string]string) []string {
+	env := map[string]string{}
+	for _, f := range envFiles(u.Name, site) {
+		b, _ := os.ReadFile(f)
+		vars := envfile.Parse(string(b))
+		for _, k := range vars.Keys() {
+			env[k], _ = vars.Get(k)
+		}
+	}
+	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, appPath(u.Name)
+	if bins := runtimeBins(u.Name); len(bins) > 0 {
+		env["NOOK_RUNTIME_BIN"] = bins[0]
+	}
+	for k, v := range extra {
+		env[k] = v
+	}
+	var out []string
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 // ---- snapshots and restoring ----

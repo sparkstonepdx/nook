@@ -206,3 +206,29 @@ func TestSameConfig(t *testing.T) {
 		t.Error("a new port needs a reload")
 	}
 }
+
+func TestStaticPosts(t *testing.T) {
+	rules, _ := redirects.Parse("/old /new 301\n")
+	sites := []Site{
+		{Host: "a.x.com", Root: "/tmp", PostTo: 20007, App: "blog"},
+		{Host: "b.x.com", Root: "/tmp", PostTo: 20007, App: "blog", Rules: rules},
+		{Host: "c.x.com", Root: "/tmp", PostTo: 20007, App: "blog", Login: "blog", Dashboard: "admin.x.com"},
+		{Host: "d.x.com", Root: "/tmp"},
+	}
+	out := Render("x", sites, nil, nil)
+	if n := strings.Count(out, "header_up X-Nook-Site blog/"); n != 3 {
+		t.Fatalf("%d sites send POSTs on, want 3:\n%s", n, out)
+	}
+	if strings.Contains(out, "X-Nook-Site blog/d.x.com") {
+		t.Fatal("a site with no taker sends POSTs on")
+	}
+	bin, err := exec.LookPath("caddy")
+	if err != nil {
+		t.Skip("no caddy")
+	}
+	f := filepath.Join(t.TempDir(), "Caddyfile")
+	os.WriteFile(f, []byte(out), 0o644)
+	if b, err := exec.Command(bin, "adapt", "--config", f, "--adapter", "caddyfile").CombinedOutput(); err != nil {
+		t.Fatalf("caddy adapt: %v\n%s\n%s", err, b, out)
+	}
+}

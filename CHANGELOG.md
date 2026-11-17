@@ -1,5 +1,23 @@
 # nook
 
+## 1.33.0
+
+### Minor Changes
+
+- 051438e: Runtimes (#42 step 3): a site of kind `runtime` is published root-owned to `/var/lib/nook/runtimes/APP/SITE` and never run or served. An app that needs it (`"needs": ["php@8.3"]`) gets its bin folder first on PATH and in `NOOK_RUNTIME_BIN`, and restarts when it's updated. Runtimes can link to binaries apt installed under /usr.
+
+## 1.32.0
+
+### Minor Changes
+
+- 6364ec2: Services: a need can be optional (`"notify?"`), and static sites can list needs. A provider bound to a static site can work on it: a `publish` hook rewrites its HTML before it goes live, and `posts` sends its POST requests to the provider. The groundwork for a form catcher (#98).
+
+## 1.31.0
+
+### Minor Changes
+
+- 9d58a3e: Store apps can come from apt (#42 step 2), official catalog only: an entry names Debian packages, optionally from a third-party repository the signed catalog defines once and pins by key fingerprint. nook masks the distro's own service and runs the program as an ordinary app. Entries with majors (`versions`) install each as its own app (`postgres-17`), and the install sheet picks the version. Providers' hooks get `PORT`.
+
 ## 1.30.0
 
 ### Minor Changes
