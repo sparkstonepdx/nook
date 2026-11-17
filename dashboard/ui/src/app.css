@@ -298,3 +298,11 @@ img.app-coin { background: var(--surface-2, transparent); }
 .backups { overflow-wrap: anywhere; }
 .actions-row { display: flex; flex-wrap: wrap; gap: var(--space-sm); }
 .restore-open { justify-self: start; }
+
+/* the server's own packages, under the Server section */
+.system-head { margin-top: var(--space-lg); }
+/* the buttons drop under the text on a phone instead of squeezing it */
+.system-updates .row { flex-wrap: wrap; }
+.system-updates .row-main { flex: 1 1 14rem; min-width: 0; }
+.system-updates .row-end { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xs); margin-left: auto; }
+.system-packages summary { cursor: pointer; color: var(--muted); padding-block: var(--space-xs); }

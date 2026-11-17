@@ -43,6 +43,7 @@ var Ops = map[string]bool{
 	"services": true, "subduction": true, "bind": true, "unbind": true, "instructions": true, "setRepo": true, "setLogin": true, "setPorts": true, "ciEnv": true,
 	"store": true, "storeJobs": true, "backupStatus": true, "appDisk": true, "pairStep": true, "backupSetup": true, "backupRun": true, "backupSnapshots": true, "backupRestore": true, "backupSkip": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "headroom": true, "setLimits": true, "catalogRemove": true, "storeImage": true, "certs": true, "certSet": true, "certRemove": true, "caddyPlugin": true, "caddyUpgrade": true,
 	"directory": true, "directorySet": true,
+	"systemStatus": true, "systemCheck": true, "systemUpdate": true, "systemAuto": true, "systemRestart": true,
 }
 
 const maxMessage = 4 << 20
