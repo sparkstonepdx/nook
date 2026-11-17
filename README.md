@@ -2,6 +2,41 @@
 
 # nook
 
+**Your own app host, on one small server.** nook runs static sites, web apps, background services and cron jobs on a single Debian VPS. Push to GitHub and it's live over HTTPS, every pull request gets its own preview, and a dashboard that works on your phone shows what everything is doing.
+
+**[Website and docs](https://nook.sparkstonepdx.com)** · [Install](#install) · [Changelog](CHANGELOG.md)
+
+<p>
+  <img src="docs/screens/home-desktop.png" width="72%" alt="The Apps page: a launcher of every site, the apps changed most recently, and the server's headroom">
+  <img src="docs/screens/home-phone.png" width="24%" alt="The same page on a phone">
+</p>
+
+## What you get
+
+- **Deploy from any repo.** A GitHub Action (or one `curl` from any CI) uploads your build with a deploy token. Static files, a server on `$PORT`, a background service or a cron job, all from the same folder layout.
+- **Every app on its own.** Each repo gets its own Linux user, folder, memory and CPU limits, firewall rules and systemd sandbox, so one app can't read or starve another.
+- **Previews for every pull request,** at their own address, gone when the PR closes.
+- **A dashboard you can run from your phone:** sites and their health, logs, environment and secrets, domains and certificates, users, memory and disk over time, and one-tap updates.
+- **A store of ready-made apps** (analytics, file storage, push notifications, a private npm and container registry, CI runners), signed and pinned by hash, each installed as an ordinary app.
+- **Shared services by name.** An app asks for `postgres`; you pick who provides it; the app just sees `DATABASE_URL`.
+- **Backups** to any S3-compatible bucket, encrypted and incremental, with one-app and whole-server restores.
+
+Two static Go binaries and Caddy. No containers, no database to run, no account anywhere.
+
+## How it works
+
+![A repo deploys to its own app on one server; Caddy serves every site; the dashboard, store, services and backups run alongside](docs/how-it-works.svg)
+
+## A look around
+
+| | |
+|---|---|
+| ![An app opened: memory and disk over the week, its sites](docs/screens/app-desktop.png) **An app, opened:** memory and disk over the week, and each site's state. | ![The Deploy page: tokens and a ready workflow](docs/screens/deploy-desktop.png) **Deploy:** a token and a ready-made workflow for the repo. |
+| ![The store's Install tab](docs/screens/store-desktop.png) **Store:** apps from signed catalogs, each its own nook app. | ![Services: bindings and providers](docs/screens/services-desktop.png) **Services:** which app provides what, and who uses it. |
+| ![Backups: the last run and where they go](docs/screens/backups-desktop.png) **Backups:** daily, before each update, and on demand. | ![Domains: grants, DNS records and certificates](docs/screens/domains-desktop.png) **Domains:** which app may use which domain, and the DNS to set. |
+
+## Sites and apps
+
 Run apps and static sites on one Debian box behind Caddy, deployed from GitHub. Each repo gets an isolated app (its own Linux user and folder); every folder in its `sites/` is a live site, named by its hostname.
 
 ```
@@ -62,7 +97,7 @@ This project used to be called app-host. Running `nook-admin install` (or `--upg
 
 ## Dashboard
 
-![Apps](docs/dashboard-apps.png)
+![Apps](docs/screens/home-desktop.png)
 
 Apps and sites (state, port, memory, live or not), create/delete, sync, restart/stop/start, remove sites, logs, environment, domains, users, updates.
 
@@ -142,8 +177,6 @@ Push every repo secret named `PROD_*`:
 
 ## Runtime environment
 
-![Environment](docs/dashboard-env.png)
-
 Env vars and secrets for running apps live on the server under `/etc/nook/env/` (root-only), in scopes:
 
 | Scope | Set with | Loaded into |
@@ -208,7 +241,7 @@ nook-admin store policy APP off|notify|patch|minor|all
 
 ## Domains
 
-![Domains](docs/dashboard-domains.png)
+![Domains](docs/screens/domains-desktop.png)
 
 - **Default domain** (`BASE_DOMAIN`): site folders without a dot are subdomains of it.
 - **Grants**, per app, in `/etc/nook/grants`:
