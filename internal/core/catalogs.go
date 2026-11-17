@@ -192,6 +192,14 @@ func fetchFrom(s CatalogSource) (*Catalog, error) {
 	}
 	var ok []CatalogApp
 	for _, a := range c.Apps {
+		if a.Apt != nil && !s.Official() {
+			continue // apt runs package scripts as root: official catalog only (#42)
+		}
+		if a.Apt != nil && a.Apt.Repo != "" {
+			if r, found := c.Repos[a.Apt.Repo]; !found || r.check() != nil {
+				continue
+			}
+		}
 		if err := a.check(); err == nil {
 			a.Catalog, a.CatalogName, a.Official = s.ID, s.Name, s.Official()
 			ok = append(ok, a)
