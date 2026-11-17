@@ -207,3 +207,18 @@ func loginCmd(h *core.Host, args []string) {
 		die(fmt.Errorf("usage: nook-admin login NAME [on|off]"))
 	}
 }
+
+func portsCmd(h *core.Host, args []string) {
+	switch {
+	case len(args) == 1:
+		for _, p := range core.GrantedPorts(args[0]) {
+			fmt.Println(p)
+		}
+	case len(args) == 3 && (args[1] == "grant" || args[1] == "revoke"):
+		ports, err := core.ParsePorts(args[2])
+		die(err)
+		die(h.GrantPorts(args[0], ports, args[1] == "revoke"))
+	default:
+		die(fmt.Errorf("usage: nook-admin ports APP [grant|revoke 25,465,587,993]"))
+	}
+}

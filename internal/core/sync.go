@@ -112,6 +112,8 @@ func (h *Host) syncLocked(app string) error {
 	hosts := map[string]bool{}
 	seen, cronSeen, runtimeSeen := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	var runtimesChanged []string
+	publicTaken := map[int]string{} // public port -> the site listening on it
+	publicMissing := map[int]bool{} // asked for and not granted
 	svc := appServices{Needs: map[string][]string{}, Provides: map[string]map[string]ProvideSpec{}}
 	svcKeep := false // a manifest couldn't be read: keep the last record rather than forget its services
 	var cronChanged, cronRunNow []string
@@ -214,7 +216,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any")
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -251,7 +253,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any")
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -339,6 +341,9 @@ func (h *Host) syncLocked(app string) error {
 		writeProviderEnv(app, s)
 	}
 	dropRuntimes(app, runtimeSeen)
+	if !svcKeep {
+		recordAsked(app, publicMissing)
+	}
 	// apps bound to a runtime that changed restart onto the new files
 	for _, s := range runtimesChanged {
 		for _, b := range readBindings() {
@@ -522,7 +527,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publ
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny bool) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny bool, public []int) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -555,7 +560,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), healthLine, runtimeEnv(app))
+		withPublicPorts(sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), public), healthLine, runtimeEnv(app))
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil

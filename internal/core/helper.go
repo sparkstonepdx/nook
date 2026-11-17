@@ -259,6 +259,13 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "setLogin":
 		on := p["on"] == "true"
 		return command("nook-admin login "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetLogin(p["app"], on) })
+	case "setPorts":
+		ports, err := ParsePorts(p["ports"])
+		if err != nil || len(ports) == 0 || len(ports) > 10 {
+			return data(nil, fmt.Errorf("ports are numbers like 25,465"))
+		}
+		verb := map[bool]string{true: "revoke", false: "grant"}[p["revoke"] == "true"]
+		return command("nook-admin ports "+p["app"]+" "+verb+" "+strings.ReplaceAll(portList(ports), " ", ""), func(h *Host) error { return h.GrantPorts(p["app"], ports, verb == "revoke") })
 	case "setRepo":
 		if _, err := LookupApp(p["app"]); err != nil {
 			return data(nil, err)
