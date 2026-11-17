@@ -13,12 +13,14 @@ package core
 // that came from the archive.
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +51,7 @@ type Installed struct {
 	Notified  string `json:"notified,omitempty"`  // last version we told you about
 	LastError string `json:"lastError,omitempty"` // last failed (rolled back) update
 	Failed    string `json:"failed,omitempty"`    // version that failed: not retried automatically
+	Major     string `json:"major,omitempty"`     // an apt app's major (17): its identity; apt updates within it
 }
 
 func readInstalled() map[string]Installed {
@@ -93,6 +96,7 @@ func healthy(app, site string, a CatalogApp) error {
 
 type InstallOpts struct {
 	Catalog, ID, App, Site, Policy string // Catalog: empty for the official one
+	Version                        string // a major from the entry's versions (an apt app); empty for the newest
 	Env                            map[string]string
 }
 
@@ -104,6 +108,25 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	a, err := findCatalogApp(o.Catalog, o.ID)
 	if err != nil {
 		return err
+	}
+	major := ""
+	if len(a.Versions) > 0 { // each major is its own app: postgres-17 beside postgres-16
+		major = o.Version
+		if major == "" {
+			major = a.Versions[len(a.Versions)-1]
+		}
+		if !slices.Contains(a.Versions, major) {
+			return fmt.Errorf("%s comes in %s, not %s", a.Name, strings.Join(a.Versions, ", "), major)
+		}
+		a = a.withVersion(major)
+		if o.App == "" {
+			o.App = a.ID + "-" + strings.ReplaceAll(major, ".", "-")
+		}
+		if o.Site == "" {
+			o.Site = o.App
+		}
+	} else if o.Version != "" {
+		return fmt.Errorf("%s has no versions to pick from", a.Name)
 	}
 	if o.App == "" {
 		o.App = a.ID
@@ -143,9 +166,15 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	if !a.Official {
 		h.say("from the community catalog %s, not the official one", a.CatalogName)
 	}
-	h.say("downloading %s %s", a.Name, a.Version)
-	j := startJob(o.App, "install", a.Name, "", a.Version)
+	h.say("getting %s %s", a.Name, cmp.Or(major, a.Version))
+	j := startJob(o.App, "install", a.Name, "", cmp.Or(major, a.Version))
 	defer func() { j.finish(err) }()
+	if a.Apt != nil {
+		j.step(StepDownload)
+		if err := h.aptInstall(a, catalogRepos(o.Catalog), false); err != nil {
+			return err
+		}
+	}
 	pkg, done, err := pkgFor(a, j)
 	if err != nil {
 		return err
@@ -178,7 +207,11 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	savePackage(o.App, a.Version, pkg)
 	m := readInstalled()
 	now := time.Now().UTC().Format(time.RFC3339)
-	m[o.App] = Installed{App: o.App, Catalog: o.Catalog, ID: a.ID, Version: a.Version, Site: o.Site, Policy: o.Policy, Installed: now}
+	rec := Installed{App: o.App, Catalog: o.Catalog, ID: a.ID, Version: a.Version, Site: o.Site, Policy: o.Policy, Installed: now, Major: major}
+	if a.Apt != nil {
+		rec.Version = cmp.Or(aptVersion(a), major)
+	}
+	m[o.App] = rec
 	if err := writeInstalled(m); err != nil {
 		return err
 	}
@@ -214,6 +247,9 @@ func (h *Host) StoreUpdate(app string, force bool) (err error) {
 	a, err := findCatalogApp(rec.Catalog, rec.ID)
 	if err != nil {
 		return err
+	}
+	if a.Apt != nil {
+		return h.aptUpdate(app, rec, a)
 	}
 	if !force && !versionNewer(a.Version, rec.Version) {
 		h.say("%s is up to date (%s)", app, rec.Version)
@@ -297,6 +333,14 @@ func (h *Host) StoreCheck() error {
 	}
 	for app, rec := range readInstalled() {
 		a, err := findCatalogApp(rec.Catalog, rec.ID)
+		if err == nil && a.Apt != nil { // apt's updates within the major, if the policy takes updates at all
+			if rec.Policy != "off" && rec.Policy != "notify" {
+				if err := h.StoreUpdate(app, false); err != nil {
+					h.say("%s: %v", app, err)
+				}
+			}
+			continue
+		}
 		if err != nil || !versionNewer(a.Version, rec.Version) {
 			continue
 		}
@@ -449,4 +493,46 @@ func StoreOverview(refresh bool) StoreView {
 	}
 	sort.Slice(v.Installed, func(i, j int) bool { return v.Installed[i].App < v.Installed[j].App })
 	return v
+}
+
+// aptUpdate takes apt's updates within an apt app's major, refreshes its files (run, scripts) from the catalog, and
+// restarts it. apt can't reliably go back a version, so a failed health check is reported, not rolled back.
+func (h *Host) aptUpdate(app string, rec Installed, a CatalogApp) error {
+	if rec.Major == "" {
+		return fmt.Errorf("%s has no recorded major version", app)
+	}
+	a = a.withVersion(rec.Major)
+	if err := h.aptInstall(a, catalogRepos(rec.Catalog), true); err != nil {
+		return err
+	}
+	pkg, done, err := pkgFor(a, &job{})
+	if err != nil {
+		return err
+	}
+	defer done()
+	out, err := deployPackage(app, rec.Site, pkg)
+	h.say("%s", out)
+	if err != nil && !strings.Contains(out, "(service)") && !strings.Contains(out, "(cron job)") {
+		return fmt.Errorf("deploy: %v", err)
+	}
+	h.restartSites(app, RunningSites(app))
+	v := cmp.Or(aptVersion(a), rec.Version)
+	herr := healthy(app, rec.Site, a)
+	m := readInstalled()
+	r := m[app]
+	if v != r.Version {
+		r.Updated = time.Now().UTC().Format(time.RFC3339)
+	}
+	r.Version, r.LastError = v, ""
+	if herr != nil {
+		r.LastError = fmt.Sprintf("%s: %v (apt can't roll back; check its logs)", v, herr)
+		update.Notify("nook: "+app+" isn't healthy after its update", r.LastError)
+	}
+	m[app] = r
+	writeInstalled(m)
+	if herr != nil {
+		return fmt.Errorf("%s %s didn't come up: %v", app, v, herr)
+	}
+	h.say("%s is on %s", app, v)
+	return nil
 }

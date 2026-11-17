@@ -46,9 +46,15 @@ type CatalogApp struct {
 	CPU         string              `json:"cpu,omitempty"`
 	Needs       []string            `json:"needs,omitempty"`
 	Env         []EnvField          `json:"env,omitempty"`
-	Binary      string              `json:"binary"`          // executable's file name inside the artifact
-	Files       map[string]string   `json:"files,omitempty"` // more files for the site folder (run, config ...)
-	Artifacts   map[string]Artifact `json:"artifacts"`       // by GOARCH
+	Binary      string              `json:"binary,omitempty"`    // executable's file name inside the artifact (none for an apt app)
+	Files       map[string]string   `json:"files,omitempty"`     // more files for the site folder (run, config ...)
+	Artifacts   map[string]Artifact `json:"artifacts,omitempty"` // by GOARCH
+
+	// An app whose files come from apt (#42), official catalog only: apt runs package scripts as root.
+	Apt      *AptSource             `json:"apt,omitempty"`
+	Versions []string               `json:"versions,omitempty"` // majors to choose from ("16", "17"): each install is its own app, named ID-VERSION
+	Mask     []string               `json:"mask,omitempty"`     // the distro's own units to mask (postgresql@{version}-main): nook runs it instead
+	Provides map[string]ProvideSpec `json:"provides,omitempty"` // a service: what it provides (services.go), written to its nook.json
 
 	// Set by nook from the catalog it was read from; whatever a catalog says here is overwritten.
 	Catalog     string `json:"catalog,omitempty"`
@@ -81,20 +87,25 @@ func (i Image) check() error {
 }
 
 type Catalog struct {
-	Generated string       `json:"generated"`
-	Apps      []CatalogApp `json:"apps"`
-	FetchedAt string       `json:"fetchedAt,omitempty"`
+	Generated string             `json:"generated"`
+	Apps      []CatalogApp       `json:"apps"`
+	Repos     map[string]AptRepo `json:"repos,omitempty"` // third-party apt repositories the catalog's apt apps name
+	FetchedAt string             `json:"fetchedAt,omitempty"`
 }
 
 func (a CatalogApp) check() error {
 	if !catalogIDRE.MatchString(a.ID) || a.Name == "" || a.Version == "" || len(a.Version) > 40 {
 		return fmt.Errorf("catalog entry %q: bad id, name or version", a.ID)
 	}
-	if !fileNameRE.MatchString(a.Binary) {
+	if a.Apt != nil {
+		if err := a.checkApt(); err != nil {
+			return err
+		}
+	} else if !fileNameRE.MatchString(a.Binary) {
 		return fmt.Errorf("catalog entry %s: bad binary name", a.ID)
 	}
 	for name, body := range a.Files {
-		if !fileNameRE.MatchString(name) || name == a.Binary || name == "nook.json" || len(body) > 64<<10 {
+		if !fileNameRE.MatchString(name) || (a.Binary != "" && name == a.Binary) || name == "nook.json" || len(body) > 64<<10 {
 			return fmt.Errorf("catalog entry %s: bad file %q", a.ID, name)
 		}
 	}
@@ -148,7 +159,7 @@ func (a CatalogApp) check() error {
 			return fmt.Errorf("catalog entry %s: bad env %q", a.ID, f.Key)
 		}
 	}
-	m := Manifest{Kind: a.kind(), Needs: a.Needs}
+	m := Manifest{Kind: a.kind(), Needs: a.Needs, Provides: a.Provides}
 	return checkServices(&m)
 }
 
@@ -187,3 +198,16 @@ func findCatalogApp(catalog, id string) (CatalogApp, error) {
 }
 
 // ---- installed apps ----
+
+// catalogRepos is a catalog's apt repositories.
+func catalogRepos(catalog string) map[string]AptRepo {
+	src, ok := catalogSource(catalog)
+	if !ok {
+		return nil
+	}
+	c, _ := loadFrom(src, false)
+	if c == nil {
+		return nil
+	}
+	return c.Repos
+}
