@@ -28,11 +28,12 @@ type AptSource struct {
 }
 
 type AptRepo struct {
-	URL        string   `json:"url"`        // https://apt.postgresql.org/pub/repos/apt
-	Suite      string   `json:"suite"`      // may contain {codename}: {codename}-pgdg
-	Components []string `json:"components"` // main
-	Key        string   `json:"key"`        // the signing key's full fingerprint
-	KeyURL     string   `json:"keyUrl"`     // where to fetch it
+	URL        string   `json:"url"`                  // https://apt.postgresql.org/pub/repos/apt
+	Suite      string   `json:"suite"`                // may contain {codename}: {codename}-pgdg; "./" for a flat repository
+	Components []string `json:"components,omitempty"` // main; none for a flat repository
+	Key        string   `json:"key"`                  // the signing key's full fingerprint
+	Keys       []string `json:"keys,omitempty"`       // more fingerprints the key file holds (a rotated key next to its successor)
+	KeyURL     string   `json:"keyUrl"`               // where to fetch it
 }
 
 var (
@@ -48,9 +49,15 @@ var (
 )
 
 func (r AptRepo) check() error {
-	if !strings.HasPrefix(r.URL, "https://") || strings.ContainsAny(r.URL, " \n") || !aptSuiteRE.MatchString(r.Suite) ||
-		!fingerprRE.MatchString(r.Key) || !strings.HasPrefix(r.KeyURL, "https://") || len(r.Components) == 0 {
+	flat := r.Suite == "./"
+	if !strings.HasPrefix(r.URL, "https://") || strings.ContainsAny(r.URL, " \n") || !flat && !aptSuiteRE.MatchString(r.Suite) ||
+		!fingerprRE.MatchString(r.Key) || !strings.HasPrefix(r.KeyURL, "https://") || flat != (len(r.Components) == 0) || len(r.Keys) > 4 {
 		return errors.New("bad apt repository")
+	}
+	for _, k := range r.Keys {
+		if !fingerprRE.MatchString(k) {
+			return errors.New("bad apt repository key")
+		}
 	}
 	for _, c := range r.Components {
 		if !aptCompRE.MatchString(c) {
@@ -148,14 +155,14 @@ func (h *Host) aptEnsureRepo(id string, r AptRepo) error {
 		return err
 	}
 	keyring := filepath.Join(aptKeyDir, "nook-"+id+".asc")
-	if b, err := os.ReadFile(keyring); err != nil || keyFingerprint(b) != r.Key {
+	if b, err := os.ReadFile(keyring); err != nil || r.keysMismatch(keyFingerprints(b)) != "" {
 		h.say("fetching the %s repository's key", id)
 		key, err := aptFetchKey(r.KeyURL)
 		if err != nil {
 			return fmt.Errorf("the %s repository's key: %v", id, err)
 		}
-		if got := keyFingerprint(key); got != r.Key {
-			return fmt.Errorf("the %s repository's key is %s, not the %s the catalog pins: refusing it", id, cmpOrNone(got), r.Key)
+		if why := r.keysMismatch(keyFingerprints(key)); why != "" {
+			return fmt.Errorf("the %s repository's key file %s: refusing it", id, why)
 		}
 		os.MkdirAll(aptKeyDir, 0o755)
 		if err := config.WriteAtomic(keyring, key, 0o644); err != nil {
@@ -163,8 +170,12 @@ func (h *Host) aptEnsureRepo(id string, r AptRepo) error {
 		}
 	}
 	suite := strings.ReplaceAll(r.Suite, "{codename}", codename())
-	src := fmt.Sprintf("# written by nook from its signed catalog: do not edit\nTypes: deb\nURIs: %s\nSuites: %s\nComponents: %s\nSigned-By: %s\n",
-		r.URL, suite, strings.Join(r.Components, " "), keyring)
+	comps := ""
+	if len(r.Components) > 0 { // a flat repository ("./") has none
+		comps = "Components: " + strings.Join(r.Components, " ") + "\n"
+	}
+	src := fmt.Sprintf("# written by nook from its signed catalog: do not edit\nTypes: deb\nURIs: %s\nSuites: %s\n%sSigned-By: %s\n",
+		r.URL, suite, comps, keyring)
 	path := filepath.Join(aptSourceDir, "nook-"+id+".sources")
 	if old, _ := os.ReadFile(path); string(old) != src {
 		os.MkdirAll(aptSourceDir, 0o755)
@@ -175,37 +186,55 @@ func (h *Host) aptEnsureRepo(id string, r AptRepo) error {
 	return nil
 }
 
-// keyFingerprint is the primary key's fingerprint of an armored or binary OpenPGP key ("" if gpg can't read it).
-func keyFingerprint(key []byte) string {
+// keysMismatch says what's wrong with a key file holding these primary keys ("" when it's right): it must hold
+// the pinned key, and nothing the catalog doesn't pin, since apt trusts every key in it for this repository.
+func (r AptRepo) keysMismatch(got []string) string {
+	pinned := map[string]bool{r.Key: true}
+	for _, k := range r.Keys {
+		pinned[k] = true
+	}
+	has := false
+	for _, g := range got {
+		if !pinned[g] {
+			return "holds " + g + ", which the catalog doesn't pin"
+		}
+		has = has || g == r.Key
+	}
+	if !has {
+		return "doesn't hold " + r.Key + ", the key the catalog pins"
+	}
+	return ""
+}
+
+// keyFingerprints is the primary keys' fingerprints in an armored or binary OpenPGP key file (none if gpg can't
+// read it).
+func keyFingerprints(key []byte) []string {
 	f, err := os.CreateTemp("", "nook-key-")
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer os.Remove(f.Name())
 	f.Write(key)
 	f.Close()
 	out, err := aptRun(nil, "gpg", "--batch", "--show-keys", "--with-colons", f.Name())
 	if err != nil {
-		return ""
+		return nil
 	}
+	var out2 []string
 	pub := false
 	for _, l := range strings.Split(out, "\n") {
 		fields := strings.Split(l, ":")
 		switch {
 		case fields[0] == "pub":
 			pub = true
+		case fields[0] == "sub":
+			pub = false
 		case fields[0] == "fpr" && pub && len(fields) > 9:
-			return fields[9]
+			out2 = append(out2, fields[9])
+			pub = false
 		}
 	}
-	return ""
-}
-
-func cmpOrNone(s string) string {
-	if s == "" {
-		return "unreadable"
-	}
-	return s
+	return out2
 }
 
 // aptInstall installs (or, with upgrade, updates) an apt app's packages and masks the distro's own units.

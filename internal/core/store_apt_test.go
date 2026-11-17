@@ -134,3 +134,38 @@ func TestAptInstallSteps(t *testing.T) {
 		t.Fatal("installed with a key that doesn't match")
 	}
 }
+
+func TestAptKeyFilesAndFlatRepos(t *testing.T) {
+	a, b, c := strings.Repeat("A", 40), strings.Repeat("B", 40), strings.Repeat("C", 40)
+	r := AptRepo{URL: "https://www.collaboraoffice.com/repos/CollaboraOnline/CODE-deb", Suite: "./", Key: b, Keys: []string{a}, KeyURL: "https://k"}
+	if err := r.check(); err != nil {
+		t.Fatal(err)
+	}
+	if r.keysMismatch([]string{a, b}) != "" || r.keysMismatch([]string{b}) != "" {
+		t.Fatal("the pinned keys, with or without the old one, are fine")
+	}
+	if !strings.Contains(r.keysMismatch([]string{b, c}), "doesn't pin") {
+		t.Fatal("a key the catalog doesn't pin would be trusted for the repository")
+	}
+	if !strings.Contains(r.keysMismatch([]string{a}), "doesn't hold") {
+		t.Fatal("only the old key")
+	}
+	for _, bad := range []AptRepo{
+		{URL: r.URL, Suite: "./", Components: []string{"main"}, Key: b, KeyURL: "https://k"},
+		{URL: r.URL, Suite: "stable", Key: b, KeyURL: "https://k"},
+		{URL: r.URL, Suite: "../x", Components: []string{"main"}, Key: b, KeyURL: "https://k"},
+		{URL: r.URL, Suite: "./", Key: b, Keys: []string{"ACCC4CF8"}, KeyURL: "https://k"},
+	} {
+		if bad.check() == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	old := aptRun
+	defer func() { aptRun = old }()
+	aptRun = func(env []string, name string, args ...string) (string, error) {
+		return "pub:-:2048:1:0C54D189F4BA284D:::\nfpr:::::::::" + a + ":\nsub:-:2048:1:X:::\nfpr:::::::::" + c + ":\npub:-:4096:1:D8915E456E7C440E:::\nfpr:::::::::" + b + ":\n", nil
+	}
+	if got := keyFingerprints([]byte("x")); len(got) != 2 || got[0] != a || got[1] != b {
+		t.Fatalf("primary keys only, every one: %v", got)
+	}
+}
