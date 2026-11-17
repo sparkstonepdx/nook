@@ -55,6 +55,9 @@ section > p.intro { color: var(--muted); max-width: var(--text); margin: 0 0 2re
 .card { background: var(--paper); border: 1px solid var(--line); border-radius: 0.75rem; padding: 1.25rem; }
 .card h3 { margin: 0 0 0.4rem; font-size: 1.2rem; }
 .card p { margin: 0; color: var(--muted); }
+a.card-link { display: block; color: inherit; text-decoration: none; transition: border-color 0.15s; }
+a.card-link:hover { border-color: var(--indigo); }
+a.card-link h3 span { color: var(--muted); }
 .feature { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr 1.6fr; padding: 2.5rem 0; border-top: 1px solid var(--line); }
 .feature:nth-of-type(even) { grid-template-columns: 1.6fr 1fr; }
 .feature:nth-of-type(even) .text { order: 2; }

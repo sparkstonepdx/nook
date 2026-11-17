@@ -371,6 +371,13 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return command("nook-admin unbind "+p["app"]+" "+p["interface"], func(h *Host) error { return h.Unbind(p["app"], p["interface"]) })
 	case "tokenApp":
 		return tokenApp(req)
+	case "pairStep": // a new server moving this one onto itself (pair.go); the pairing code is the secret
+		var out bytes.Buffer
+		v, err := New(&out).PairStep(req.Secret, p["step"])
+		if err != nil {
+			return rpc.Response{Error: err.Error(), Status: 403, Out: out.String()}
+		}
+		return data(v, nil)
 	case "ciEnv":
 		return ciEnv(req)
 	case "undeploy":

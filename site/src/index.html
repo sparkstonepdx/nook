@@ -17,6 +17,7 @@
     <div class="bar-in">
       <a class="brand" href="/"><img src="/assets/logo/icon.svg" alt="">nook</a>
       <nav aria-label="Site">
+        <a href="https://catalog.sparkstonepdx.com">Apps</a>
         <a href="/docs/">Docs</a>
         <a href="/changelog/">Changelog</a>
         <a href="https://github.com/sparkstonepdx/nook">GitHub</a>
@@ -47,7 +48,7 @@
           <div class="card"><h3>Every app on its own</h3><p>Each repo gets its own Linux user, folder, memory and CPU limits, firewall rules and sandbox, so one app can't read or starve another.</p></div>
           <div class="card"><h3>Previews for every PR</h3><p>Each pull request gets its own address, and it's gone when the PR closes.</p></div>
           <div class="card"><h3>A dashboard for your phone</h3><p>Sites and their health, logs, secrets, domains and certificates, users, memory and disk over time, and one-tap updates.</p></div>
-          <div class="card"><h3>A store of ready-made apps</h3><p>Analytics, file storage, push notifications, a private npm and container registry, CI runners. Signed, pinned by hash, each an ordinary app.</p></div>
+          <a class="card card-link" href="https://catalog.sparkstonepdx.com"><h3>A store of ready-made apps <span aria-hidden="true">→</span></h3><p>Analytics, file storage, push notifications, a database, a private npm and container registry, CI runners. Signed, pinned by hash, each an ordinary app.</p></a>
           <div class="card"><h3>Backups that restore</h3><p>Daily to any S3-compatible bucket, encrypted and incremental. Restore one app, or the whole server onto a new one.</p></div>
         </div>
       </section>
@@ -78,6 +79,7 @@
         <div class="text">
           <h3>Install apps from a store</h3>
           <p>Catalogs are signed, and every download is checked against the hash the catalog pins. Updates roll back by themselves if the new version doesn't come up.</p>
+          <p><a class="btn" href="https://catalog.sparkstonepdx.com">Browse the apps</a></p>
         </div>
         <img src="/assets/screens/store-desktop.png" width="2560" height="1720" alt="The store's Install tab" loading="lazy">
       </div>
@@ -110,6 +112,7 @@ curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-serve
   <footer>
     <div class="wrap">
       <span>nook, by <a href="https://sparkstonepdx.com">Sparkstone</a></span>
+      <a href="https://catalog.sparkstonepdx.com">Apps</a>
       <a href="/docs/">Docs</a>
       <a href="/changelog/">Changelog</a>
       <a href="https://github.com/sparkstonepdx/nook">GitHub</a>
