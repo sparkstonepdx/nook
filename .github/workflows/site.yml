@@ -1,5 +1,5 @@
 # Builds the website (landing page, docs from README.md, changelog) and publishes it to a nook site of its own.
-# Pull requests that touch it get a preview. Needs NOOK_SITE_TOKEN: a deploy token for the app that serves it.
+# Pull requests that touch it get a preview. Needs NOOK_TOKEN: a deploy token for the app that serves it.
 name: site
 
 on:
@@ -23,7 +23,7 @@ jobs:
   site:
     runs-on: ubuntu-latest
     env:
-      NOOK_SITE_TOKEN: ${{ secrets.NOOK_SITE_TOKEN }}
+      NOOK_TOKEN: ${{ secrets.NOOK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - if: github.event.action != 'closed'
@@ -31,13 +31,13 @@ jobs:
         with: { node-version: 22 }
       - if: github.event.action != 'closed'
         run: npm ci && npm run site
-      - if: env.NOOK_SITE_TOKEN == ''
-        run: echo "::warning::No NOOK_SITE_TOKEN secret, so the site was built but not published"
-      - if: env.NOOK_SITE_TOKEN != ''
+      - if: env.NOOK_TOKEN == ''
+        run: echo "::warning::No NOOK_TOKEN secret, so the site was built but not published"
+      - if: env.NOOK_TOKEN != ''
         uses: ./deploy
         id: nook
         with:
-          token: ${{ secrets.NOOK_SITE_TOKEN }}
+          token: ${{ secrets.NOOK_TOKEN }}
           site: nook
           dir: dist-site
       - if: steps.nook.outputs.url

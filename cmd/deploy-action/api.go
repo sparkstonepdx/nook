@@ -71,7 +71,11 @@ func apiMain(tok string) {
 
 	code, b := call("GET", "/api/v1/whoami", nil, "")
 	if code != 200 {
-		fail("token refused (%d): %s", code, errOf(b))
+		why := errOf(b)
+		if why == "" { // not nook answering: the address doesn't reach this server's dashboard
+			why = "nothing at that address answered as nook's dashboard; the token's server address is wrong, or the dashboard's address changed after the token was made"
+		}
+		fail("token refused by %s (%d): %s", base, code, why)
 	}
 	var who struct {
 		App    string `json:"app"`
