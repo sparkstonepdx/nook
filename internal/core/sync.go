@@ -257,19 +257,29 @@ func (h *Host) syncLocked(app string) error {
 				reload = true
 			}
 			root := filepath.Join(config.WWWDir, app, s)
-			if err := h.snapshot(u, s, st); err != nil {
+			// static sites read nook.json for cors and services; a bad file publishes the site without them
+			m, err := u.readManifest(s)
+			if err != nil {
+				h.say("%s: %s: %v; published without cors or services", app, s, err)
+				m = Manifest{}
+				svcKeep = true // keep the services it last asked for
+			}
+			if len(m.Needs) > 0 {
+				svc.Needs[s] = m.Needs
+			}
+			pubs := sitePublishers(app, m.Needs)
+			if err := h.snapshot(u, s, st, pubs); err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				if _, e := os.Stat(root); e != nil {
 					continue
 				}
 			}
-			// static sites read nook.json only for cors; a bad file publishes the site without it
-			m, err := u.readManifest(s)
-			if err != nil {
-				h.say("%s: %s: %v; published without cors", app, s, err)
+			postTo, note := postTarget(pubs)
+			if note != "" {
+				h.say("%s: %s: %s", app, s, note)
 			}
 			rules := readRules(root, func(why string) { h.say("%s: %s: _redirects %s, skipped", app, s, why) })
-			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS, Rules: rules, Login: login, Dashboard: dash.Host})
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: m.CORS, Rules: rules, Login: login, Dashboard: dash.Host, PostTo: postTo, App: app})
 		}
 	}
 	if sites != nil {
@@ -441,11 +451,14 @@ func readRules(root string, skipped func(string)) []redirects.Rule {
 	return rules
 }
 
-func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
+func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publisher) error {
 	app := u.Name
 	dst := filepath.Join(config.WWWDir, app, site)
 	idFile := filepath.Join(config.StateDir, app+"--"+site+".static")
 	id := fmt.Sprintf("%d:%d", st.Ino, st.Mtim.Sec)
+	if p := publishID(pubs); p != "" {
+		id += " " + p
+	}
 	if old, err := os.ReadFile(idFile); err == nil && string(old) == id {
 		if _, err := os.Stat(dst); err == nil {
 			return nil
@@ -462,6 +475,11 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	}
 	// nook.json is settings, not content: it stays in the app's folder and is never served
 	os.Remove(filepath.Join(tmp, "nook.json"))
+	// bound providers' publish hooks (a form catcher) work on the copy before it's compressed and goes live
+	if err := h.runPublishHooks(app, site, tmp, pubs, h.S.SiteMaxBytes); err != nil {
+		os.RemoveAll(tmp)
+		return fmt.Errorf("%v; kept the previous copy", err)
+	}
 	// gzip sidecars, so Caddy serves text files compressed without compressing them on each request
 	if _, err := precompress.Dir(tmp); err != nil {
 		h.say("%s: %s: compressing: %v; served as they are where it failed", app, site, err)
