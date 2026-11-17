@@ -1,0 +1,108 @@
+/* nook's site: the dashboard's reading-nook palette (dashboard/ui/src/tokens.css), linen paper and indigo cloth.
+   A proposal until signed off, like every new look. */
+:root {
+  --ink: #2a2420;
+  --muted: #6b6258;
+  --paper: #fffaf0;
+  --linen: #f6efe5;
+  --shelf: #efe6d8;
+  --line: #d9cdbb;
+  --indigo: #3b4f9a;
+  --indigo-ink: #2f3f7d;
+  --lamp: #e0a43a;
+  --display: "Literata", Georgia, "Iowan Old Style", serif;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --wide: 72rem;
+  --text: 46rem;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--linen); color: var(--ink); font: 1.0625rem/1.6 var(--font); }
+img { max-width: 100%; height: auto; display: block; }
+a { color: var(--indigo); text-underline-offset: 0.18em; }
+a:hover { color: var(--indigo-ink); }
+code, pre { font-family: var(--mono); font-size: 0.9em; }
+h1, h2, h3 { font-family: var(--display); font-weight: 650; line-height: 1.15; letter-spacing: -0.01em; }
+
+/* top bar */
+.bar { position: sticky; top: 0; z-index: 2; background: color-mix(in oklab, var(--paper) 92%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.bar-in { max-width: var(--wide); margin: 0 auto; padding: 0.75rem 1.25rem; display: flex; align-items: center; gap: 1.25rem; }
+.brand { display: flex; align-items: center; gap: 0.5rem; color: var(--ink); text-decoration: none; font: 700 1.35rem var(--display); }
+.brand img { width: 1.75rem; height: 1.75rem; }
+.bar nav { margin-left: auto; display: flex; gap: 1.25rem; }
+.bar nav a { color: var(--ink); text-decoration: none; font-weight: 600; }
+.bar nav a:hover, .bar nav a[aria-current] { color: var(--indigo); }
+
+/* landing */
+.wrap { max-width: var(--wide); margin: 0 auto; padding: 0 1.25rem; }
+.hero { padding: 4.5rem 0 2rem; display: grid; gap: 1.5rem; }
+.hero h1 { font-size: clamp(2.4rem, 6vw, 4rem); margin: 0; max-width: 18ch; }
+.lede { font-size: 1.25rem; color: var(--muted); max-width: 40rem; margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.btn { display: inline-flex; align-items: center; min-height: 2.75rem; padding: 0 1.25rem; border-radius: 0.5rem; font-weight: 650; text-decoration: none; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.btn-primary { background: var(--indigo); border-color: var(--indigo); color: var(--paper); }
+.btn-primary:hover { background: var(--indigo-ink); color: var(--paper); }
+.shots { position: relative; margin: 1rem 0 4rem; }
+.shots .desktop { border-radius: 0.75rem; border: 1px solid var(--line); box-shadow: 0 2px 6px rgb(60 45 30 / 0.06), 0 24px 60px rgb(60 45 30 / 0.12); width: 88%; }
+.shots .phone { position: absolute; right: 0; bottom: -2.5rem; width: 22%; border-radius: 1.5rem; border: 6px solid var(--ink); box-shadow: 0 24px 50px rgb(60 45 30 / 0.25); }
+section { padding: 3.5rem 0; }
+section > h2 { font-size: clamp(1.8rem, 4vw, 2.5rem); margin: 0 0 0.75rem; }
+section > p.intro { color: var(--muted); max-width: var(--text); margin: 0 0 2rem; font-size: 1.125rem; }
+.diagram { background: var(--paper); border: 1px solid var(--line); border-radius: 0.75rem; padding: 0.5rem; }
+.grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 0.75rem; padding: 1.25rem; }
+.card h3 { margin: 0 0 0.4rem; font-size: 1.2rem; }
+.card p { margin: 0; color: var(--muted); }
+.feature { display: grid; gap: 2rem; align-items: center; grid-template-columns: 1fr 1.6fr; padding: 2.5rem 0; border-top: 1px solid var(--line); }
+.feature:nth-of-type(even) { grid-template-columns: 1.6fr 1fr; }
+.feature:nth-of-type(even) .text { order: 2; }
+.feature h3 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+.feature p { color: var(--muted); margin: 0 0 0.75rem; }
+.feature img { border-radius: 0.6rem; border: 1px solid var(--line); box-shadow: 0 12px 36px rgb(60 45 30 / 0.1); }
+pre.install { background: var(--ink); color: #f5ede1; padding: 1.25rem; border-radius: 0.75rem; overflow-x: auto; line-height: 1.5; }
+pre.install .c { color: #b7ab9b; }
+footer { border-top: 1px solid var(--line); color: var(--muted); padding: 2rem 0 3rem; font-size: 0.95rem; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
+
+@media (max-width: 760px) {
+  .bar nav { gap: 0.9rem; font-size: 0.95rem; }
+  .hero { padding-top: 2.5rem; }
+  .shots { margin-bottom: 2rem; }
+  .shots .desktop { display: none; }
+  .shots .phone { position: static; width: 72%; margin: 0 auto; }
+  .diagram { overflow-x: auto; }
+  .diagram img { min-width: 44rem; }
+  .feature, .feature:nth-of-type(even) { grid-template-columns: 1fr; }
+  .feature:nth-of-type(even) .text { order: 0; }
+}
+
+/* docs: a sidebar of contents beside the README */
+.docs { max-width: var(--wide); margin: 0 auto; padding: 2rem 1.25rem 4rem; display: grid; grid-template-columns: 15rem minmax(0, 1fr); gap: 3rem; }
+.toc { position: sticky; top: 4.5rem; align-self: start; max-height: calc(100vh - 5.5rem); overflow-y: auto; font-size: 0.95rem; }
+.toc ul { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0.15rem 0; }
+.toc li li { padding-left: 0.9rem; font-size: 0.9rem; }
+.toc a { color: var(--muted); text-decoration: none; display: block; padding: 0.15rem 0; }
+.toc a:hover { color: var(--indigo); }
+.toc summary { display: none; }
+.prose { max-width: var(--text); min-width: 0; }
+.prose h1 { font-size: 2.6rem; margin: 0.5rem 0 1rem; }
+.prose h2 { font-size: 1.75rem; margin: 2.75rem 0 0.75rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
+.prose h3 { font-size: 1.3rem; margin: 2rem 0 0.5rem; }
+.prose h2, .prose h3 { scroll-margin-top: 4.5rem; }
+.prose li { margin: 0.35rem 0; }
+.prose pre { background: var(--paper); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.9rem 1rem; overflow-x: auto; line-height: 1.45; }
+.prose :not(pre) > code { background: var(--shelf); padding: 0.08em 0.3em; border-radius: 0.25rem; overflow-wrap: anywhere; }
+.prose table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; font-size: 0.95rem; }
+.prose th, .prose td { border: 1px solid var(--line); padding: 0.45rem 0.6rem; text-align: left; vertical-align: top; }
+.prose th { background: var(--shelf); }
+.prose img { border-radius: 0.5rem; margin: 1rem 0; }
+.prose td img { margin: 0 0 0.5rem; border: 1px solid var(--line); }
+.prose p > img[src*="logo"] { display: none; }
+@media (max-width: 900px) {
+  .docs { grid-template-columns: 1fr; gap: 1rem; }
+  .toc { position: static; max-height: none; background: var(--paper); border: 1px solid var(--line); border-radius: 0.6rem; padding: 0.4rem 0.9rem; }
+  .toc summary { display: block; cursor: pointer; font-weight: 650; padding: 0.4rem 0; }
+}

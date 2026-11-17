@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nook: your own app host, on one small server</title>
+  <meta name="description" content="nook runs static sites, web apps, services and cron jobs on one Debian VPS. Push to GitHub and it's live over HTTPS, with previews for every pull request and a dashboard that works on your phone.">
+  <meta property="og:title" content="nook: your own app host, on one small server">
+  <meta property="og:description" content="Static sites, web apps, services and cron jobs on one Debian VPS, deployed from GitHub, with a dashboard that works on your phone.">
+  <meta property="og:image" content="/assets/screens/home-desktop.png">
+  <meta name="theme-color" content="#3b4f9a">
+  <link rel="icon" href="/assets/logo/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-in">
+      <a class="brand" href="/"><img src="/assets/logo/icon.svg" alt="">nook</a>
+      <nav aria-label="Site">
+        <a href="/docs/">Docs</a>
+        <a href="/changelog/">Changelog</a>
+        <a href="https://github.com/sparkstonepdx/nook">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="hero">
+        <h1>Your own app host, on one small server.</h1>
+        <p class="lede">nook runs static sites, web apps, background services and cron jobs on a single Debian VPS. Push to GitHub and it's live over HTTPS, every pull request gets its own preview, and a dashboard that works on your phone shows what everything is doing.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#install">Install it</a>
+          <a class="btn" href="/docs/">Read the docs</a>
+          <a class="btn" href="https://github.com/sparkstonepdx/nook">Source on GitHub</a>
+        </div>
+      </div>
+      <div class="shots">
+        <img class="desktop" src="/assets/screens/home-desktop.png" width="2560" height="1720" alt="The Apps page: a launcher of every site, the apps changed most recently, and the server's headroom">
+        <img class="phone" src="/assets/screens/home-phone.png" width="780" height="1688" alt="The same page on a phone">
+      </div>
+
+      <section>
+        <h2>What you get</h2>
+        <div class="grid">
+          <div class="card"><h3>Deploy from any repo</h3><p>A GitHub Action, or one <code>curl</code> from any CI, uploads your build with a deploy token. Static files, a server, a service or a cron job, from the same folder layout.</p></div>
+          <div class="card"><h3>Every app on its own</h3><p>Each repo gets its own Linux user, folder, memory and CPU limits, firewall rules and sandbox, so one app can't read or starve another.</p></div>
+          <div class="card"><h3>Previews for every PR</h3><p>Each pull request gets its own address, and it's gone when the PR closes.</p></div>
+          <div class="card"><h3>A dashboard for your phone</h3><p>Sites and their health, logs, secrets, domains and certificates, users, memory and disk over time, and one-tap updates.</p></div>
+          <div class="card"><h3>A store of ready-made apps</h3><p>Analytics, file storage, push notifications, a private npm and container registry, CI runners. Signed, pinned by hash, each an ordinary app.</p></div>
+          <div class="card"><h3>Backups that restore</h3><p>Daily to any S3-compatible bucket, encrypted and incremental. Restore one app, or the whole server onto a new one.</p></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>How it works</h2>
+        <p class="intro">Two static Go binaries and Caddy on a Debian box. Each repo deploys into its own app; every folder in the app's <code>sites/</code> is a live site, named by its hostname. No containers, no database to run, no account anywhere.</p>
+        <div class="diagram"><img src="/assets/how-it-works.svg" width="960" height="520" alt="A repo deploys to its own app on one server; Caddy serves every site; the dashboard, store, services and backups run alongside"></div>
+      </section>
+
+      <div class="feature">
+        <div class="text">
+          <h3>Push, and it's live</h3>
+          <p>The Deploy page makes a token and a ready workflow for the repo. Merges to main go live; pull requests get a preview and a comment with its link.</p>
+          <p>A site with a health path is checked after every deploy, and the job fails if it doesn't come up.</p>
+        </div>
+        <img src="/assets/screens/deploy-desktop.png" width="2560" height="1720" alt="The Deploy page: a token and the setup instructions" loading="lazy">
+      </div>
+      <div class="feature">
+        <div class="text">
+          <h3>See what each app is doing</h3>
+          <p>Open an app for its memory and disk over the week, where it's heading, and each site's state. Limits change without a restart.</p>
+          <p>The server section says in one sentence whether there's room to spare, and what to upgrade when there isn't.</p>
+        </div>
+        <img src="/assets/screens/app-desktop.png" width="2560" height="1720" alt="An app opened: memory and disk charts and its sites" loading="lazy">
+      </div>
+      <div class="feature">
+        <div class="text">
+          <h3>Install apps from a store</h3>
+          <p>Catalogs are signed, and every download is checked against the hash the catalog pins. Updates roll back by themselves if the new version doesn't come up.</p>
+        </div>
+        <img src="/assets/screens/store-desktop.png" width="2560" height="1720" alt="The store's Install tab" loading="lazy">
+      </div>
+      <div class="feature">
+        <div class="text">
+          <h3>Services by name</h3>
+          <p>An app's <code>nook.json</code> asks for <code>postgres</code>; you pick the provider; the app sees <code>DATABASE_URL</code> and runs the same anywhere. The firewall opens the provider's port to exactly the apps bound to it.</p>
+        </div>
+        <img src="/assets/screens/services-desktop.png" width="2560" height="1720" alt="The Services page: bindings and providers" loading="lazy">
+      </div>
+      <div class="feature">
+        <div class="text">
+          <h3>Backups you can move with</h3>
+          <p>restic snapshots to R2, B2 or any S3 bucket: daily, before every update, and on demand. A running database is dumped by its own hook, or paused for the moment it's read.</p>
+          <p>Restore one app's data, or a whole server onto a fresh install.</p>
+        </div>
+        <img src="/assets/screens/backups-desktop.png" width="2560" height="875" alt="The Backups page" loading="lazy">
+      </div>
+
+      <section id="install">
+        <h2>Install</h2>
+        <p class="intro">On a fresh Debian 13 VPS, as root. It prints a one-time link to make your login; then set the dashboard's address and grant domains to apps on its Domains page.</p>
+<pre class="install"><span class="c"># installs Caddy, swap, both binaries, and the dashboard</span>
+curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-server.sh | sh</pre>
+        <p>Open ports 22, 80, 443 (tcp and udp) and 8443. Then <a href="/docs/#install">read the rest in the docs</a>.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>nook, by <a href="https://sparkstonepdx.com">Sparkstone</a></span>
+      <a href="/docs/">Docs</a>
+      <a href="/changelog/">Changelog</a>
+      <a href="https://github.com/sparkstonepdx/nook">GitHub</a>
+    </div>
+  </footer>
+</body>
+</html>
