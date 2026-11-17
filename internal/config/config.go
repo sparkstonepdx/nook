@@ -24,6 +24,7 @@ const (
 	LogDir       = "/var/log/nook"
 	LibDir       = "/var/lib/nook" // nook-admin's own data: www, store, catalogs, stats, update state
 	WWWDir       = LibDir + "/www"
+	RuntimeDir   = LibDir + "/runtimes" // root-owned copies of runtime sites (#42), readable by every app
 	CaddyAppsDir = "/etc/caddy/nook"
 	AdminCaddy   = "/etc/caddy/nook-dashboard.caddy"
 	Caddyfile    = "/etc/caddy/Caddyfile"

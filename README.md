@@ -219,6 +219,30 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Who may call it:** the provider learns its callers from `NOOK_CLIENTS` (`{"alerts": {"blog": "<token>"}}`).
 - **Firewall:** opens the provider's port to exactly the bound apps.
 - **Known services:** known names (above) must provide exactly their env names, so providers are interchangeable. Any other name is a new interface that its provider defines.
+- **Versions:** a provider states `"version": "17"`. A consumer can ask for `"postgres>=15"` or `"php@8.3"` (8.3 or 8.3.x, not 8.30). Binding refuses a provider that doesn't meet it, and with no provider named, nook picks the newest one that does.
+- **Provisioning:** `"provision": "./provision.sh"` runs when an app is bound, as the provider's user in its site folder, with the app's name as its argument and in `NOOK_CONSUMER`, plus `NOOK_CONSUMER_USER` (its OS user, for Postgres peer auth) and `NOOK_CONSUMER_UID`. It sets up what that app needs (a role, a database) and prints `KEY=value` lines for the interface's env names, which the app gets in place of the templates. `"deprovision": "./deprovision.sh"` runs when the binding goes (unbound, moved to another provider, or the app deleted); data is the provider's to keep or drop. A failed provision leaves no binding.
+  ```json
+  {"kind": "service", "provides": {"postgres": {"version": "17", "env": {"DATABASE_URL": ""}, "provision": "./provision.sh", "deprovision": "./deprovision.sh"}}}
+  ```
+
+**Optional services:** `"needs": ["notify?"]` is used when bound and never blocks anything: installing says the app can use it, and the Services page only asks about it once something provides it.
+
+**Providers that work on static sites:** a static site can list `needs` in its `nook.json` too. A provider bound to it can then work on the site itself, which is how a form catcher handles plain HTML forms:
+- **Publish hook:** `"publish": "./publish.sh"` runs on every publish of the site, before it goes live. It gets the site's `*.html` and `*.htm` files (or `"publish_files": ["*.svg"]`, up to 10 name patterns) as a tar on stdin, with `SITE`, `NOOK_CONSUMER` (the site's app), `NOOK_INTERFACE` and `PORT`, as the provider's user in its site folder. It writes a tar of only the files it changed to stdout; it can't add files or change any it wasn't sent. What it prints on stderr goes into the deploy log. If it fails or runs past 2 minutes, the publish fails and the previous copy stays live. Binding or unbinding publishes the site again.
+- **POSTs:** `"posts": true` sends the site's POST requests to the provider, with the original path and query, the site's `Host`, and `X-Nook-Site: APP/HOST` (a client can't send its own). Everything else is served as before; a static site couldn't take a POST anyway.
+- **Env:** a provider that only publishes or takes posts needs no `env`.
+  ```json
+  {"kind": "service", "provides": {"formcatch": {"publish": "./publish.sh", "posts": true}}}
+  ```
+
+**Runtimes:** binaries other apps run as themselves, like PHP or FrankenPHP, never a shared process. A site without `run` whose `nook.json` says `"kind": "runtime"` is one:
+- **Published, not served:** nook copies the folder root-owned to `/var/lib/nook/runtimes/APP/SITE` on each deploy and never runs it or gives it an address.
+- **What it provides:** each interface it provides has a `version`, a `bin` folder inside it (default `.`), and optionally `links` to what apt installed under `/usr`, which nook adds to the copy:
+  ```json
+  {"kind": "runtime", "provides": {"php": {"version": "8.3", "links": {"php": "/usr/bin/php8.3"}}}}
+  ```
+- **Using one:** an app asks for it like any service, `"needs": ["php@8.3"]`. Its sites, cron jobs and hooks get the runtime's bin folder first on `PATH` and in `NOOK_RUNTIME_BIN` (the first runtime's, by name, when there are several). `{bin}` in the runtime's `env` templates is that folder.
+- **Updates:** apps bound to a runtime restart when it's published again.
 
 ## Store
 
@@ -227,6 +251,7 @@ The dashboard's **Store** page installs ready-made apps from signed catalogs. Ea
 - **Official catalog:** [sparkstonepdx/nook-catalog](https://github.com/sparkstonepdx/nook-catalog), signed with a key compiled into nook. Its apps show a green **Verified** check.
 - **Community catalogs:** add one under **Catalogs** by its repo (`owner/repo`) or URL. Its key is read when you add it and pinned, so a later key change is refused. Every app from it names the catalog it came from, and installing one says it isn't the official catalog.
 - **Trust:** every catalog pins each download's sha256. A bad signature or hash stops the install.
+- **Apps from apt** (official catalog only, since apt runs package scripts as root): an entry can name Debian packages instead of a release binary, from Debian or from a third-party repository the signed catalog defines once and pins by its key's fingerprint (written as that repository's own keyring, so it vouches for nothing else). apt supplies the files; nook masks the distro's own service and runs the program as an ordinary app. Entries with majors (`"versions": ["16", "17"]`) install each major as its own app (`postgres-17`), so two can run side by side; apt's updates within a major follow the app's update policy, and a failed health check afterwards is reported, not rolled back (apt can't go back reliably).
 - **App pages:** each app has a page with its screenshots, details, the settings it asks for, and links to the original project's homepage and source. Icons and screenshots are pinned by hash too. The helper fetches them, checks the hash and keeps a copy, so the dashboard serves them from its own address and your browser never contacts the catalog.
 - **Updates:** each app has a policy: `off`, `notify`, `patch`, `minor` (default) or `all`. The nightly check applies allowed updates from the catalog the app came from, and notifies about the rest.
 - **Rollback:** after an update nook health-checks the app. If it doesn't come up, nook redeploys the previous version, notifies you, and skips that version from then on.

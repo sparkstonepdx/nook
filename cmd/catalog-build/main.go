@@ -99,25 +99,23 @@ func build(path string) (core.CatalogApp, error) {
 		return core.CatalogApp{}, fmt.Errorf("%s: %v", path, err)
 	}
 	a := s.CatalogApp
+	if a.Apt != nil { // from apt: nothing to download or pin; the newest major stands for the version
+		if a.Version == "" && len(a.Versions) > 0 {
+			a.Version = a.Versions[len(a.Versions)-1]
+		}
+		if err := pinImages(filepath.Dir(filepath.Dir(path)), &a, path); err != nil {
+			return a, err
+		}
+		return a, core.CheckCatalogApp(a)
+	}
 	if s.Source.GitHub == "" || len(s.Source.Assets) == 0 {
 		return a, fmt.Errorf("%s: source.github and source.assets are required", path)
 	}
 	if a.Repo == "" {
 		a.Repo = "https://github.com/" + s.Source.GitHub
 	}
-	root := filepath.Dir(filepath.Dir(path))
-	if a.Icon != nil {
-		if err := pin(root, a.Icon); err != nil {
-			return a, fmt.Errorf("%s: icon: %v", path, err)
-		}
-	}
-	for i := range a.Screenshots {
-		if a.Screenshots[i].Alt == "" {
-			return a, fmt.Errorf("%s: screenshot %s needs alt text", path, a.Screenshots[i].Path)
-		}
-		if err := pin(root, &a.Screenshots[i]); err != nil {
-			return a, fmt.Errorf("%s: screenshot: %v", path, err)
-		}
+	if err := pinImages(filepath.Dir(filepath.Dir(path)), &a, path); err != nil {
+		return a, err
 	}
 	url := "https://api.github.com/repos/" + s.Source.GitHub + "/releases/latest"
 	if s.Source.Tag != "" {
@@ -184,6 +182,13 @@ func main() {
 	files, _ := filepath.Glob(filepath.Join(os.Args[1], "*.json"))
 	sort.Strings(files)
 	c := core.Catalog{Generated: time.Now().UTC().Format(time.RFC3339)}
+	// third-party apt repositories, defined once beside the apps (repos.json), pinned by key fingerprint
+	if b, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Clean(os.Args[1])), "repos.json")); err == nil {
+		if err := json.Unmarshal(b, &c.Repos); err != nil {
+			fmt.Fprintln(os.Stderr, "error: repos.json:", err)
+			os.Exit(1)
+		}
+	}
 	failed := false
 	for _, f := range files {
 		a, err := build(f)
@@ -193,6 +198,14 @@ func main() {
 			continue
 		}
 		c.Apps = append(c.Apps, a)
+	}
+	for _, a := range c.Apps {
+		if a.Apt != nil && a.Apt.Repo != "" {
+			if _, ok := c.Repos[a.Apt.Repo]; !ok {
+				fmt.Fprintf(os.Stderr, "error: %s uses the apt repository %q, which repos.json doesn't define\n", a.ID, a.Apt.Repo)
+				failed = true
+			}
+		}
 	}
 	if failed {
 		os.Exit(1)
@@ -230,4 +243,22 @@ func pickPrefix(rs []release, prefix string) (release, bool) {
 		}
 	}
 	return release{}, false
+}
+
+// pinImages records each icon and screenshot's hash and size.
+func pinImages(root string, a *core.CatalogApp, path string) error {
+	if a.Icon != nil {
+		if err := pin(root, a.Icon); err != nil {
+			return fmt.Errorf("%s: icon: %v", path, err)
+		}
+	}
+	for i := range a.Screenshots {
+		if a.Screenshots[i].Alt == "" {
+			return fmt.Errorf("%s: screenshot %s needs alt text", path, a.Screenshots[i].Path)
+		}
+		if err := pin(root, &a.Screenshots[i]); err != nil {
+			return fmt.Errorf("%s: screenshot: %v", path, err)
+		}
+	}
+	return nil
 }

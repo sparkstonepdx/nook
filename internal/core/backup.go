@@ -414,7 +414,7 @@ func (h *Host) BackupRun(reason string) (err error) {
 	writeUsers()
 	h.say("server: nook's settings, users, certificates")
 	sb, err := backupPaths(c, []string{"nook", "server"}, serverPaths(),
-		[]string{config.WWWDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
+		[]string{config.WWWDir, config.RuntimeDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
 	if err != nil {
 		return fmt.Errorf("server: %v", err)
 	}
@@ -527,14 +527,43 @@ var hookRE = regexp.MustCompile(`^\./[A-Za-z0-9._-][A-Za-z0-9._/-]{0,100}$`)
 
 // runBackupHook runs a site's backup command as the app user, in the site's folder, for up to 10 minutes.
 func runBackupHook(u *AppUser, site, run string) error {
+	_, err := runSiteHook(u, site, run, nil, map[string]string{"NOOK_BACKUP": "1"}, 10*time.Minute)
+	return err
+}
+
+// runSiteHook runs a script in a site's folder as the app user, with the site's environment plus extra, and
+// returns what it printed on stdout (up to 64 KB). stderr goes in the error when it fails.
+func runSiteHook(u *AppUser, site, run string, args []string, extra map[string]string, timeout time.Duration) (string, error) {
 	if !hookRE.MatchString(run) || strings.Contains(run, "..") {
-		return fmt.Errorf("backup.run is a script in the site folder, like ./backup.sh, not %q", run)
+		return "", fmt.Errorf("a hook is a script in the site folder, like ./backup.sh, not %q", run)
 	}
 	dir := filepath.Join(u.Home, "sites", site)
-	cmd := exec.Command(filepath.Join(dir, run))
+	cmd := exec.Command(filepath.Join(dir, run), args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(u.UID), Gid: uint32(u.GID), Groups: []uint32{}}}
 	cmd.Dir = dir
-	// the same environment the site runs with (its database URL, bound services), general to specific
+	cmd.Env = hookEnv(u, site, extra)
+	stdout := &limited{b: &bytes.Buffer{}, max: 64 << 10}
+	stderr := &limited{b: &bytes.Buffer{}, max: 4 << 10}
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			return "", fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.b.String()+"\n"+stdout.b.String()))
+		}
+		return stdout.b.String(), nil
+	case <-time.After(timeout):
+		cmd.Process.Kill()
+		return "", fmt.Errorf("still running after %s", timeout)
+	}
+}
+
+// hookEnv is the environment the site runs with (its database URL, bound services), general to specific, then extra.
+func hookEnv(u *AppUser, site string, extra map[string]string) []string {
 	env := map[string]string{}
 	for _, f := range envFiles(u.Name, site) {
 		b, _ := os.ReadFile(f)
@@ -543,27 +572,18 @@ func runBackupHook(u *AppUser, site, run string) error {
 			env[k], _ = vars.Get(k)
 		}
 	}
-	env["HOME"], env["USER"], env["PATH"], env["NOOK_BACKUP"] = u.Home, "nook-"+u.Name, "/usr/local/bin:/usr/bin:/bin", "1"
+	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, appPath(u.Name)
+	if bins := runtimeBins(u.Name); len(bins) > 0 {
+		env["NOOK_RUNTIME_BIN"] = bins[0]
+	}
+	for k, v := range extra {
+		env[k] = v
+	}
+	var out []string
 	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
+		out = append(out, k+"="+v)
 	}
-	out := &limited{b: &bytes.Buffer{}, max: 4 << 10}
-	cmd.Stdout, cmd.Stderr = out, out
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		if err != nil {
-			return fmt.Errorf("%v: %s", err, strings.TrimSpace(out.b.String()))
-		}
-		return nil
-	case <-time.After(10 * time.Minute):
-		cmd.Process.Kill()
-		return errors.New("still running after 10 minutes")
-	}
+	return out
 }
 
 // ---- snapshots and restoring ----

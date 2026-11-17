@@ -37,6 +37,9 @@ const maxArtifact = 500 << 20
 // pkgFor downloads a's artifact for this machine, checks its hash and builds the site package, all through
 // files in a scratch folder, so memory stays flat whatever the size. done removes the folder.
 func pkgFor(a CatalogApp, j *job) (pkg string, done func(), err error) {
+	if a.Apt != nil { // the program came from apt: the package is just its files and nook.json
+		return aptPackage(a)
+	}
 	art, ok := a.Artifacts[runtime.GOARCH]
 	if !ok {
 		return "", nil, fmt.Errorf("%s has no build for %s", a.ID, runtime.GOARCH)
@@ -177,37 +180,48 @@ func buildSitePackage(a CatalogApp, bin *os.File, w io.Writer) error {
 	if a.Listen != "" {
 		man["listen"] = a.Listen
 	}
+	if len(a.Provides) > 0 {
+		man["provides"] = a.Provides
+	}
 	manJSON, _ := json.MarshalIndent(man, "", "  ")
 	files := map[string][]byte{"nook.json": manJSON}
 	for n, body := range a.Files {
 		files[n] = []byte(body)
 	}
-	st, err := bin.Stat()
-	if err != nil {
-		return err
+	var size0 int64
+	if bin != nil {
+		st, err := bin.Stat()
+		if err != nil {
+			return err
+		}
+		size0 = st.Size()
 	}
 	zw := gzip.NewWriter(w)
 	tw := tar.NewWriter(zw)
-	keys := []string{a.Binary}
+	var keys []string
+	if bin != nil {
+		keys = append(keys, a.Binary)
+	}
 	for n := range files {
-		if n != a.Binary {
+		if bin == nil || n != a.Binary {
 			keys = append(keys, n)
 		}
 	}
 	sort.Strings(keys)
 	for _, n := range keys {
 		mode := int64(0o644)
-		if n == a.Binary || n == "run" {
+		isBin := bin != nil && n == a.Binary
+		if isBin || n == "run" || strings.HasSuffix(n, ".sh") {
 			mode = 0o755
 		}
 		size := int64(len(files[n]))
-		if n == a.Binary {
-			size = st.Size()
+		if isBin {
+			size = size0
 		}
 		if err := tw.WriteHeader(&tar.Header{Name: n, Typeflag: tar.TypeReg, Mode: mode, Size: size, ModTime: time.Now()}); err != nil {
 			return err
 		}
-		if n == a.Binary {
+		if isBin {
 			if _, err := bin.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
@@ -286,4 +300,26 @@ func prunePackages(app string, keep ...string) {
 
 func safeVersion(v string) string {
 	return regexp.MustCompile(`[^A-Za-z0-9._-]`).ReplaceAllString(v, "_")
+}
+
+// aptPackage builds an apt app's site package: its files (run, provision.sh ...) and nook.json, no binary.
+func aptPackage(a CatalogApp) (pkg string, done func(), err error) {
+	os.MkdirAll(storeScratch, 0o755)
+	dir, err := os.MkdirTemp(storeScratch, ".store-")
+	if err != nil {
+		return "", nil, err
+	}
+	cleanup := func() { os.RemoveAll(dir) }
+	pkg = filepath.Join(dir, "package.tgz")
+	out, err := os.Create(pkg)
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := buildSitePackage(a, nil, out); err != nil {
+		out.Close()
+		cleanup()
+		return "", nil, err
+	}
+	return pkg, cleanup, out.Close()
 }

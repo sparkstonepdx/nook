@@ -110,7 +110,8 @@ func (h *Host) syncLocked(app string) error {
 	others := otherCaddyFiles(app)
 	var published []caddyfile.Site
 	hosts := map[string]bool{}
-	seen, cronSeen := map[string]bool{}, map[string]bool{}
+	seen, cronSeen, runtimeSeen := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	var runtimesChanged []string
 	svc := appServices{Needs: map[string][]string{}, Provides: map[string]map[string]ProvideSpec{}}
 	svcKeep := false // a manifest couldn't be read: keep the last record rather than forget its services
 	var cronChanged, cronRunNow []string
@@ -149,6 +150,25 @@ func (h *Host) syncLocked(app string) error {
 		runs := rerr == nil && isFile(run) && run.Mode&0o111 != 0
 		kind := "static"
 		var man Manifest
+		var staticMan Manifest // a site without run: its nook.json, read once
+		var staticErr error
+		if !runs {
+			staticMan, staticErr = u.readManifest(s)
+			if m, err := staticMan, staticErr; err == nil && m.Kind == "runtime" {
+				changed, err := h.publishRuntime(u, s, st, m)
+				if err != nil {
+					h.say("%s: %s: %v", app, s, err)
+				} else if changed {
+					runtimesChanged = append(runtimesChanged, s)
+				}
+				seen[s], runtimeSeen[s] = true, true
+				if len(m.Provides) > 0 {
+					svc.Provides[s] = m.Provides
+				}
+				h.say("%s: runtime %s", app, s)
+				continue
+			}
+		}
 		if runs {
 			m, err := u.readManifest(s)
 			if err != nil {
@@ -257,19 +277,29 @@ func (h *Host) syncLocked(app string) error {
 				reload = true
 			}
 			root := filepath.Join(config.WWWDir, app, s)
-			if err := h.snapshot(u, s, st); err != nil {
+			// static sites read nook.json for cors and services; a bad file publishes the site without them
+			m, err := staticMan, staticErr
+			if err != nil {
+				h.say("%s: %s: %v; published without cors or services", app, s, err)
+				m = Manifest{}
+				svcKeep = true // keep the services it last asked for
+			}
+			if len(m.Needs) > 0 {
+				svc.Needs[s] = m.Needs
+			}
+			pubs := sitePublishers(app, m.Needs)
+			if err := h.snapshot(u, s, st, pubs); err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				if _, e := os.Stat(root); e != nil {
 					continue
 				}
 			}
-			// static sites read nook.json only for cors; a bad file publishes the site without it
-			m, err := u.readManifest(s)
-			if err != nil {
-				h.say("%s: %s: %v; published without cors", app, s, err)
+			postTo, note := postTarget(pubs)
+			if note != "" {
+				h.say("%s: %s: %s", app, s, note)
 			}
 			rules := readRules(root, func(why string) { h.say("%s: %s: _redirects %s, skipped", app, s, why) })
-			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: err == nil && m.CORS, Rules: rules, Login: login, Dashboard: dash.Host})
+			published = append(published, caddyfile.Site{Host: host, Root: root, Folder: s, Version: strconv.FormatUint(st.Ino, 10), CORS: m.CORS, Rules: rules, Login: login, Dashboard: dash.Host, PostTo: postTo, App: app})
 		}
 	}
 	if sites != nil {
@@ -291,7 +321,7 @@ func (h *Host) syncLocked(app string) error {
 
 	// running sites whose folder is gone
 	for _, s := range RunningSites(app) {
-		if !seen[s] {
+		if !seen[s] || runtimeSeen[s] {
 			h.stopUnit(app, s)
 			reload = true
 		}
@@ -308,6 +338,15 @@ func (h *Host) syncLocked(app string) error {
 	for s := range svc.Provides {
 		writeProviderEnv(app, s)
 	}
+	dropRuntimes(app, runtimeSeen)
+	// apps bound to a runtime that changed restart onto the new files
+	for _, s := range runtimesChanged {
+		for _, b := range readBindings() {
+			if b.Provider == "app:"+app+"/"+s {
+				h.restartSites(b.App, RunningSites(b.App))
+			}
+		}
+	}
 	// cron jobs whose folder is gone
 	for _, s := range CronJobs(app) {
 		if !cronSeen[s] {
@@ -318,7 +357,7 @@ func (h *Host) syncLocked(app string) error {
 	// static copies whose site is gone or now runs
 	if copies, err := os.ReadDir(filepath.Join(config.WWWDir, app)); err == nil {
 		for _, c := range copies {
-			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 || cronSeen[c.Name()] {
+			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 || cronSeen[c.Name()] || runtimeSeen[c.Name()] {
 				os.RemoveAll(filepath.Join(config.WWWDir, app, c.Name()))
 				os.Remove(filepath.Join(config.StateDir, app+"--"+c.Name()+".static"))
 			}
@@ -441,11 +480,14 @@ func readRules(root string, skipped func(string)) []redirects.Rule {
 	return rules
 }
 
-func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
+func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publisher) error {
 	app := u.Name
 	dst := filepath.Join(config.WWWDir, app, site)
 	idFile := filepath.Join(config.StateDir, app+"--"+site+".static")
 	id := fmt.Sprintf("%d:%d", st.Ino, st.Mtim.Sec)
+	if p := publishID(pubs); p != "" {
+		id += " " + p
+	}
 	if old, err := os.ReadFile(idFile); err == nil && string(old) == id {
 		if _, err := os.Stat(dst); err == nil {
 			return nil
@@ -462,6 +504,11 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t) error {
 	}
 	// nook.json is settings, not content: it stays in the app's folder and is never served
 	os.Remove(filepath.Join(tmp, "nook.json"))
+	// bound providers' publish hooks (a form catcher) work on the copy before it's compressed and goes live
+	if err := h.runPublishHooks(app, site, tmp, pubs, h.S.SiteMaxBytes); err != nil {
+		os.RemoveAll(tmp)
+		return fmt.Errorf("%v; kept the previous copy", err)
+	}
 	// gzip sidecars, so Caddy serves text files compressed without compressing them on each request
 	if _, err := precompress.Dir(tmp); err != nil {
 		h.say("%s: %s: compressing: %v; served as they are where it failed", app, site, err)
@@ -497,7 +544,7 @@ Group=nook-%[1]s
 Slice=nook-%[1]s.slice
 WorkingDirectory=%[4]s/sites/%[2]s
 ExecStart=%[4]s/sites/%[2]s/run
-Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s%[6]s
+Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s%[6]s%[11]s
 %[8]sRestart=always
 RestartSec=2
 StandardOutput=append:%[7]s
@@ -508,7 +555,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), strict), healthLine)
+		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), strict), healthLine, runtimeEnv(app))
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil

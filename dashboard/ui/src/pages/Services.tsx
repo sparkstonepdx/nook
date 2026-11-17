@@ -3,9 +3,9 @@ import { api, runCmd } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type Iface = { name: string; desc: string; env: string[] };
-type Provider = { id: string; interface: string; desc: string; ready: boolean; note?: string };
+type Provider = { id: string; interface: string; desc: string; version?: string; ready: boolean; note?: string };
 type Binding = { app: string; interface: string; provider: string; as?: Record<string, string>; env: string[]; ready: boolean };
-type Request = { app: string; interface: string; sites: string[] };
+type Request = { app: string; interface: string; wants?: string; sites: string[]; optional?: boolean };
 type View = { apps: string[]; interfaces: Iface[]; providers: Provider[]; bindings: Binding[]; requests: Request[] };
 
 const label = (id: string) => id.replace(/^app:/, "");
@@ -25,6 +25,8 @@ export default function Services() {
   const [binding, setBinding] = createSignal(false);
   const [iface, setIface] = createSignal("");
   const providersFor = (name: string) => (data()?.providers ?? []).filter((p) => p.interface === name);
+  // an optional service is only worth asking about once something can provide it
+  const waiting = () => (data()?.requests ?? []).filter((r) => !r.optional || providersFor(r.interface).some((p) => p.ready));
   const bind = async (app: string, name: string, provider: string, as: Record<string, string> = {}) => {
     await runCmd(`Bound ${app} to ${name}`, "/api/services/bind", { app, interface: name, provider, set: as });
     refetch();
@@ -38,20 +40,20 @@ export default function Services() {
       <p class="lede">Apps ask for services in their <span class="mono">nook.json</span>, and you pick who provides them. An app only sees ordinary env vars like <span class="mono">DATABASE_URL</span>, so it runs the same anywhere.</p>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
 
-      <Show when={data()?.requests.length}>
+      <Show when={waiting().length}>
         <section class="section">
           <h2>Waiting for you</h2>
           <ul class="list">
-            <For each={data()!.requests}>
+            <For each={waiting()}>
               {(r) => {
                 const ready = () => providersFor(r.interface).filter((p) => p.ready);
                 let sel!: HTMLSelectElement;
                 return (
                   <li class="row">
-                    <span class="row-main"><span>{r.app} needs <span class="mono">{r.interface}</span></span><small>for {r.sites.join(", ")}</small></span>
+                    <span class="row-main"><span>{r.app} {r.optional ? "can use" : "needs"} <span class="mono">{r.interface}{r.wants ?? ""}</span></span><small>for {r.sites.join(", ")}</small></span>
                     <span class="row-end">
                       <Show when={ready().length} fallback={<span>nothing provides it yet</span>}>
-                        <select class="select" ref={sel} aria-label="Provider"><For each={ready()}>{(p) => <option value={p.id}>{label(p.id)}</option>}</For></select>
+                        <select class="select" ref={sel} aria-label="Provider"><For each={ready()}>{(p) => <option value={p.id}>{label(p.id)}{p.version ? ` ${p.version}` : ""}</option>}</For></select>
                         <button class="btn btn-sm" onClick={() => bind(r.app, r.interface, sel.value)}>Grant</button>
                       </Show>
                     </span>
@@ -92,7 +94,7 @@ export default function Services() {
           <For each={data()?.providers}>
             {(p) => (
               <li class="row">
-                <span class="row-main"><span>{label(p.id)} <span class="text-secondary">provides</span> {p.interface}</span><small>{p.desc}<Show when={p.note}> · {p.note}</Show></small></span>
+                <span class="row-main"><span>{label(p.id)}{p.version ? ` ${p.version}` : ""} <span class="text-secondary">provides</span> {p.interface}</span><small>{p.desc}<Show when={p.note}> · {p.note}</Show></small></span>
                 <span class="row-end"><Show when={!p.ready}><StatusBadge ok={false}>unavailable</StatusBadge></Show></span>
               </li>
             )}
@@ -122,7 +124,7 @@ export default function Services() {
             </Field>
             <Field label="From">
               <select class="select" name="provider" required>
-                <For each={providersFor(iface()).filter((p) => p.ready)}>{(p) => <option value={p.id}>{label(p.id)}</option>}</For>
+                <For each={providersFor(iface()).filter((p) => p.ready)}>{(p) => <option value={p.id}>{label(p.id)}{p.version ? ` ${p.version}` : ""}</option>}</For>
               </select>
             </Field>
           </div>

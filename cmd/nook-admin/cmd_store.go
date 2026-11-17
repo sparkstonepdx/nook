@@ -78,6 +78,10 @@ func storeCmd(h *core.Host, args []string) {
 					o.Policy = args[i+1]
 					i++
 					continue
+				case "--version":
+					o.Version = args[i+1]
+					i++
+					continue
 				case "--env":
 					k, v, ok := strings.Cut(args[i+1], "=")
 					if !ok {

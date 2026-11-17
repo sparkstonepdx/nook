@@ -27,3 +27,66 @@ func TestCheckServices(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsAndVersions(t *testing.T) {
+	for s, want := range map[string]need{"postgres": {"postgres", "", "", false}, "postgres>=15": {"postgres", ">=", "15", false}, "php@8.3": {"php", "@", "8.3", false}, "notify?": {"notify", "", "", true}, "php@8.3?": {"php", "@", "8.3", true}} {
+		if n, ok := parseNeed(s); !ok || n != want {
+			t.Errorf("%s: %+v %v", s, n, ok)
+		}
+	}
+	for _, s := range []string{"Postgres", "pg>15", "php@8.x", "php@", ">=15", "?notify", "notify??"} {
+		if _, ok := parseNeed(s); ok {
+			t.Errorf("accepted need %q", s)
+		}
+	}
+	cases := []struct {
+		need, v string
+		ok      bool
+	}{
+		{"postgres>=15", "17", true}, {"postgres>=15", "14", false}, {"postgres>=15", "", false}, {"postgres>=15.2", "15.10", true},
+		{"php@8.3", "8.3", true}, {"php@8.3", "8.3.12", true}, {"php@8.3", "8.30", false}, {"php@8.3", "8.4", false},
+		{"frankenphp@1", "1.4.2", true}, {"postgres", "", true},
+	}
+	for _, c := range cases {
+		n, _ := parseNeed(c.need)
+		if n.accepts(c.v) != c.ok {
+			t.Errorf("%s accepts %q: want %v", c.need, c.v, c.ok)
+		}
+	}
+	if versionCmp("8.3", "8.3.0") != 0 || versionCmp("10", "9") != 1 || versionCmp("", "1") != -1 {
+		t.Error("versionCmp")
+	}
+	m := Manifest{Kind: "service", Needs: []string{"postgres>=15"}, Provides: map[string]ProvideSpec{"postgres": {Env: map[string]string{"DATABASE_URL": ""}, Version: "17", Provision: "./provision.sh", Deprovision: "./deprovision.sh"}}}
+	if err := checkServices(&m); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []ProvideSpec{
+		{Env: map[string]string{"DATABASE_URL": ""}, Version: "17-beta"},
+		{Env: map[string]string{"DATABASE_URL": ""}, Provision: "/bin/sh"},
+		{Env: map[string]string{"DATABASE_URL": ""}, Deprovision: "./../x.sh"},
+	} {
+		m := Manifest{Kind: "service", Provides: map[string]ProvideSpec{"postgres": bad}}
+		if checkServices(&m) == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
+
+func TestProvisionOutput(t *testing.T) {
+	old := runProviderHook
+	t.Cleanup(func() { runProviderHook = old })
+	p := Provider{Interface: "postgres", spec: ProvideSpec{Provision: "./provision.sh"}}
+	runProviderHook = func(app, site, run string, b Binding) (string, error) {
+		return "# made role nook-wren\n\nDATABASE_URL=postgresql:///wren?host=/run/postgresql\n", nil
+	}
+	v, err := provision(p, Binding{App: "wren"})
+	if err != nil || v["DATABASE_URL"] != "postgresql:///wren?host=/run/postgresql" {
+		t.Fatalf("%v %v", v, err)
+	}
+	for _, out := range []string{"PATH=/tmp\n", "DATABASE_URL=a\nExecStart=/bin/sh\n", "just text\n"} {
+		runProviderHook = func(string, string, string, Binding) (string, error) { return out, nil }
+		if _, err := provision(p, Binding{App: "wren"}); err == nil {
+			t.Errorf("accepted provision output %q", out)
+		}
+	}
+}

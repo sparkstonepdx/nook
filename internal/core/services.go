@@ -9,11 +9,13 @@ package core
 //	env:       /etc/nook/env/APP/services.env (consumer, read-only scope), .../APP/provider/SITE.env (provider)
 
 import (
+	"cmp"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -43,9 +45,30 @@ var Known = map[string]Interface{
 }
 
 // ProvideSpec is what a provider app declares for one interface: env templates using {url} {host} {port} {token}.
+// Version is what consumers' constraints are checked against ("17", "8.3"). Provision runs when an app is bound
+// (./provision.sh APP, as the provider's user, in its site folder): it sets up what that app needs (a login, a
+// database) and prints KEY=value lines for the interface's env names, which override the templates. Deprovision
+// runs when the binding goes.
+//
+// For static sites (#98): Publish runs on each publish of a bound static site that needs the interface, before
+// it goes live (publish_hooks.go); PublishFiles picks which of its files the hook sees (default *.html, *.htm).
+// Posts sends the bound static site's POST requests to the provider.
+//
+// For runtimes (#42, a site of kind runtime): Bin is the folder of the published runtime that goes first on a
+// bound app's PATH (default "."), and {bin} in Env is its full path. Links are files nook makes in the published
+// runtime pointing at what apt installed (php -> /usr/bin/php8.3). Runtime is set by nook from the site's kind.
 type ProvideSpec struct {
-	Desc string            `json:"desc,omitempty"`
-	Env  map[string]string `json:"env"`
+	Desc         string            `json:"desc,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	Version      string            `json:"version,omitempty"`
+	Provision    string            `json:"provision,omitempty"`
+	Deprovision  string            `json:"deprovision,omitempty"`
+	Publish      string            `json:"publish,omitempty"`
+	PublishFiles []string          `json:"publish_files,omitempty"`
+	Posts        bool              `json:"posts,omitempty"`
+	Bin          string            `json:"bin,omitempty"`
+	Links        map[string]string `json:"links,omitempty"`
+	Runtime      bool              `json:"runtime,omitempty"`
 }
 
 var (
@@ -59,18 +82,30 @@ func checkServices(m *Manifest) error {
 		return fmt.Errorf("nook.json: too many needs/provides")
 	}
 	for _, n := range m.Needs {
-		if !ifaceRE.MatchString(n) {
-			return fmt.Errorf("nook.json: bad service name %q in needs", n)
+		if _, ok := parseNeed(n); !ok {
+			return fmt.Errorf("nook.json: bad service %q in needs (a name, optionally @8.3 or >=15)", n)
 		}
 	}
-	if len(m.Provides) > 0 && m.Kind != "service" {
-		return fmt.Errorf("nook.json: only a service (\"kind\": \"service\") can provide services")
+	if len(m.Provides) > 0 && m.Kind != "service" && m.Kind != "runtime" {
+		return fmt.Errorf("nook.json: only a service (\"kind\": \"service\") or a runtime can provide services")
 	}
 	for name, spec := range m.Provides {
 		if !ifaceRE.MatchString(name) {
 			return fmt.Errorf("nook.json: bad or reserved interface name %q in provides", name)
 		}
-		if len(spec.Env) == 0 || len(spec.Env) > 20 {
+		spec.Runtime = m.Kind == "runtime" // only nook says what's a runtime
+		if spec.Runtime {
+			if spec.Provision != "" || spec.Deprovision != "" || spec.Publish != "" || spec.Posts {
+				return fmt.Errorf("nook.json: provides %q: a runtime is files, not a process: it has no hooks or posts", name)
+			}
+			if err := checkRuntimeSpec(spec); err != nil {
+				return fmt.Errorf("nook.json: provides %q: %v", name, err)
+			}
+		} else if spec.Bin != "" || len(spec.Links) > 0 {
+			return fmt.Errorf("nook.json: provides %q: bin and links are for runtimes", name)
+		}
+		m.Provides[name] = spec
+		if len(spec.Env) > 20 || len(spec.Env) == 0 && spec.Publish == "" && !spec.Posts && !spec.Runtime {
 			return fmt.Errorf("nook.json: provides %q needs 1-20 env entries", name)
 		}
 		for k, v := range spec.Env {
@@ -86,6 +121,22 @@ func checkServices(m *Manifest) error {
 				if _, ok := spec.Env[k]; !ok {
 					return fmt.Errorf("nook.json: %q must provide exactly %s", name, strings.Join(known.Env, ", "))
 				}
+			}
+		}
+		if spec.Version != "" && !versionRE.MatchString(spec.Version) {
+			return fmt.Errorf("nook.json: provides %q: version is like 17 or 8.3, not %q", name, spec.Version)
+		}
+		if len(spec.PublishFiles) > 10 {
+			return fmt.Errorf("nook.json: provides %q: at most 10 publish_files patterns", name)
+		}
+		for _, pat := range spec.PublishFiles {
+			if _, err := path.Match(pat, ""); err != nil || pat == "" || strings.Contains(pat, "/") || len(pat) > 40 {
+				return fmt.Errorf("nook.json: provides %q: publish_files are file name patterns like *.html, not %q", name, pat)
+			}
+		}
+		for _, hook := range []string{spec.Provision, spec.Deprovision, spec.Publish} {
+			if hook != "" && (!hookRE.MatchString(hook) || strings.Contains(hook, "..")) {
+				return fmt.Errorf("nook.json: provides %q: hooks are scripts in the site folder, like ./provision.sh, not %q", name, hook)
 			}
 		}
 		if len(spec.Desc) > 200 {
@@ -143,6 +194,7 @@ type Binding struct {
 	Provider  string            `json:"provider"`  // "app:APP/SITE"
 	As        map[string]string `json:"as,omitempty"`
 	Token     string            `json:"token,omitempty"`
+	Values    map[string]string `json:"values,omitempty"` // what the provider's provision hook printed
 	Created   int64             `json:"created"`
 }
 
@@ -170,9 +222,12 @@ type Provider struct {
 	ID        string            `json:"id"`
 	Interface string            `json:"interface"`
 	Desc      string            `json:"desc"`
+	Version   string            `json:"version,omitempty"`
 	Ready     bool              `json:"ready"`
+	Runtime   bool              `json:"runtime,omitempty"`
 	Note      string            `json:"note,omitempty"`
 	Env       map[string]string `json:"-"`
+	spec      ProvideSpec
 	app, site string
 	port      int
 }
@@ -190,8 +245,14 @@ func Providers() []Provider {
 						desc = k.Desc
 					}
 				}
-				p := Provider{ID: "app:" + app + "/" + site, Interface: iface, Desc: desc, Ready: port > 0, Env: spec.Env, app: app, site: site, port: port}
-				if port == 0 {
+				p := Provider{ID: "app:" + app + "/" + site, Interface: iface, Desc: desc, Version: spec.Version, Ready: port > 0, Env: spec.Env, spec: spec, app: app, site: site, port: port}
+				switch {
+				case spec.Runtime:
+					p.Ready, p.Runtime = runtimePublished(app, site), true
+					if !p.Ready {
+						p.Note = "not published"
+					}
+				case port == 0:
 					p.Note = "not running"
 				}
 				out = append(out, p)
@@ -232,10 +293,11 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	if !ifaceRE.MatchString(iface) {
 		return fmt.Errorf("bad service name %q", iface)
 	}
+	wants := consumerNeeds(app, iface)
 	if providerID == "" {
-		providerID = h.defaultProvider(iface)
+		providerID = h.defaultProvider(iface, wants)
 		if providerID == "" {
-			return fmt.Errorf("nothing provides %q yet", iface)
+			return fmt.Errorf("nothing provides %s yet", needsText(iface, wants))
 		}
 	}
 	p, ok := findProvider(providerID, iface)
@@ -244,6 +306,11 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	}
 	if p.app == app {
 		return fmt.Errorf("an app can't bind to its own service; it can reach it already")
+	}
+	for _, w := range wants {
+		if !w.accepts(p.Version) {
+			return fmt.Errorf("%s needs %s; %s provides %s", app, w, providerID, cmp.Or(p.Version, "no stated version"))
+		}
 	}
 	names := map[string]bool{}
 	for _, k := range interfaceEnv(p) {
@@ -263,22 +330,52 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 	}
 	bs := readBindings()
 	var keep []Binding
+	var old *Binding
 	for _, b := range bs {
-		if !(b.App == app && b.Interface == iface) {
-			keep = append(keep, b)
+		if b.App == app && b.Interface == iface {
+			bb := b
+			old = &bb
+			continue
 		}
+		keep = append(keep, b)
 	}
 	b := Binding{App: app, Interface: iface, Provider: providerID, As: as, Created: time.Now().Unix()}
 	raw := make([]byte, 24)
 	rand.Read(raw)
 	b.Token = base64.RawURLEncoding.EncodeToString(raw)
+	if p.spec.Provision != "" {
+		h.say("%s is setting up %s for %s", providerID, iface, app)
+		vals, err := provision(p, b)
+		if err != nil {
+			unlock()
+			return fmt.Errorf("%s couldn't set up %s for %s: %v", providerID, iface, app, err)
+		}
+		b.Values = vals
+	}
 	if err := writeBindings(append(keep, b)); err != nil {
 		unlock()
 		return err
 	}
 	unlock()
 	h.say("bound %s to %s from %s", app, iface, providerID)
-	return h.applyBindings(app, p.app, p.site)
+	if old != nil && old.Provider != providerID { // moved to another provider: the old one lets it go
+		h.deprovision(*old)
+		oa, osite := splitAppProvider(old.Provider)
+		writeProviderEnv(oa, osite)
+	}
+	if err := h.applyBindings(app, p.app, p.site); err != nil {
+		return err
+	}
+	return h.resyncStatic(app, p.spec)
+}
+
+// resyncStatic publishes app's sites again when a provider that works on them came or went: one that works on
+// static sites (#98), or a runtime, which changes the app's PATH.
+func (h *Host) resyncStatic(app string, spec ProvideSpec) error {
+	if spec.Publish == "" && !spec.Posts && !spec.Runtime {
+		return nil
+	}
+	return h.Sync(app)
 }
 
 // Unbind removes app's binding for iface. Data (a database) stays; only the connection goes.
@@ -307,8 +404,12 @@ func (h *Host) Unbind(app, iface string) error {
 		return err
 	}
 	h.say("unbound %s from %s (%s)", app, iface, gone.Provider)
+	h.deprovision(*gone)
 	papp, psite := splitAppProvider(gone.Provider)
-	return h.applyBindings(app, papp, psite)
+	if err := h.applyBindings(app, papp, psite); err != nil {
+		return err
+	}
+	return h.resyncStatic(app, readAppServices(papp).Provides[psite][iface])
 }
 
 func splitAppProvider(id string) (string, string) {
@@ -320,15 +421,23 @@ func splitAppProvider(id string) (string, string) {
 	return a, s
 }
 
-func (h *Host) defaultProvider(iface string) string {
-	var ready []string
+// defaultProvider is the one ready provider of iface that meets every constraint, or of several, the one with the
+// newest version. "" when there's none, or a tie.
+func (h *Host) defaultProvider(iface string, wants []need) string {
+	var best []Provider
 	for _, p := range Providers() {
-		if p.Interface == iface && p.Ready {
-			ready = append(ready, p.ID)
+		if p.Interface != iface || !p.Ready || !acceptsAll(wants, p.Version) {
+			continue
+		}
+		switch {
+		case len(best) == 0 || versionCmp(p.Version, best[0].Version) > 0:
+			best = []Provider{p}
+		case versionCmp(p.Version, best[0].Version) == 0:
+			best = append(best, p)
 		}
 	}
-	if len(ready) == 1 {
-		return ready[0]
+	if len(best) == 1 {
+		return best[0].ID
 	}
 	return ""
 }
@@ -386,9 +495,12 @@ func bindingValues(b Binding) map[string]string {
 		return out
 	}
 	port := strconv.Itoa(PortOf(papp, psite))
-	r := strings.NewReplacer("{url}", "http://127.0.0.1:"+port, "{host}", "127.0.0.1", "{port}", port, "{token}", b.Token)
+	r := strings.NewReplacer("{url}", "http://127.0.0.1:"+port, "{host}", "127.0.0.1", "{port}", port, "{token}", b.Token, "{bin}", runtimeBin(papp, psite, spec))
 	for k, t := range spec.Env {
 		out[k] = r.Replace(t)
+	}
+	for k, v := range b.Values { // what provisioning printed (only names the interface has, checked when stored)
+		out[k] = v
 	}
 	return out
 }
@@ -446,6 +558,8 @@ func (h *Host) dropAppBindings(app string) {
 		if b.App == app || papp == app {
 			if b.App != app {
 				affected[b.App] = true
+			} else if papp != app {
+				h.deprovision(b) // a consumer going: its provider lets it go
 			}
 			continue
 		}
@@ -477,7 +591,9 @@ type BindingRow struct {
 type Request struct {
 	App       string   `json:"app"`
 	Interface string   `json:"interface"`
+	Wants     string   `json:"wants,omitempty"` // its version constraints, like ">=15"
 	Sites     []string `json:"sites"`
+	Optional  bool     `json:"optional,omitempty"` // every site that asks works without it
 }
 
 func ServicesOverview() ServicesView {
@@ -516,15 +632,23 @@ func ServicesOverview() ServicesView {
 	}
 	for _, app := range Apps() {
 		want := map[string][]string{}
+		required := map[string]bool{} // any site that can't do without it
 		for site, needs := range readAppServices(app).Needs {
 			for _, n := range needs {
-				want[n] = append(want[n], site)
+				if nd, ok := parseNeed(n); ok {
+					want[nd.Name] = append(want[nd.Name], site)
+					required[nd.Name] = required[nd.Name] || !nd.Optional
+				}
 			}
 		}
 		for iface, sites := range want {
 			if !bound[app+"/"+iface] {
 				sort.Strings(sites)
-				v.Requests = append(v.Requests, Request{App: app, Interface: iface, Sites: sites})
+				r := Request{App: app, Interface: iface, Sites: sites, Optional: !required[iface]}
+				if w := consumerNeeds(app, iface); len(w) > 0 {
+					r.Wants = strings.TrimPrefix(needsText(iface, w), iface)
+				}
+				v.Requests = append(v.Requests, r)
 			}
 		}
 	}
