@@ -222,3 +222,40 @@ func portsCmd(h *core.Host, args []string) {
 		die(fmt.Errorf("usage: nook-admin ports APP [grant|revoke 25,465,587,993]"))
 	}
 }
+
+// nook-admin system: the server's own packages.
+func systemCmd(h *core.Host, args []string) {
+	switch {
+	case len(args) == 0:
+		s := core.ReadSystemStatus()
+		fmt.Printf("%s, kernel %s\n", s.OS, s.Kernel)
+		for _, p := range s.Packages {
+			tag := ""
+			if p.Security {
+				tag = " (security)"
+			}
+			if p.App != "" {
+				tag += " (with app " + p.App + ")"
+			}
+			fmt.Printf("  %s %s -> %s%s\n", p.Name, p.From, p.To, tag)
+		}
+		if s.Restart {
+			fmt.Println("restart needed:", s.RestartWhy)
+		}
+		if len(s.Stale) > 0 {
+			fmt.Println("still on replaced libraries:", strings.Join(s.Stale, ", "))
+		}
+	case args[0] == "check":
+		_, err := h.SystemCheck(false)
+		die(err)
+	case args[0] == "update":
+		_, err := h.SystemUpdate(len(args) > 1 && args[1] == "--security")
+		die(err)
+	case args[0] == "auto" && len(args) == 2 && (args[1] == "on" || args[1] == "off"):
+		die(core.SetSystemAuto(args[1] == "on"))
+	case args[0] == "restart":
+		die(core.SystemRestart())
+	default:
+		die(fmt.Errorf("usage: nook-admin system [check|update [--security]|auto on|off|restart]"))
+	}
+}

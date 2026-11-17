@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createResource, createSignal, onCleanup } from "solid-js";
 import { api, runCmd } from "../api";
 import { StatusBadge } from "../components";
+import { SystemUpdates } from "../system";
 
 type Resource = { name: string; status: "ok" | "watch" | "tight"; used: number; figure: string; detail: string };
 type Advice = { level: "watch" | "tight"; title: string; detail: string; app?: string };
@@ -82,6 +83,8 @@ export default function Server(props: { caddy: string; onLimits: (app: string) =
           </div>
         )}
       </Show>
+      <div class="chart-head system-head"><span class="eyebrow">System</span></div>
+      <SystemUpdates />
     </section>
   );
 }

@@ -41,6 +41,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
                                                  backups to an S3-compatible bucket (restic)
   nook-admin login NAME [on|off]                 put an app's sites behind the dashboard login (or show it)
   nook-admin ports NAME [grant|revoke 25,993]    let an app listen on public ports itself, like mail (or list them)
+  nook-admin system [check|update [--security]|auto on|off|restart]   the server's own packages and restarts
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
@@ -189,6 +190,9 @@ func main() {
 	case "ports":
 		needRoot()
 		portsCmd(h, args)
+	case "system":
+		needRoot()
+		systemCmd(h, args)
 	case "directory":
 		needRoot()
 		directoryCmd(h, args)
@@ -252,6 +256,12 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 			}
 			_, err := update.Check(os.Stdout, notify)
+			// the server's own packages: what's waiting, and the security fixes if they install by themselves
+			if s, serr := h.SystemCheck(true); serr != nil {
+				fmt.Fprintln(os.Stderr, serr)
+			} else if notify {
+				core.NotifySystem(s)
+			}
 			die(err)
 			return
 		}

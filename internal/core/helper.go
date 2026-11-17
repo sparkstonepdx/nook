@@ -400,6 +400,25 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		}
 		log.Printf("%s: revoked deploy token %s of %s", req.By, p["id"], p["app"])
 		return data(map[string]any{}, nil)
+	case "systemStatus":
+		return data(ReadSystemStatus(), nil)
+	case "systemCheck":
+		return command("nook-admin system check", func(h *Host) error { _, err := h.SystemCheck(false); return err })
+	case "systemUpdate":
+		sec := p["security"] == "true"
+		return command("nook-admin system update"+map[bool]string{true: " --security", false: ""}[sec], func(h *Host) error { _, err := h.SystemUpdate(sec); return err })
+	case "systemAuto":
+		on := p["on"] == "true"
+		return command("nook-admin system auto "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error {
+			h.say("automatic security updates %s", map[bool]string{true: "on", false: "off"}[on])
+			return SetSystemAuto(on)
+		})
+	case "systemRestart":
+		if p["confirm"] != "restart" {
+			return data(nil, errors.New("confirm the restart"))
+		}
+		log.Printf("%s: restarting the server", req.By)
+		return command("nook-admin system restart", func(h *Host) error { h.say("restarting the server in 5 seconds"); return SystemRestart() })
 	case "updateNow":
 		if UpdateHooks.Now == nil {
 			return data(nil, errors.New("updates aren't available"))

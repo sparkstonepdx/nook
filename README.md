@@ -244,6 +244,15 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Using one:** an app asks for it like any service, `"needs": ["php@8.3"]`. Its sites, cron jobs and hooks get the runtime's bin folder first on `PATH` and in `NOOK_RUNTIME_BIN` (the first runtime's, by name, when there are several). `{bin}` in the runtime's `env` templates is that folder.
 - **Updates:** apps bound to a runtime restart when it's published again.
 
+## System updates
+
+The Server section on the Apps page looks after the server's own Debian packages.
+- **What's waiting:** nook checks daily with its own update check (and on **Check now**): how many updates apt has, which are security fixes, and the packages themselves.
+- **Updating:** **Update** installs them all, **Security only** just the security fixes (`nook-admin system update [--security]`). Packages that came with a store app (Postgres from apt) are left to that app's own update policy, which restarts and checks it. Held packages (nook's own Caddy build) stay held.
+- **After an update:** Caddy, the dashboard and every app still running a library the update replaced are restarted onto the new one; the page lists any that are left.
+- **Restart needed:** shown when a newer kernel is installed than the one running, or a package asked for it. **Restart server** asks first, then restarts it 5 seconds later (`nook-admin system restart`).
+- **Automatic security fixes:** a switch (`nook-admin system auto on`) makes the daily check install security fixes by itself. Other updates and restarts still wait for you. With it off and fixes waiting, nook's update alerts say so.
+
 ## Public ports
 
 A running site can listen on the server's own ports itself, not through Caddy, the way a mail server takes 25, 465, 587 and 993.

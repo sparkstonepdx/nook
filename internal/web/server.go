@@ -285,6 +285,11 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
 	add("POST", "/api/apps/:app/login", false, helper("setLogin", p("app", "on"), true))
 	add("POST", "/api/apps/:app/ports", false, helper("setPorts", p("app", "ports", "revoke"), true))
+	add("GET", "/api/system", false, helper("systemStatus", nil, false))
+	add("POST", "/api/system/check", false, helper("systemCheck", nil, true))
+	add("POST", "/api/system/update", false, helper("systemUpdate", p("security"), true))
+	add("POST", "/api/system/auto", false, helper("systemAuto", p("on"), true))
+	add("POST", "/api/system/restart", false, helper("systemRestart", p("confirm"), true))
 	add("GET", "/api/store", false, helper("store", p("refresh"), false))
 	add("GET", "/api/store/image/:catalog/:sha", false, func(c *ctx) (any, error) {
 		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "storeImage", By: c.me, Params: map[string]string{"catalog": c.params["catalog"], "sha": c.params["sha"]}}, time.Minute)
