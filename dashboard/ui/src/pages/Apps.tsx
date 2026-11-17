@@ -12,7 +12,7 @@ import { AppBackupRow } from "../backups";
 import { SubductionIdentity } from "../subduction";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string };
-type App = { name: string; changed: number; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean };
+type App = { name: string; changed: number; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean; ports: number[]; portsAsk: number[] };
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
 const mb = (v?: string) => (v && /^\d+$/.test(v) ? `${Math.round(Number(v) / 1048576)}M` : "");
@@ -302,6 +302,18 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             }} />
             <span><span>Nook login</span><small>{a().loginApp ? "This app asks for it itself: its sites need a nook login, or a deploy token for scripts. Admins and users given this app get in." : "Every site of this app, previews too, asks for a nook login first. Admins and users given this app get in; deploy tokens still work for scripts."}</small></span>
           </label>
+          <Show when={a().ports.length || a().portsAsk.length}>
+            <ul class="list">
+              <Show when={a().ports.length}>
+                <li class="row"><span class="row-main"><span>Public ports <span class="mono">{a().ports.join(", ")}</span></span><small>It listens on these itself, not through Caddy, like a mail server.</small></span>
+                  <span class="row-end"><button class="btn btn-sm btn-secondary" onClick={() => props.after(runCmd(`${a().name} has no public ports`, `/api/apps/${a().name}/ports`, { ports: a().ports.join(","), revoke: true }))}>Take away</button></span></li>
+              </Show>
+              <Show when={a().portsAsk.length}>
+                <li class="row"><span class="row-main"><span>Asks for public ports <span class="mono">{a().portsAsk.join(", ")}</span></span><small>To listen on them itself, not through Caddy, like a mail server. Nothing else of its sandbox changes.</small></span>
+                  <span class="row-end"><button class="btn btn-sm" onClick={() => props.after(runCmd(`${a().name} may listen on ${a().portsAsk.join(", ")}`, `/api/apps/${a().name}/ports`, { ports: a().portsAsk.join(","), revoke: false }))}>Allow</button></span></li>
+              </Show>
+            </ul>
+          </Show>
           <AppBackupRow app={a().name} after={props.after} />
           <Show when={a().name === "subduction"}><SubductionIdentity /></Show>
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>

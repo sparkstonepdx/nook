@@ -243,6 +243,15 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Using one:** an app asks for it like any service, `"needs": ["php@8.3"]`. Its sites, cron jobs and hooks get the runtime's bin folder first on `PATH` and in `NOOK_RUNTIME_BIN` (the first runtime's, by name, when there are several). `{bin}` in the runtime's `env` templates is that folder.
 - **Updates:** apps bound to a runtime restart when it's published again.
 
+## Public ports
+
+A running site can listen on the server's own ports itself, not through Caddy, the way a mail server takes 25, 465, 587 and 993.
+- **Asking:** the site's `nook.json` says `"ports": [25, 465, 587, 993]` (web sites and services, up to 10, TCP).
+- **Granting:** an admin allows them on the app's **Manage** sheet or with `nook-admin ports APP grant 25,465,587,993` (`revoke` takes them away; `nook-admin ports APP` lists them). Until then the deploy log and the Manage sheet say what it asks for.
+- **What changes:** only that one unit may bind the ports both asked for and granted, and for a port under 1024 it gets the one capability that binds it (`CAP_NET_BIND_SERVICE`). Everything else about its sandbox stays as it was.
+- **Never granted:** 22, 53, 80, 443, 2019 (SSH, DNS, Caddy, Caddy's admin API) and nook's app port range. A port is granted to one app at a time.
+- **Firewall:** nook doesn't manage inbound rules; if your provider or `ufw` filters them, open the ports there too.
+
 ## Store
 
 The dashboard's **Store** page installs ready-made apps from signed catalogs. Each one becomes an ordinary nook app with its own user, folder, limits and firewall rules.
