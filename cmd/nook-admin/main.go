@@ -40,6 +40,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin backup [status|setup|run|snapshots [APP]|restore APP [SNAPSHOT]|skip APP on|off]
                                                  backups to an S3-compatible bucket (restic)
   nook-admin login NAME [on|off]                 put an app's sites behind the dashboard login (or show it)
+  nook-admin ports NAME [grant|revoke 25,993]    let an app listen on public ports itself, like mail (or list them)
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
@@ -185,6 +186,9 @@ func main() {
 	case "login":
 		needRoot()
 		loginCmd(h, args)
+	case "ports":
+		needRoot()
+		portsCmd(h, args)
 	case "directory":
 		needRoot()
 		directoryCmd(h, args)
