@@ -273,6 +273,7 @@ nook-admin store install ID [--catalog C] [--app NAME] [--site SITE] [--policy P
 nook-admin store update APP [--force]
 nook-admin store policy APP off|notify|patch|minor|all
 ```
+- **Runtimes and ports from the store:** an entry of `"kind": "runtime"` installs as a runtime other apps bind to (FrankenPHP from its release, PHP from apt with `"links"`); one that lists `"ports"` gets them granted when you install it, and the install sheet says which.
 
 ## Domains
 

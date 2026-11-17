@@ -76,6 +76,16 @@ func healthy(app, site string, a CatalogApp) error {
 	if a.kind() == "cron" {
 		return nil
 	}
+	if a.kind() == "runtime" { // nothing runs: it's ready once it's published for other apps
+		deadline := time.Now().Add(60 * time.Second)
+		for time.Now().Before(deadline) {
+			if runtimePublished(app, site) {
+				return nil
+			}
+			time.Sleep(2 * time.Second)
+		}
+		return fmt.Errorf("%s wasn't published", site)
+	}
 	if a.Health == "" {
 		deadline := time.Now().Add(60 * time.Second)
 		for time.Now().Before(deadline) {
@@ -197,11 +207,16 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			return err
 		}
 	}
+	if len(a.Ports) > 0 { // installing it is the admin's yes to the ports the entry lists
+		if err := h.GrantPorts(o.App, a.Ports, false); err != nil {
+			return err
+		}
+	}
 	h.say("installing %s as app %s, site %s", a.Name, o.App, o.Site)
 	j.step(StepDeploy)
 	out, err := deployPackage(o.App, o.Site, pkg)
 	h.say("%s", out)
-	if err != nil && !strings.Contains(out, "(cron job)") && !strings.Contains(out, "(service)") {
+	if err != nil && !strings.Contains(out, "(cron job)") && !strings.Contains(out, "(service)") && !strings.Contains(out, "(runtime)") {
 		return fmt.Errorf("deploy: %v", err)
 	}
 	savePackage(o.App, a.Version, pkg)
@@ -512,7 +527,7 @@ func (h *Host) aptUpdate(app string, rec Installed, a CatalogApp) error {
 	defer done()
 	out, err := deployPackage(app, rec.Site, pkg)
 	h.say("%s", out)
-	if err != nil && !strings.Contains(out, "(service)") && !strings.Contains(out, "(cron job)") {
+	if err != nil && !strings.Contains(out, "(service)") && !strings.Contains(out, "(cron job)") && !strings.Contains(out, "(runtime)") {
 		return fmt.Errorf("deploy: %v", err)
 	}
 	h.restartSites(app, RunningSites(app))

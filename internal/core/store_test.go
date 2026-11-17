@@ -242,3 +242,31 @@ func packageBytes(t *testing.T, a CatalogApp, bin []byte) ([]byte, error) {
 	err = buildSitePackage(a, f, &out)
 	return out.Bytes(), err
 }
+
+func TestCatalogRuntimeAndPorts(t *testing.T) {
+	art := map[string]Artifact{"amd64": {URL: "https://example.com/frankenphp", SHA256: strings.Repeat("a", 64), Format: "raw"}}
+	rt := CatalogApp{ID: "frankenphp", Name: "FrankenPHP", Version: "v1.4.0", Kind: "runtime", Binary: "frankenphp", Artifacts: art, Provides: map[string]ProvideSpec{"frankenphp": {Version: "1.4"}}}
+	if err := rt.check(); err != nil {
+		t.Fatal(err)
+	}
+	bad := rt
+	bad.Files = map[string]string{"run": "#!/bin/sh\n"}
+	if bad.check() == nil {
+		t.Fatal("a runtime with a run file would be a web app")
+	}
+	mail := CatalogApp{ID: "mail", Name: "Mail", Version: "v1", Kind: "service", Binary: "mail", Artifacts: art, Ports: []int{25, 465, 587, 993}}
+	if err := mail.check(); err != nil {
+		t.Fatal(err)
+	}
+	for _, ports := range [][]int{{22}, {443}, {0}} {
+		m := mail
+		m.Ports = ports
+		if m.check() == nil {
+			t.Errorf("accepted ports %v", ports)
+		}
+	}
+	cron := CatalogApp{ID: "job", Name: "Job", Version: "v1", Kind: "cron", Schedule: "daily", Binary: "job", Artifacts: art, Ports: []int{25}}
+	if cron.check() == nil {
+		t.Fatal("a cron job doesn't listen")
+	}
+}

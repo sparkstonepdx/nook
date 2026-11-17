@@ -114,6 +114,13 @@ func (a CatalogApp) withVersion(v string) CatalogApp {
 			if p.Version == "" {
 				p.Version = v
 			}
+			if len(p.Links) > 0 { // php -> /usr/bin/php{version}
+				links := map[string]string{}
+				for n, t := range p.Links {
+					links[n] = r.Replace(t)
+				}
+				p.Links = links
+			}
 			out.Provides[k] = p
 		}
 	}
