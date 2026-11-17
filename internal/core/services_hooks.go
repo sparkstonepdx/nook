@@ -167,6 +167,9 @@ var runProviderHook = func(app, site, run string, b Binding) (string, error) {
 		return "", err
 	}
 	extra := map[string]string{"NOOK_CONSUMER": b.App, "NOOK_CONSUMER_USER": "nook-" + b.App, "NOOK_INTERFACE": b.Interface}
+	if port := PortOf(app, site); port > 0 { // the service's own port, as it runs with
+		extra["PORT"] = strconv.Itoa(port)
+	}
 	if c, err := LookupApp(b.App); err == nil {
 		extra["NOOK_CONSUMER_UID"] = strconv.Itoa(c.UID)
 	}
