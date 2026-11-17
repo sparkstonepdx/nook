@@ -1,5 +1,11 @@
 # nook
 
+## 1.29.4
+
+### Patch Changes
+
+- 8654daa: The deploy action names the address it tried when a token is refused, and says so when nothing there answered as nook. The site workflow uses the NOOK_TOKEN secret.
+
 ## 1.29.3
 
 ### Patch Changes
