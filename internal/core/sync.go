@@ -110,7 +110,8 @@ func (h *Host) syncLocked(app string) error {
 	others := otherCaddyFiles(app)
 	var published []caddyfile.Site
 	hosts := map[string]bool{}
-	seen, cronSeen := map[string]bool{}, map[string]bool{}
+	seen, cronSeen, runtimeSeen := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	var runtimesChanged []string
 	svc := appServices{Needs: map[string][]string{}, Provides: map[string]map[string]ProvideSpec{}}
 	svcKeep := false // a manifest couldn't be read: keep the last record rather than forget its services
 	var cronChanged, cronRunNow []string
@@ -149,6 +150,25 @@ func (h *Host) syncLocked(app string) error {
 		runs := rerr == nil && isFile(run) && run.Mode&0o111 != 0
 		kind := "static"
 		var man Manifest
+		var staticMan Manifest // a site without run: its nook.json, read once
+		var staticErr error
+		if !runs {
+			staticMan, staticErr = u.readManifest(s)
+			if m, err := staticMan, staticErr; err == nil && m.Kind == "runtime" {
+				changed, err := h.publishRuntime(u, s, st, m)
+				if err != nil {
+					h.say("%s: %s: %v", app, s, err)
+				} else if changed {
+					runtimesChanged = append(runtimesChanged, s)
+				}
+				seen[s], runtimeSeen[s] = true, true
+				if len(m.Provides) > 0 {
+					svc.Provides[s] = m.Provides
+				}
+				h.say("%s: runtime %s", app, s)
+				continue
+			}
+		}
 		if runs {
 			m, err := u.readManifest(s)
 			if err != nil {
@@ -258,7 +278,7 @@ func (h *Host) syncLocked(app string) error {
 			}
 			root := filepath.Join(config.WWWDir, app, s)
 			// static sites read nook.json for cors and services; a bad file publishes the site without them
-			m, err := u.readManifest(s)
+			m, err := staticMan, staticErr
 			if err != nil {
 				h.say("%s: %s: %v; published without cors or services", app, s, err)
 				m = Manifest{}
@@ -301,7 +321,7 @@ func (h *Host) syncLocked(app string) error {
 
 	// running sites whose folder is gone
 	for _, s := range RunningSites(app) {
-		if !seen[s] {
+		if !seen[s] || runtimeSeen[s] {
 			h.stopUnit(app, s)
 			reload = true
 		}
@@ -318,6 +338,15 @@ func (h *Host) syncLocked(app string) error {
 	for s := range svc.Provides {
 		writeProviderEnv(app, s)
 	}
+	dropRuntimes(app, runtimeSeen)
+	// apps bound to a runtime that changed restart onto the new files
+	for _, s := range runtimesChanged {
+		for _, b := range readBindings() {
+			if b.Provider == "app:"+app+"/"+s {
+				h.restartSites(b.App, RunningSites(b.App))
+			}
+		}
+	}
 	// cron jobs whose folder is gone
 	for _, s := range CronJobs(app) {
 		if !cronSeen[s] {
@@ -328,7 +357,7 @@ func (h *Host) syncLocked(app string) error {
 	// static copies whose site is gone or now runs
 	if copies, err := os.ReadDir(filepath.Join(config.WWWDir, app)); err == nil {
 		for _, c := range copies {
-			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 || cronSeen[c.Name()] {
+			if !seen[c.Name()] || PortOf(app, c.Name()) > 0 || cronSeen[c.Name()] || runtimeSeen[c.Name()] {
 				os.RemoveAll(filepath.Join(config.WWWDir, app, c.Name()))
 				os.Remove(filepath.Join(config.StateDir, app+"--"+c.Name()+".static"))
 			}
@@ -515,7 +544,7 @@ Group=nook-%[1]s
 Slice=nook-%[1]s.slice
 WorkingDirectory=%[4]s/sites/%[2]s
 ExecStart=%[4]s/sites/%[2]s/run
-Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s%[6]s
+Environment=PORT=%[5]d HOST=127.0.0.1 SITE=%[2]s%[6]s%[11]s
 %[8]sRestart=always
 RestartSec=2
 StandardOutput=append:%[7]s
@@ -526,7 +555,7 @@ LimitFSIZE=2G
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), healthLine)
+		sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax)), healthLine, runtimeEnv(app))
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil
