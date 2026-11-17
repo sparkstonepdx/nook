@@ -252,6 +252,20 @@ func main() {
 			return
 		}
 		die(update.Apply(os.Stdout, false))
+	case "move":
+		needRoot()
+		switch {
+		case len(args) == 1 && args[0] == "code":
+			code, err := h.PairCode()
+			die(err)
+			fmt.Printf("On the new server (a fresh install), run within 24 hours:\n\n  nook-admin move from %s\n\nIt stops this server's apps, takes a last backup and restores it there. Keep the code private: it hands over the backups' password.\n", code)
+		case len(args) == 2 && args[0] == "from":
+			die(h.MoveFrom(args[1]))
+		case len(args) == 1 && args[0] == "resume":
+			die(h.MoveResume())
+		default:
+			die(fmt.Errorf("usage: nook-admin move code | move from CODE | move resume"))
+		}
 	case "helper":
 		needRoot()
 		log.SetFlags(0)

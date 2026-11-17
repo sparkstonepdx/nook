@@ -510,6 +510,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.publicDirectory(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/pair/") {
+		s.pairAPI(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
 		s.serveDeployAPI(w, r)
 		return
