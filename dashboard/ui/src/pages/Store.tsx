@@ -10,7 +10,7 @@ type Phase = "form" | "running" | "done" | "failed";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
 type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
-type CatalogApp = { id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
+type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
 type Row = { app: string; id: string; name: string; version: string; latest: string; available: boolean; site: string; policy: string; url?: string; lastError?: string; catalog?: string; catalogName: string; official: boolean };
 type CatalogInfo = { id: string; name: string; repo?: string; url: string; official: boolean; fingerprint: string; apps: number; fetchedAt?: string; error?: string };
 type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[] };
@@ -369,7 +369,11 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
   const guard = <T,>(f: (v: T) => void) => { const s = session; return (v: T) => { if (s === session) f(v); }; };
   const finished = () => phase() === "done" || phase() === "failed";
   const close = () => { session++; const ok = phase() === "done"; setPhaseNow("form"); props.onClose(); if (ok) props.onDone(); };
-  const job = () => { const j = jobFor(name()); return j && j.action === "install" && j.to === props.app?.version ? j : undefined; };
+  const [major, setMajor] = createSignal("");
+  const pick = () => major() || (props.app?.versions ?? []).slice(-1)[0] || "";
+  const job = () => { const j = jobFor(name()); return j && j.action === "install" && (j.to === props.app?.version || j.to === pick()) ? j : undefined; };
+  // an app with majors installs each as its own app: postgres-17
+  const defaultName = (a: CatalogApp) => (a.versions?.length ? `${a.id}-${pick().replace(".", "-")}` : props.taken.has(`${a.catalog}/${a.id}`) ? `${a.id}-2` : a.id);
   return (
     <Sheet open={!!props.app} title={props.app ? (phase() === "failed" ? `${props.app.name} didn't install` : `Install ${props.app.name}`) : ""} onClose={close}
       footer={<Show when={phase() === "form"} fallback={<button type="button" class="btn btn-secondary" onClick={close}>{finished() ? "Close" : "Hide"}</button>}>
@@ -392,7 +396,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             const f = new FormData(e.currentTarget);
             const env: Record<string, string> = {};
             for (const fld of app.env ?? []) env[fld.key] = String(f.get(`env.${fld.key}`) ?? "");
-            const body = { catalog: app.catalog, id: app.id, app: String(f.get("app")), site: String(f.get("site")), policy: String(f.get("policy")), set: env };
+            const body = { catalog: app.catalog, id: app.id, app: String(f.get("app")), site: String(f.get("site")), policy: String(f.get("policy")), version: app.versions?.length ? pick() : "", set: env };
             setName(body.app);
             await run("/api/store/install", body, props.poll, guard(setPhaseNow), guard(setOutNow));
           }}>
@@ -401,10 +405,15 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             }>
               <p class="cmd-line"><Origin official name="" /> <span class="hint">From the official nook catalog.</span></p>
             </Show>
-            <p class="hint">{a().description} Version <span class="mono">{a().version}</span>.</p>
+            <p class="hint">{a().description}<Show when={!a().versions?.length}> Version <span class="mono">{a().version}</span>.</Show></p>
+            <Show when={a().versions?.length}>
+              <Field label="Version" hint="Each version runs as its own app, so two can sit side by side. Updates within it come from apt.">
+                <select class="select" onChange={(e) => setMajor(e.currentTarget.value)}><For each={[...(a().versions ?? [])].reverse()}>{(v) => <option value={v} selected={v === pick()}>{a().name} {v}</option>}</For></select>
+              </Field>
+            </Show>
             <div class="field-row">
-              <Field label="App name"><input class="input mono" name="app" value={props.taken.has(`${a().catalog}/${a().id}`) ? `${a().id}-2` : a().id} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
-              <Field label="Site"><input class="input mono" name="site" value={a().site ?? a().id} required /></Field>
+              <Field label="App name"><input class="input mono" name="app" value={defaultName(a())} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
+              <Field label="Site"><input class="input mono" name="site" value={a().versions?.length ? defaultName(a()) : a().site ?? a().id} required /></Field>
             </div>
             <p class="hint">{a().kind === "cron" || a().kind === "service" ? "It runs without a hostname." : "A subdomain, or a hostname the app is allowed."}</p>
             <Field label="Updates">
