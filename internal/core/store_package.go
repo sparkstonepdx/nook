@@ -180,6 +180,9 @@ func buildSitePackage(a CatalogApp, bin *os.File, w io.Writer) error {
 	if a.Listen != "" {
 		man["listen"] = a.Listen
 	}
+	if len(a.Ports) > 0 {
+		man["ports"] = a.Ports
+	}
 	if len(a.Provides) > 0 {
 		man["provides"] = a.Provides
 	}

@@ -35,13 +35,14 @@ type CatalogApp struct {
 	Screenshots []Image             `json:"screenshots,omitempty"`
 	License     string              `json:"license,omitempty"`
 	Version     string              `json:"version"`
-	Kind        string              `json:"kind,omitempty"` // web (default), service, cron
+	Kind        string              `json:"kind,omitempty"` // web (default), service, cron, runtime
 	Site        string              `json:"site,omitempty"` // default site name (default: the id)
 	Schedule    string              `json:"schedule,omitempty"`
 	Health      string              `json:"health,omitempty"` // path answering < 400 when it's up
 	Auth        string              `json:"auth,omitempty"`   // "nook-token": only requests with a deploy token from this server; "nook-login": those or a nook login
 	Open        []string            `json:"open,omitempty"`   // with auth: paths that skip the token check
 	Listen      string              `json:"listen,omitempty"` // "any": may listen on ports outside nook's app range (CI runners)
+	Ports       []int               `json:"ports,omitempty"`  // public ports it listens on itself (mail); installing grants them
 	Memory      string              `json:"memory,omitempty"`
 	CPU         string              `json:"cpu,omitempty"`
 	Needs       []string            `json:"needs,omitempty"`
@@ -151,8 +152,20 @@ func (a CatalogApp) check() error {
 	}
 	switch a.Kind {
 	case "", "web", "service", "cron":
+	case "runtime":
+		if _, ok := a.Files["run"]; ok || a.Health != "" || a.Schedule != "" {
+			return fmt.Errorf("catalog entry %s: a runtime is files other apps run: no run file, health or schedule", a.ID)
+		}
 	default:
 		return fmt.Errorf("catalog entry %s: bad kind", a.ID)
+	}
+	if len(a.Ports) > 0 && a.kind() != "web" && a.kind() != "service" || len(a.Ports) > 10 {
+		return fmt.Errorf("catalog entry %s: up to 10 ports, on a web app or service", a.ID)
+	}
+	for _, p := range a.Ports {
+		if err := checkPublicPort(p, 0, -1); err != nil {
+			return fmt.Errorf("catalog entry %s: %v", a.ID, err)
+		}
 	}
 	for _, f := range a.Env {
 		if !envNameRE.MatchString(f.Key) || names.ReservedEnv[f.Key] {

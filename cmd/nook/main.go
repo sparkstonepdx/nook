@@ -189,6 +189,12 @@ func site(args []string) int {
 		}
 		os.RemoveAll(old)
 		kind := "static"
+		var man struct {
+			Kind string `json:"kind"`
+		}
+		if b, err := os.ReadFile(filepath.Join(dst, "nook.json")); err == nil && json.Unmarshal(b, &man) == nil && man.Kind == "runtime" {
+			kind = "runtime" // published for other apps to run, never served
+		}
 		if fi, err := os.Stat(filepath.Join(dst, "run")); err == nil && fi.Mode()&0o111 != 0 {
 			kind = "running app"
 			var m struct {
@@ -203,7 +209,7 @@ func site(args []string) int {
 				}
 			}
 		}
-		if kind == "cron job" || kind == "service" { // no hostname to wait for; sync picks it up from sites/
+		if kind == "cron job" || kind == "service" || kind == "runtime" { // no hostname to wait for; sync picks it up from sites/
 			fmt.Printf("deployed %s (%s)\n", s, kind)
 			return 0
 		}

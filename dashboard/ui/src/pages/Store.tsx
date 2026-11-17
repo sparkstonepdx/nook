@@ -10,7 +10,7 @@ type Phase = "form" | "running" | "done" | "failed";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
 type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
-type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
+type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; ports?: number[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
 type Row = { app: string; id: string; name: string; version: string; latest: string; available: boolean; site: string; policy: string; url?: string; lastError?: string; catalog?: string; catalogName: string; official: boolean };
 type CatalogInfo = { id: string; name: string; repo?: string; url: string; official: boolean; fingerprint: string; apps: number; fetchedAt?: string; error?: string };
 type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[] };
@@ -237,7 +237,7 @@ export default function Store() {
   );
 }
 
-const kindLabel: Record<string, string> = { web: "A website at its own address", service: "A service other apps use", cron: "Runs on a schedule" };
+const kindLabel: Record<string, string> = { web: "A website at its own address", service: "A service other apps use", cron: "Runs on a schedule", runtime: "Something other apps run, like a language" };
 
 function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () => void }) {
   const a = () => props.app;
@@ -264,6 +264,7 @@ function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () =
           <Show when={a().memory}><dt>Memory</dt><dd>up to {a().memory}</dd></Show>
           <Show when={arches()}><dt>Runs on</dt><dd>{arches()}</dd></Show>
           <Show when={a().needs?.length}><dt>Needs</dt><dd>{a().needs!.join(", ")}</dd></Show>
+          <Show when={a().ports?.length}><dt>Public ports</dt><dd>{a().ports!.join(", ")}: it listens on these itself, and installing it allows that</dd></Show>
         </dl>
       </section>
       <Show when={a().env?.length}>
@@ -415,7 +416,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
               <Field label="App name"><input class="input mono" name="app" value={defaultName(a())} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
               <Field label="Site"><input class="input mono" name="site" value={a().versions?.length ? defaultName(a()) : a().site ?? a().id} required /></Field>
             </div>
-            <p class="hint">{a().kind === "cron" || a().kind === "service" ? "It runs without a hostname." : "A subdomain, or a hostname the app is allowed."}</p>
+            <p class="hint">{a().kind === "cron" || a().kind === "service" || a().kind === "runtime" ? "It has no hostname." : "A subdomain, or a hostname the app is allowed."}</p>
             <Field label="Updates">
               <select class="select" name="policy"><For each={Object.keys(policyLabel)}>{(p) => <option value={p} selected={p === "minor"}>{policyLabel[p]}</option>}</For></select>
             </Field>
