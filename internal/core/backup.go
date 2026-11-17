@@ -414,7 +414,7 @@ func (h *Host) BackupRun(reason string) (err error) {
 	writeUsers()
 	h.say("server: nook's settings, users, certificates")
 	sb, err := backupPaths(c, []string{"nook", "server"}, serverPaths(),
-		[]string{config.WWWDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
+		[]string{config.WWWDir, config.RuntimeDir, filepath.Join(config.LibDir, ".store-*"), filepath.Join(backupDir, "cache"), filepath.Join(backupDir, "lock"), "/etc/nook/backup.env"})
 	if err != nil {
 		return fmt.Errorf("server: %v", err)
 	}
@@ -572,7 +572,10 @@ func hookEnv(u *AppUser, site string, extra map[string]string) []string {
 			env[k], _ = vars.Get(k)
 		}
 	}
-	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, "/usr/local/bin:/usr/bin:/bin"
+	env["HOME"], env["USER"], env["PATH"] = u.Home, "nook-"+u.Name, appPath(u.Name)
+	if bins := runtimeBins(u.Name); len(bins) > 0 {
+		env["NOOK_RUNTIME_BIN"] = bins[0]
+	}
 	for k, v := range extra {
 		env[k] = v
 	}
