@@ -339,7 +339,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 			from = " --catalog " + p["catalog"]
 		}
 		return command("nook-admin store install "+p["id"]+from+" --app "+p["app"]+" --site "+p["site"], func(h *Host) error {
-			return h.StoreInstall(InstallOpts{Catalog: p["catalog"], ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Env: req.Set})
+			return h.StoreInstall(InstallOpts{Catalog: p["catalog"], ID: p["id"], App: p["app"], Site: p["site"], Policy: p["policy"], Version: p["version"], Env: req.Set})
 		})
 	case "catalogAdd":
 		s, err := AddCatalog(p["source"])
