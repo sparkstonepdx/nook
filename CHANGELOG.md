@@ -1,5 +1,15 @@
 # nook
 
+## 1.35.0
+
+### Minor Changes
+
+- 3ea03c0: Move a server onto a new one (#68 part 3): `nook-admin move code` on the old server, `nook-admin move from CODE` on a fresh install. The new server takes the old one's backup settings, has it stop its apps and back up once more, restores that as a whole-server restore, and starts everything; `nook-admin move resume` on the old server undoes the stop.
+
+### Patch Changes
+
+- 2e5a0ea: The site links to the app catalog (catalog.sparkstonepdx.com) from its header, footer, the store card and the store section.
+
 ## 1.34.0
 
 ### Minor Changes
