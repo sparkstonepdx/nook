@@ -224,6 +224,16 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
   {"kind": "service", "provides": {"postgres": {"version": "17", "env": {"DATABASE_URL": ""}, "provision": "./provision.sh", "deprovision": "./deprovision.sh"}}}
   ```
 
+**Optional services:** `"needs": ["notify?"]` is used when bound and never blocks anything: installing says the app can use it, and the Services page only asks about it once something provides it.
+
+**Providers that work on static sites:** a static site can list `needs` in its `nook.json` too. A provider bound to it can then work on the site itself, which is how a form catcher handles plain HTML forms:
+- **Publish hook:** `"publish": "./publish.sh"` runs on every publish of the site, before it goes live. It gets the site's `*.html` and `*.htm` files (or `"publish_files": ["*.svg"]`, up to 10 name patterns) as a tar on stdin, with `SITE`, `NOOK_CONSUMER` (the site's app), `NOOK_INTERFACE` and `PORT`, as the provider's user in its site folder. It writes a tar of only the files it changed to stdout; it can't add files or change any it wasn't sent. What it prints on stderr goes into the deploy log. If it fails or runs past 2 minutes, the publish fails and the previous copy stays live. Binding or unbinding publishes the site again.
+- **POSTs:** `"posts": true` sends the site's POST requests to the provider, with the original path and query, the site's `Host`, and `X-Nook-Site: APP/HOST` (a client can't send its own). Everything else is served as before; a static site couldn't take a POST anyway.
+- **Env:** a provider that only publishes or takes posts needs no `env`.
+  ```json
+  {"kind": "service", "provides": {"formcatch": {"publish": "./publish.sh", "posts": true}}}
+  ```
+
 ## Store
 
 The dashboard's **Store** page installs ready-made apps from signed catalogs. Each one becomes an ordinary nook app with its own user, folder, limits and firewall rules.

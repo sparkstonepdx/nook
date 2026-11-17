@@ -36,6 +36,10 @@ type Site struct {
 	// or a deploy token as TokenAuth does. Dashboard is the dashboard's hostname, where people log in.
 	Login     string
 	Dashboard string
+	// PostTo, for a static site, is the port of the provider that takes its POSTs (a form catcher, #98). The
+	// provider gets the original path and X-Nook-Site (APP/HOST), which a client can't send its own of.
+	PostTo int
+	App    string
 }
 
 const redirectMark = " { # redirect"
@@ -144,6 +148,11 @@ func static(b *strings.Builder, s Site, tls string) {
 // staticBody serves the files. Written in the order Caddy runs them, so it reads the same inside a route.
 func staticBody(s Site) string {
 	var b strings.Builder
+	if s.PostTo > 0 {
+		// try_files may have rewritten the path already (outside a route it runs first): send the original
+		fmt.Fprintf(&b, "\t@nook_post method POST\n\thandle @nook_post {\n\t\trewrite * {http.request.orig_uri}\n\t\treverse_proxy 127.0.0.1:%d {\n\t\t\theader_up X-Nook-Site %s/%s\n%s\t\t}\n\t}\n",
+			s.PostTo, s.App, s.Host, proxyOpts(3))
+	}
 	fmt.Fprintf(&b, "\troot * %s\n", s.Root)
 	// the rules file is settings, not content
 	b.WriteString("\thandle /_redirects {\n\t\terror 404\n\t}\n")

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -48,12 +49,19 @@ var Known = map[string]Interface{
 // (./provision.sh APP, as the provider's user, in its site folder): it sets up what that app needs (a login, a
 // database) and prints KEY=value lines for the interface's env names, which override the templates. Deprovision
 // runs when the binding goes.
+//
+// For static sites (#98): Publish runs on each publish of a bound static site that needs the interface, before
+// it goes live (publish_hooks.go); PublishFiles picks which of its files the hook sees (default *.html, *.htm).
+// Posts sends the bound static site's POST requests to the provider.
 type ProvideSpec struct {
-	Desc        string            `json:"desc,omitempty"`
-	Env         map[string]string `json:"env"`
-	Version     string            `json:"version,omitempty"`
-	Provision   string            `json:"provision,omitempty"`
-	Deprovision string            `json:"deprovision,omitempty"`
+	Desc         string            `json:"desc,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	Version      string            `json:"version,omitempty"`
+	Provision    string            `json:"provision,omitempty"`
+	Deprovision  string            `json:"deprovision,omitempty"`
+	Publish      string            `json:"publish,omitempty"`
+	PublishFiles []string          `json:"publish_files,omitempty"`
+	Posts        bool              `json:"posts,omitempty"`
 }
 
 var (
@@ -78,7 +86,7 @@ func checkServices(m *Manifest) error {
 		if !ifaceRE.MatchString(name) {
 			return fmt.Errorf("nook.json: bad or reserved interface name %q in provides", name)
 		}
-		if len(spec.Env) == 0 || len(spec.Env) > 20 {
+		if len(spec.Env) > 20 || len(spec.Env) == 0 && spec.Publish == "" && !spec.Posts {
 			return fmt.Errorf("nook.json: provides %q needs 1-20 env entries", name)
 		}
 		for k, v := range spec.Env {
@@ -99,7 +107,15 @@ func checkServices(m *Manifest) error {
 		if spec.Version != "" && !versionRE.MatchString(spec.Version) {
 			return fmt.Errorf("nook.json: provides %q: version is like 17 or 8.3, not %q", name, spec.Version)
 		}
-		for _, hook := range []string{spec.Provision, spec.Deprovision} {
+		if len(spec.PublishFiles) > 10 {
+			return fmt.Errorf("nook.json: provides %q: at most 10 publish_files patterns", name)
+		}
+		for _, pat := range spec.PublishFiles {
+			if _, err := path.Match(pat, ""); err != nil || pat == "" || strings.Contains(pat, "/") || len(pat) > 40 {
+				return fmt.Errorf("nook.json: provides %q: publish_files are file name patterns like *.html, not %q", name, pat)
+			}
+		}
+		for _, hook := range []string{spec.Provision, spec.Deprovision, spec.Publish} {
 			if hook != "" && (!hookRE.MatchString(hook) || strings.Contains(hook, "..")) {
 				return fmt.Errorf("nook.json: provides %q: hooks are scripts in the site folder, like ./provision.sh, not %q", name, hook)
 			}
@@ -321,7 +337,18 @@ func (h *Host) Bind(app, iface, providerID string, as map[string]string) error {
 		oa, osite := splitAppProvider(old.Provider)
 		writeProviderEnv(oa, osite)
 	}
-	return h.applyBindings(app, p.app, p.site)
+	if err := h.applyBindings(app, p.app, p.site); err != nil {
+		return err
+	}
+	return h.resyncStatic(app, p.spec)
+}
+
+// resyncStatic publishes app's static sites again when a provider that works on them (#98) came or went.
+func (h *Host) resyncStatic(app string, spec ProvideSpec) error {
+	if spec.Publish == "" && !spec.Posts {
+		return nil
+	}
+	return h.Sync(app)
 }
 
 // Unbind removes app's binding for iface. Data (a database) stays; only the connection goes.
@@ -352,7 +379,10 @@ func (h *Host) Unbind(app, iface string) error {
 	h.say("unbound %s from %s (%s)", app, iface, gone.Provider)
 	h.deprovision(*gone)
 	papp, psite := splitAppProvider(gone.Provider)
-	return h.applyBindings(app, papp, psite)
+	if err := h.applyBindings(app, papp, psite); err != nil {
+		return err
+	}
+	return h.resyncStatic(app, readAppServices(papp).Provides[psite][iface])
 }
 
 func splitAppProvider(id string) (string, string) {
@@ -536,6 +566,7 @@ type Request struct {
 	Interface string   `json:"interface"`
 	Wants     string   `json:"wants,omitempty"` // its version constraints, like ">=15"
 	Sites     []string `json:"sites"`
+	Optional  bool     `json:"optional,omitempty"` // every site that asks works without it
 }
 
 func ServicesOverview() ServicesView {
@@ -574,17 +605,19 @@ func ServicesOverview() ServicesView {
 	}
 	for _, app := range Apps() {
 		want := map[string][]string{}
+		required := map[string]bool{} // any site that can't do without it
 		for site, needs := range readAppServices(app).Needs {
 			for _, n := range needs {
 				if nd, ok := parseNeed(n); ok {
 					want[nd.Name] = append(want[nd.Name], site)
+					required[nd.Name] = required[nd.Name] || !nd.Optional
 				}
 			}
 		}
 		for iface, sites := range want {
 			if !bound[app+"/"+iface] {
 				sort.Strings(sites)
-				r := Request{App: app, Interface: iface, Sites: sites}
+				r := Request{App: app, Interface: iface, Sites: sites, Optional: !required[iface]}
 				if w := consumerNeeds(app, iface); len(w) > 0 {
 					r.Wants = strings.TrimPrefix(needsText(iface, w), iface)
 				}
