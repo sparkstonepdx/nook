@@ -61,6 +61,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin services [list]
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
+  nook-admin migrate APP SERVICE TO              move it to another provider with its data (postgres-17)
   nook-admin subduction                          the Subduction server's URL, peer id and Keyhive contact card
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
@@ -214,6 +215,12 @@ func main() {
 	case "services":
 		needRoot()
 		servicesCmd(h, args)
+	case "migrate":
+		needRoot()
+		if len(args) != 3 {
+			die(fmt.Errorf("usage: nook-admin migrate APP SERVICE TO  (like: nook-admin migrate shop postgres postgres-17)"))
+		}
+		die(h.Migrate(args[0], args[1], args[2]))
 	case "subduction":
 		needRoot()
 		id := core.Subduction()

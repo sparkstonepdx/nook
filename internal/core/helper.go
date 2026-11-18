@@ -367,6 +367,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return command("nook-admin bind "+p["app"]+" "+p["interface"]+" "+p["provider"], func(h *Host) error {
 			return h.Bind(p["app"], p["interface"], p["provider"], req.Set)
 		})
+	case "migrate":
+		if err := StartMigrate(p["app"], p["interface"], p["provider"]); err != nil {
+			return data(nil, err)
+		}
+		return data(map[string]any{"started": true}, nil)
 	case "unbind":
 		return command("nook-admin unbind "+p["app"]+" "+p["interface"], func(h *Host) error { return h.Unbind(p["app"], p["interface"]) })
 	case "tokenApp":

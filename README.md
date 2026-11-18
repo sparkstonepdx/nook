@@ -222,8 +222,14 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 - **Versions:** a provider states `"version": "17"`. A consumer can ask for `"postgres>=15"` or `"php@8.3"` (8.3 or 8.3.x, not 8.30). Binding refuses a provider that doesn't meet it, and with no provider named, nook picks the newest one that does.
 - **Provisioning:** `"provision": "./provision.sh"` runs when an app is bound, as the provider's user in its site folder, with the app's name as its argument and in `NOOK_CONSUMER`, plus `NOOK_CONSUMER_USER` (its OS user, for Postgres peer auth) and `NOOK_CONSUMER_UID`. It sets up what that app needs (a role, a database) and prints `KEY=value` lines for the interface's env names, which the app gets in place of the templates. `"deprovision": "./deprovision.sh"` runs when the binding goes (unbound, moved to another provider, or the app deleted); data is the provider's to keep or drop. A failed provision leaves no binding.
   ```json
-  {"kind": "service", "provides": {"postgres": {"version": "17", "env": {"DATABASE_URL": ""}, "provision": "./provision.sh", "deprovision": "./deprovision.sh"}}}
+  {"kind": "service", "provides": {"postgres": {"version": "17", "env": {"DATABASE_URL": ""}, "provision": "./provision.sh", "deprovision": "./deprovision.sh", "export": "./export.sh", "import": "./import.sh"}}}
   ```
+- **Moving to another provider with the data:** `"export": "./export.sh"` writes the app's data to stdout and `"import": "./import.sh"` reads it on stdin, each as its own provider's user with the app's name as its argument. nook pipes one into the other; neither can read the other's files. `nook-admin migrate APP SERVICE TO` (or **Move** on the Services page, beside the binding) then:
+  1. stops the app's sites, so nothing writes during the copy
+  2. provisions it on `TO` and runs the old provider's export into the new one's import (up to 2 hours)
+  3. moves the binding and starts the app with its new env; the old provider deprovisions it but keeps its copy until you remove that instance
+
+  If any step fails, the new provider deprovisions it and the app starts on its old binding, unchanged. This is how a database moves across majors (`nook-admin migrate shop postgres postgres-17`): never in place, one app at a time. `TO` is the providing app, or `app:APP/SITE` when it provides from several sites.
 
 **Optional services:** `"needs": ["notify?"]` is used when bound and never blocks anything: installing says the app can use it, and the Services page only asks about it once something provides it.
 
