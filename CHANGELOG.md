@@ -1,5 +1,11 @@
 # nook
 
+## 1.41.0
+
+### Minor Changes
+
+- a42c8e4: A web site can provide services too, not only a hostless service: for a provider that also has pages of its own, like Formlify's submissions.
+
 ## 1.40.0
 
 ### Minor Changes
