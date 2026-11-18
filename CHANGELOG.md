@@ -1,5 +1,11 @@
 # nook
 
+## 1.41.1
+
+### Patch Changes
+
+- bb7f594: Installing another copy of a store app (a second PocketBase) suggests the first free name for both the app and its site (pocketbase-2 at pocketbase-2.<domain>), and the install refuses a site another app already has, before making anything.
+
 ## 1.41.0
 
 ### Minor Changes
