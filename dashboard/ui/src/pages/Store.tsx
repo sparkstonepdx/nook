@@ -10,7 +10,7 @@ type Phase = "form" | "running" | "done" | "failed";
 
 type EnvField = { key: string; desc?: string; default?: string; secret?: boolean; required?: boolean };
 type Image = { path: string; sha256: string; alt?: string; width?: number; height?: number };
-type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; ports?: number[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
+type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; provides?: Record<string, { desc?: string }>; ports?: number[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
 type Row = { app: string; id: string; name: string; version: string; latest: string; available: boolean; site: string; policy: string; url?: string; lastError?: string; catalog?: string; catalogName: string; official: boolean };
 type CatalogInfo = { id: string; name: string; repo?: string; url: string; official: boolean; fingerprint: string; apps: number; fetchedAt?: string; error?: string };
 type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[]; taken?: string[] };
@@ -104,7 +104,7 @@ export default function Store() {
     <Show when={!loc.pathname.startsWith("/store/apps/")} fallback={
       <Show when={detail()} fallback={<Show when={data()}><PageHead title="Not in your catalogs" back={{ href: "/store/install", label: "Install" }} /><p class="lede">Refresh the catalog, or check the link.</p></Show>}>
         {(a) => <>
-          <AppDetail app={a()} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
+          <AppDetail app={a()} all={data()?.catalog ?? []} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
           <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} poll={pollNow} />
         </>}
       </Show>
@@ -239,7 +239,15 @@ export default function Store() {
 
 const kindLabel: Record<string, string> = { web: "A website at its own address", service: "A service other apps use", cron: "Runs on a schedule", runtime: "Something other apps run, like a language" };
 
-function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () => void }) {
+// A need's service name without "?" or a version ("email?", "postgres>=16"); a list as "a, b or c".
+const serviceOf = (n: string) => n.replace(/[?<>=~^].*$/, "");
+const orList = (v?: string[]) => (v?.length ? (v.length > 1 ? `${v.slice(0, -1).join(", ")} or ${v.at(-1)}` : v[0]) : "");
+const appLinks = (list: CatalogApp[]) => <For each={list}>{(p, i) => <>{i() ? ", " : ""}<A class="link" href={appPath(p)}>{p.name}</A></>}</For>;
+
+function AppDetail(props: { app: CatalogApp; all: CatalogApp[]; installed: boolean; onInstall: () => void }) {
+  const provided = () => Object.entries(props.app.provides ?? {}).map(([name, p]) => ({ name, desc: p.desc?.replaceAll("{version}", orList(props.app.versions) || props.app.version) }));
+  const providers = (need: string) => props.all.filter((x) => x.provides?.[serviceOf(need)]);
+  const users = (service: string) => props.all.filter((x) => x.needs?.some((n) => serviceOf(n) === service));
   const a = () => props.app;
   const arches = () => Object.keys(a().artifacts ?? {}).join(", ");
   return (
@@ -263,10 +271,26 @@ function AppDetail(props: { app: CatalogApp; installed: boolean; onInstall: () =
           <Show when={a().license}><dt>License</dt><dd>{a().license}</dd></Show>
           <Show when={a().memory}><dt>Memory</dt><dd>up to {a().memory}</dd></Show>
           <Show when={arches()}><dt>Runs on</dt><dd>{arches()}</dd></Show>
-          <Show when={a().needs?.length}><dt>Needs</dt><dd>{a().needs!.join(", ")}</dd></Show>
           <Show when={a().ports?.length}><dt>Public ports</dt><dd>{a().ports!.join(", ")}: it listens on these itself, and installing it allows that</dd></Show>
         </dl>
       </section>
+      <Show when={provided().length}>
+        <section class="section">
+          <h2>It provides</h2>
+          <p class="hint">Your other apps and sites can use these once it's installed.</p>
+          <ul class="list">
+            <For each={provided()}>{(p) => <li class="row"><span class="row-main"><span class="mono">{p.name}</span><Show when={p.desc}><small>{p.desc}</small></Show><Show when={users(p.name).length}><small>Used by {appLinks(users(p.name))}</small></Show></span></li>}</For>
+          </ul>
+        </section>
+      </Show>
+      <Show when={a().needs?.length}>
+        <section class="section">
+          <h2>It uses</h2>
+          <ul class="list">
+            <For each={a().needs}>{(n) => <li class="row"><span class="row-main"><span class="mono">{serviceOf(n)}</span><small>{n.endsWith("?") ? "Optional. " : "Required. "}<Show when={providers(n).length} fallback="No app in your catalogs provides it yet.">From {appLinks(providers(n))}</Show></small></span></li>}</For>
+          </ul>
+        </section>
+      </Show>
       <Show when={a().env?.length}>
         <section class="section">
           <h2>It asks for</h2>
