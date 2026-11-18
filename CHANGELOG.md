@@ -1,5 +1,11 @@
 # nook
 
+## 1.42.1
+
+### Patch Changes
+
+- e2bd272: The store's app page says what an app provides (and which apps in your catalogs use it) and what it uses (required or optional, and which apps provide it), with links between them.
+
 ## 1.42.0
 
 ### Minor Changes
