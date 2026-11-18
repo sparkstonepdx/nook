@@ -198,6 +198,7 @@ SITE_MAX_BYTES=1073741824
 		"nook-sync@.path": syncPath, "nook-sync@.service": syncService,
 		"nook-update-check.service": updateService, "nook-update-check.timer": updateTimer,
 		"nook-logrotate.service": logrotateService, "nook-logrotate.timer": logrotateTimer,
+		"nook-firewall-watch.service": firewallWatchService, "nook-firewall-watch.timer": firewallWatchTimer,
 	}
 	webChanged := false
 	for name, text := range units {
@@ -280,7 +281,7 @@ SITE_MAX_BYTES=1073741824
 	if err := core.Firewall(); err != nil {
 		fmt.Fprintf(o.Out, "    %v\n", err)
 	}
-	for _, u := range []string{"nook-helper.service", "nook-web.socket", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer"} {
+	for _, u := range []string{"nook-helper.service", "nook-web.socket", "nook-web.service", "nook-update-check.timer", "nook-logrotate.timer", "nook-firewall-watch.timer"} {
 		exec.Command("systemctl", "enable", "--now", u).Run() // starts it if it isn't running (after a migration or the stop above)
 		if !o.Upgrade && !strings.HasPrefix(u, "nook-web.") || strings.HasSuffix(u, ".timer") {
 			exec.Command("systemctl", "restart", u).Run()
@@ -557,6 +558,28 @@ Description=Rotate app logs
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/logrotate /etc/logrotate.d/nook
+`
+
+// The firewall follows the ports apps open outside the app range (core.Listeners): re-read every 30 seconds,
+// reloaded only when they changed.
+const firewallWatchService = `[Unit]
+Description=Keep apps off each other's own ports (reload the firewall when they open new ones)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nook-admin firewall --if-changed
+`
+
+const firewallWatchTimer = `[Unit]
+Description=Check apps' listening ports every 30 seconds
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
 `
 
 const logrotateTimer = `[Unit]
