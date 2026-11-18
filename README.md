@@ -261,6 +261,7 @@ A running site can listen on the server's own ports itself, not through Caddy, t
 - **What changes:** only that one unit may bind the ports both asked for and granted, and for a port under 1024 it gets the one capability that binds it (`CAP_NET_BIND_SERVICE`). Everything else about its sandbox stays as it was.
 - **Never granted:** 22, 53, 80, 443, 2019 (SSH, DNS, Caddy, Caddy's admin API) and nook's app port range. A port is granted to one app at a time.
 - **Firewall:** nook doesn't manage inbound rules; if your provider or `ufw` filters them, open the ports there too.
+- **Certificates for them:** a web site with `"tls": true` in its `nook.json` gets the certificate Caddy holds for its hostname (its wildcard's once that's issued) as systemd credentials: `tls.crt` and `tls.key` in `$CREDENTIALS_DIRECTORY`, readable only by that service, never copied into its folder or backups. Point the app's own TLS at them (Stalwart: `%{file:/run/credentials/UNIT/tls.crt}%`). When Caddy renews, the site restarts within 2 minutes to load the new one; until Caddy has one, it starts without, and restarts once it's issued. One ACME account, and nothing else needs port 80.
 
 ## Store
 

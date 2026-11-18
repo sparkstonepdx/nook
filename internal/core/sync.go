@@ -216,7 +216,10 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
+			if man.TLS {
+				h.say("%s: %s: \"tls\" needs a hostname; a service has none, so it gets no certificate", app, s)
+			}
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), false)
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -253,7 +256,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing))
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), man.TLS)
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -527,7 +530,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publ
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, strict bool, public []int) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, strict bool, public []int, tls bool) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -538,6 +541,10 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string,
 	healthLine := ""
 	if health != "" { // read back by the dashboard and the deploy API (SiteHealth)
 		healthLine = "X-Nook-Health=" + health + "\n"
+	}
+	tlsText := ""
+	if tls {
+		tlsText = tlsLines(host)
 	}
 	text := fmt.Sprintf(`[Unit]
 Description=%[3]s (app %[1]s)
@@ -556,11 +563,11 @@ StandardOutput=append:%[7]s
 StandardError=append:%[7]s
 # a single file can't fill the disk
 LimitFSIZE=2G
-%[9]s
+%[12]s%[9]s
 [Install]
 WantedBy=multi-user.target
 `, app, site, desc, u.Home, port, siteHost, log, envLines(app, site),
-		withPublicPorts(sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), strict), public), healthLine, runtimeEnv(app))
+		withPublicPorts(sandbox(u.Home, app, bindRules(port, listenAny, h.S.PortMin, h.S.PortMax), strict), public), healthLine, runtimeEnv(app), tlsText)
 	old, _ := os.ReadFile(path)
 	if string(old) == text {
 		return false, nil

@@ -42,6 +42,7 @@ type Manifest struct {
 	Backup   *BackupSpec            `json:"backup,omitempty"`   // what a backup runs first, and leaves out (backup.go)
 	Sandbox  *SandboxSpec           `json:"sandbox,omitempty"`  // {"syscalls": "strict"}: the system call filter (opt-in while it's tried app by app)
 	Ports    []int                  `json:"ports,omitempty"`    // web and service: public ports it listens on itself, once granted (publicports.go)
+	TLS      bool                   `json:"tls,omitempty"`      // web: its hostname's certificate from Caddy, for TLS it serves itself (apptls.go)
 	calendar string
 }
 

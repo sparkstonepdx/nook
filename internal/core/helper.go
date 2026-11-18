@@ -55,6 +55,7 @@ func ServeHelper() error {
 		}
 	}()
 	go WatchWildcards()
+	go WatchAppTLS()
 	go SweepStoreScratch()
 	os.Chown(config.HelperSocket, 0, webGID)
 	os.Chmod(config.HelperSocket, 0o660)
