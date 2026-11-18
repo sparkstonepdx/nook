@@ -103,7 +103,8 @@
         <h2>Install</h2>
         <p class="intro">On a fresh Debian 13 VPS, as root. It prints a one-time link to make your login; then set the dashboard's address and grant domains to apps on its Domains page.</p>
 <pre class="install"><span class="c"># installs Caddy, swap, both binaries, and the dashboard</span>
-curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-server.sh | sh</pre>
+curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-server.sh | sh
+<span class="egg" hidden><span class="c"></span></span><button class="cursor" type="button" aria-label="psst">▍</button></pre>
         <p>Open ports 22, 80, 443 (tcp and udp) and 8443. Then <a href="/docs/#install">read the rest in the docs</a>.</p>
       </section>
     </div>
@@ -118,5 +119,22 @@ curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-serve
       <a href="https://github.com/sparkstonepdx/nook">GitHub</a>
     </div>
   </footer>
+  <script>
+    // Easter egg: click the cursor, or type "nuc" anywhere.
+    const egg = document.querySelector(".egg"), out = egg.firstElementChild, cursor = document.querySelector(".cursor");
+    const line = "# psst: put your nook in your NUC.";
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let done = false;
+    function hatch() {
+      if (done) return;
+      done = true; egg.hidden = false; cursor.setAttribute("aria-hidden", "true"); cursor.tabIndex = -1;
+      if (still) { out.textContent = line; return; }
+      let i = 0;
+      const t = setInterval(() => { out.textContent = line.slice(0, ++i); if (i >= line.length) clearInterval(t); }, 35);
+    }
+    cursor.addEventListener("click", hatch);
+    let typed = "";
+    addEventListener("keydown", (e) => { if (e.key.length === 1 && !e.target.closest?.("input, textarea")) { typed = (typed + e.key.toLowerCase()).slice(-3); if (typed === "nuc") hatch(); } });
+  </script>
 </body>
 </html>

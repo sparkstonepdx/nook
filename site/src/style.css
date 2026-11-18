@@ -66,6 +66,11 @@ a.card-link h3 span { color: var(--muted); }
 .feature img { border-radius: 0.6rem; border: 1px solid var(--line); box-shadow: 0 12px 36px rgb(60 45 30 / 0.1); }
 pre.install { background: var(--ink); color: #f5ede1; padding: 1.25rem; border-radius: 0.75rem; overflow-x: auto; line-height: 1.5; }
 pre.install .c { color: #b7ab9b; }
+pre.install .cursor { all: unset; user-select: none; cursor: text; color: #f5ede1; margin-inline-start: 0.15em; animation: blink 1.1s steps(1) infinite; }
+pre.install .cursor:focus-visible { outline: 2px solid #f5ede1; outline-offset: 2px; }
+pre.install .egg:not([hidden]) + .cursor { animation: none; opacity: 0.6; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { pre.install .cursor { animation: none; } }
 footer { border-top: 1px solid var(--line); color: var(--muted); padding: 2rem 0 3rem; font-size: 0.95rem; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem 2rem; }
 
