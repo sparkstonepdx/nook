@@ -211,7 +211,7 @@ Apps ask for shared services by name in `nook.json` (`"needs": ["postgres"]`), a
 | `s3` | `S3_ENDPOINT`, `S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | any app that provides it |
 
 **An app as a provider:**
-- **Declaring it:** a site of kind `service` declares what it implements:
+- **Declaring it:** a running site declares what it implements. Usually that's a `service` (no address), but a web site can provide too, when it also has pages of its own (Formlify's submissions):
   ```json
   {"kind": "service", "provides": {"alerts": {"desc": "posts to Discord", "env": {"ALERT_URL": "{url}/alert", "ALERT_TOKEN": "{token}"}}}}
   ```

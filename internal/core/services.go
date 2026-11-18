@@ -86,8 +86,8 @@ func checkServices(m *Manifest) error {
 			return fmt.Errorf("nook.json: bad service %q in needs (a name, optionally @8.3 or >=15)", n)
 		}
 	}
-	if len(m.Provides) > 0 && m.Kind != "service" && m.Kind != "runtime" {
-		return fmt.Errorf("nook.json: only a service (\"kind\": \"service\") or a runtime can provide services")
+	if len(m.Provides) > 0 && m.Kind != "service" && m.Kind != "runtime" && m.Kind != "web" && m.Kind != "" {
+		return fmt.Errorf("nook.json: only a web site, a service or a runtime can provide services")
 	}
 	for name, spec := range m.Provides {
 		if !ifaceRE.MatchString(name) {

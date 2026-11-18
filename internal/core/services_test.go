@@ -15,11 +15,11 @@ func TestCheckServices(t *testing.T) {
 	}
 	bad := []Manifest{
 		{Kind: "web", Needs: []string{"Postgres!"}},
-		{Kind: "web", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"ALERT_URL": "x", "ALERT_TOKEN": "y"}}}}, // only services provide
-		{Kind: "service", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"HOOK": "{url}"}}}},                  // known interface, wrong names
-		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"PORT": "{port}"}}}},                      // reserved name
-		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"X_URL": "a\nExecStart=/bin/sh"}}}},       // newline
-		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"X_URL": "$(id)"}}}},                      // shell
+		{Kind: "cron", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"ALERT_URL": "x", "ALERT_TOKEN": "y"}}}}, // a cron job has no port to provide on
+		{Kind: "service", Provides: map[string]ProvideSpec{"alerts": {Env: map[string]string{"HOOK": "{url}"}}}},                   // known interface, wrong names
+		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"PORT": "{port}"}}}},                       // reserved name
+		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"X_URL": "a\nExecStart=/bin/sh"}}}},        // newline
+		{Kind: "service", Provides: map[string]ProvideSpec{"x": {Env: map[string]string{"X_URL": "$(id)"}}}},                       // shell
 	}
 	for _, m := range bad {
 		if err := checkServices(&m); err == nil {
