@@ -13,7 +13,7 @@ type Image = { path: string; sha256: string; alt?: string; width?: number; heigh
 type CatalogApp = { versions?: string[]; apt?: { packages: string[] }; id: string; name: string; description: string; homepage?: string; repo?: string; license?: string; version: string; kind?: string; site?: string; memory?: string; needs?: string[]; ports?: number[]; env?: EnvField[]; icon?: Image; screenshots?: Image[]; artifacts?: Record<string, unknown>; catalog: string; catalogName: string; official?: boolean };
 type Row = { app: string; id: string; name: string; version: string; latest: string; available: boolean; site: string; policy: string; url?: string; lastError?: string; catalog?: string; catalogName: string; official: boolean };
 type CatalogInfo = { id: string; name: string; repo?: string; url: string; official: boolean; fingerprint: string; apps: number; fetchedAt?: string; error?: string };
-type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[] };
+type View = { catalog: CatalogApp[]; catalogs: CatalogInfo[]; fetchedAt: string; error?: string; installed: Row[]; taken?: string[] };
 
 // Where an app comes from: a green check for the official catalog, the catalog's name for any other.
 export function Origin(props: { official?: boolean; name: string }) {
@@ -105,7 +105,7 @@ export default function Store() {
       <Show when={detail()} fallback={<Show when={data()}><PageHead title="Not in your catalogs" back={{ href: "/store/install", label: "Install" }} /><p class="lede">Refresh the catalog, or check the link.</p></Show>}>
         {(a) => <>
           <AppDetail app={a()} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
-          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} poll={pollNow} />
+          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} poll={pollNow} />
         </>}
       </Show>
     }>
@@ -230,7 +230,7 @@ export default function Store() {
           <div class="note note-warn"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
         </div>
       </Sheet>
-      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} poll={pollNow} />
+      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} poll={pollNow} />
       <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} poll={pollNow} />
     </>
     </Show>
@@ -362,7 +362,7 @@ function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => v
   );
 }
 
-function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string>; poll: () => void }) {
+function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string>; used: Set<string>; poll: () => void }) {
   const [phase, setPhaseNow] = createSignal<Phase>("form");
   const [out, setOutNow] = createSignal("");
   const [name, setName] = createSignal("");
@@ -374,7 +374,18 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
   const pick = () => major() || (props.app?.versions ?? []).slice(-1)[0] || "";
   const job = () => { const j = jobFor(name()); return j && j.action === "install" && (j.to === props.app?.version || j.to === pick()) ? j : undefined; };
   // an app with majors installs each as its own app: postgres-17
-  const defaultName = (a: CatalogApp) => (a.versions?.length ? `${a.id}-${pick().replace(".", "-")}` : props.taken.has(`${a.catalog}/${a.id}`) ? `${a.id}-2` : a.id);
+  // another copy of an app (a second PocketBase) gets the first number free for both its app and its site:
+  // pocketbase-2 at pocketbase-2.<domain>, then -3, and so on
+  const copyNo = (a: CatalogApp) => {
+    const site = a.site ?? a.id;
+    for (let n = 1; ; n++) {
+      const sfx = n === 1 ? "" : `-${n}`;
+      const free = !props.used.has(`app:${a.id}${sfx}`) && !props.used.has(`site:${site}${sfx}`) && (n > 1 || !props.taken.has(`${a.catalog}/${a.id}`));
+      if (free) return sfx;
+    }
+  };
+  const defaultName = (a: CatalogApp) => (a.versions?.length ? `${a.id}-${pick().replace(".", "-")}` : `${a.id}${copyNo(a)}`);
+  const defaultSite = (a: CatalogApp) => (a.versions?.length ? defaultName(a) : `${a.site ?? a.id}${copyNo(a)}`);
   return (
     <Sheet open={!!props.app} title={props.app ? (phase() === "failed" ? `${props.app.name} didn't install` : `Install ${props.app.name}`) : ""} onClose={close}
       footer={<Show when={phase() === "form"} fallback={<button type="button" class="btn btn-secondary" onClick={close}>{finished() ? "Close" : "Hide"}</button>}>
@@ -414,7 +425,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             </Show>
             <div class="field-row">
               <Field label="App name"><input class="input mono" name="app" value={defaultName(a())} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
-              <Field label="Site"><input class="input mono" name="site" value={a().versions?.length ? defaultName(a()) : a().site ?? a().id} required /></Field>
+              <Field label="Site"><input class="input mono" name="site" value={defaultSite(a())} required /></Field>
             </div>
             <p class="hint">{a().kind === "cron" || a().kind === "service" || a().kind === "runtime" ? "It has no hostname." : "A subdomain, or a hostname the app is allowed."}</p>
             <Field label="Updates">

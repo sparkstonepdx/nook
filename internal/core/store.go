@@ -156,6 +156,11 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	if _, err := LookupApp(o.App); err == nil {
 		return fmt.Errorf("app %s already exists; pick another name", o.App)
 	}
+	for _, other := range Apps() { // a second copy of an app needs its own site too
+		if slices.Contains(SiteNames(other), o.Site) {
+			return fmt.Errorf("the site %s is app %s's already; pick another, like %s-2", o.Site, other, o.Site)
+		}
+	}
 	env := map[string]string{}
 	for _, f := range a.Env {
 		v, ok := o.Env[f.Key]
@@ -438,6 +443,7 @@ type StoreView struct {
 	FetchedAt string        `json:"fetchedAt"` // the official catalog's
 	Error     string        `json:"error,omitempty"`
 	Installed []StoreRow    `json:"installed"`
+	Taken     []string      `json:"taken"` // app names and site names in use, so a second install picks free ones
 }
 
 type CatalogInfo struct {
@@ -463,7 +469,13 @@ type StoreRow struct {
 }
 
 func StoreOverview(refresh bool) StoreView {
-	v := StoreView{Catalog: []CatalogApp{}, Catalogs: []CatalogInfo{}, Installed: []StoreRow{}}
+	v := StoreView{Catalog: []CatalogApp{}, Catalogs: []CatalogInfo{}, Installed: []StoreRow{}, Taken: []string{}}
+	for _, a := range Apps() {
+		v.Taken = append(v.Taken, "app:"+a)
+		for _, s := range SiteNames(a) {
+			v.Taken = append(v.Taken, "site:"+s)
+		}
+	}
 	byKey := map[string]CatalogApp{}
 	names_ := map[string]string{}
 	for _, src := range CatalogSources() {
