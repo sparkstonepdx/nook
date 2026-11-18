@@ -291,6 +291,7 @@ SITE_MAX_BYTES=1073741824
 		exec.Command("systemctl", "enable", "--now", "nook-sync@"+a+".path").Run()
 	}
 	h := core.New(o.Out)
+	h.EnsureMemoryHigh() // apps made before nook set a soft memory line
 	if err := h.AdminCaddy(); err != nil {
 		fmt.Fprintf(o.Out, "    %v\n", err)
 	}
