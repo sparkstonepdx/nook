@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sparkstonepdx/nook/internal/names"
 	"github.com/sparkstonepdx/nook/internal/tarx"
 )
 
@@ -124,7 +125,7 @@ func (h *Host) runPublishHook(app, site, dir string, p publisher, max int64) err
 	back := dir + ".hook"
 	os.RemoveAll(back)
 	defer os.RemoveAll(back)
-	logs, err := publishHookRun(p, map[string]string{"SITE": site, "NOOK_CONSUMER": app, "NOOK_INTERFACE": p.Binding.Interface},
+	logs, err := publishHookRun(p, map[string]string{"SITE": site, "SITE_HOST": names.HostOf(site, h.S.BaseDomain), "NOOK_CONSUMER": app, "NOOK_INTERFACE": p.Binding.Interface},
 		bytes.NewReader(in), func(r io.Reader) error { return tarx.Extract(r, back, max) })
 	for _, l := range strings.Split(strings.TrimSpace(logs), "\n") {
 		if l != "" {
