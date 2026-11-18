@@ -291,6 +291,10 @@ func main() {
 		die(h.AdminCaddy())
 	case "firewall":
 		needRoot()
+		if len(args) == 1 && args[0] == "--if-changed" {
+			die(core.FirewallIfChanged())
+			return
+		}
 		die(core.Firewall())
 	default:
 		fmt.Print(usage)
