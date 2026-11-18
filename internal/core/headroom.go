@@ -55,6 +55,7 @@ type AppSample struct {
 	MemMax uint64 `json:"memMax,omitempty"` // 0: no limit
 	CPUNs  uint64 `json:"cpuNs"`
 	OOM    uint64 `json:"oom"`            // kills by its own memory limit, a running count
+	High   uint64 `json:"high,omitempty"` // times it went over its soft line (MemoryHigh), a running count
 	Disk   uint64 `json:"disk,omitempty"` // bytes on disk, measured hourly (appdisk.go); 0 until the first
 }
 
@@ -153,6 +154,9 @@ func appSample(app string) AppSample {
 			for _, l := range strings.Split(string(b), "\n") {
 				if v, ok := strings.CutPrefix(l, "oom_kill "); ok {
 					a.OOM, _ = strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+				}
+				if v, ok := strings.CutPrefix(l, "high "); ok {
+					a.High, _ = strconv.ParseUint(strings.TrimSpace(v), 10, 64)
 				}
 			}
 		}
@@ -434,11 +438,11 @@ func analyse(all []Sample, now time.Time) HeadroomView {
 	}
 
 	// each app: killed by its own limit, or close to it
-	first := map[string]uint64{}
+	first, firstHigh := map[string]uint64{}, map[string]uint64{}
 	for _, s := range day {
 		for a, x := range s.Apps {
 			if _, ok := first[a]; !ok {
-				first[a] = x.OOM
+				first[a], firstHigh[a] = x.OOM, x.High
 			}
 		}
 	}
@@ -452,6 +456,9 @@ func analyse(all []Sample, now time.Time) HeadroomView {
 		if kills := x.OOM - first[a]; x.OOM >= first[a] && kills > 0 {
 			v.Advice = append(v.Advice, Advice{Level: "tight", App: a, Title: "Raise " + a + "'s memory limit",
 				Detail: fmt.Sprintf("Its %s limit stopped it %s today. That's its own limit, not the server's: raise it on its Manage page (or nook-admin limits "+a+" --memory ...).", mib(x.MemMax), plural(int(kills), "time"))})
+		} else if x.High > firstHigh[a] {
+			v.Advice = append(v.Advice, Advice{Level: "watch", App: a, Title: a + " is being squeezed for memory",
+				Detail: fmt.Sprintf("It went over its soft line (90%% of its %s limit) today, so the kernel trimmed its cache and slowed it to keep it under the limit. Raise the limit if it keeps happening.", mib(x.MemMax))})
 		} else if x.MemMax > 0 && float64(x.Mem)/float64(x.MemMax) > 0.9 {
 			v.Advice = append(v.Advice, Advice{Level: "watch", App: a, Title: a + " is near its memory limit",
 				Detail: fmt.Sprintf("Using %s of its %s. If it grows, it'll be stopped; raise the limit before then.", mib(x.Mem), mib(x.MemMax))})

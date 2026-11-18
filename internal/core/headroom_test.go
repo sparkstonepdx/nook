@@ -105,3 +105,32 @@ func TestPreviewHosts(t *testing.T) {
 		}
 	}
 }
+
+func TestHeadroomSqueezed(t *testing.T) {
+	now := time.Now()
+	v := analyse(day(now, func(i int, s *Sample) {
+		high := uint64(5)
+		if i > 200 {
+			high = 40
+		}
+		s.Apps["subduction"] = AppSample{Mem: 600 << 20, MemMax: 700 << 20, High: high}
+		s.Apps["calm"] = AppSample{Mem: 100 << 20, MemMax: 700 << 20, High: 5} // went over before today: old news
+	}), now)
+	if len(v.Advice) != 1 || v.Advice[0].Title != "subduction is being squeezed for memory" || v.Advice[0].Level != "watch" {
+		t.Fatalf("%+v", v.Advice)
+	}
+}
+
+func TestMemoryHigh(t *testing.T) {
+	for in, want := range map[string]string{"700M": "645120K", "2G": "1887436K", "512M": "471859K", "100K": "90K", "infinity": "", "": ""} {
+		if got := memoryHigh(in); got != want {
+			t.Errorf("%s: %s, want %s", in, got, want)
+		}
+	}
+	if s := sliceText("blog", "512M", "50%", "256"); !strings.Contains(s, "MemoryMax=512M\nMemoryHigh=471859K\nCPUQuota=50%") {
+		t.Fatal(s)
+	}
+	if s := sliceText("blog", "infinity", "50%", "256"); strings.Contains(s, "MemoryHigh") {
+		t.Fatal(s)
+	}
+}

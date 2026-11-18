@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +41,37 @@ func normMemory(s string) string {
 	return s
 }
 
+// memoryHigh is the soft line, 90% of the hard limit: above it the kernel trims the app's cache and slows its
+// allocations instead of killing it, which gives room (and a warning) before MemoryMax stops it. "" for no limit.
+func memoryHigh(max string) string {
+	if !memRE.MatchString(max) {
+		return ""
+	}
+	n, _ := strconv.ParseUint(max[:len(max)-1], 10, 64)
+	k := n * map[byte]uint64{'K': 1, 'M': 1024, 'G': 1024 * 1024}[max[len(max)-1]]
+	return strconv.FormatUint(k*9/10, 10) + "K"
+}
+
+func sliceText(app, memory, cpu, tasks string) string {
+	high := ""
+	if h := memoryHigh(memory); h != "" {
+		high = "MemoryHigh=" + h + "\n"
+	}
+	return fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\n%sCPUQuota=%s\nTasksMax=%s\n", app, memory, high, cpu, tasks)
+}
+
+// EnsureMemoryHigh gives every app made before MemoryHigh its soft line (run by install and update).
+func (h *Host) EnsureMemoryHigh() {
+	for _, a := range Apps() {
+		b, err := os.ReadFile(filepath.Join("/etc/systemd/system", "nook-"+a+".slice"))
+		if err == nil && !strings.Contains(string(b), "MemoryHigh=") {
+			if err := h.SetLimits(a, "", "", ""); err != nil {
+				h.say("%s: %v", a, err)
+			}
+		}
+	}
+}
+
 func normCPU(s string) string {
 	s = strings.ReplaceAll(strings.TrimSpace(s), " ", "")
 	if numRE.MatchString(s) {
@@ -77,12 +109,11 @@ func (h *Host) SetLimits(app, memory, cpu, tasks string) error {
 			cur[k] = v
 		}
 	}
-	slice := fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=%s\n", app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])
-	if err := config.WriteAtomic(path, []byte(slice), 0o644); err != nil {
+	if err := config.WriteAtomic(path, []byte(sliceText(app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])), 0o644); err != nil {
 		return err
 	}
 	systemctl("daemon-reload")
-	systemctl("set-property", "--runtime", "nook-"+app+".slice", "MemoryMax="+cur["MemoryMax"], "CPUQuota="+cur["CPUQuota"], "TasksMax="+cur["TasksMax"])
+	systemctl("set-property", "--runtime", "nook-"+app+".slice", "MemoryMax="+cur["MemoryMax"], "MemoryHigh="+cmp.Or(memoryHigh(cur["MemoryMax"]), "infinity"), "CPUQuota="+cur["CPUQuota"], "TasksMax="+cur["TasksMax"])
 	h.say("%s: memory %s, cpu %s, tasks %s", app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])
 	return nil
 }
@@ -136,8 +167,7 @@ func (h *Host) Create(o CreateOpts) (string, error) {
 		os.Chmod(p, 0o700)
 	}
 
-	slice := fmt.Sprintf("[Unit]\nDescription=Resource limits for app %s\n\n[Slice]\nMemoryMax=%s\nCPUQuota=%s\nTasksMax=%s\n", o.Name, o.Memory, o.CPU, o.Tasks)
-	config.WriteAtomic(filepath.Join("/etc/systemd/system", "nook-"+o.Name+".slice"), []byte(slice), 0o644)
+	config.WriteAtomic(filepath.Join("/etc/systemd/system", "nook-"+o.Name+".slice"), []byte(sliceText(o.Name, o.Memory, o.CPU, o.Tasks)), 0o644)
 	systemctl("daemon-reload")
 	if err := systemctl("enable", "--now", "nook-sync@"+o.Name+".path"); err != nil {
 		h.say("warning: could not start the sites/ watcher")
