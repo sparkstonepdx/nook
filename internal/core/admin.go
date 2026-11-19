@@ -350,8 +350,12 @@ func (h *Host) Domains() map[string]any {
 	}
 	gs := []map[string]string{}
 	for _, g := range gl {
-		gs = append(gs, map[string]string{"app": g.App, "kind": g.Kind, "name": g.Name})
-		if g.Kind == "mail" {
+		gs = append(gs, map[string]string{"app": g.App, "kind": g.Kind, "name": g.Name, "ports": g.Ports})
+		switch g.Kind {
+		case "port-domain": // its records come from the app (below)
+			continue
+		case "port-host":
+			add(g.Name, g.App+"'s ports "+strings.ReplaceAll(g.Ports, ",", ", "))
 			continue
 		}
 		if g.Kind != "sub" {

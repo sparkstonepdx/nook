@@ -1,9 +1,10 @@
 package core
 
-// DNS records an app's mail domains need (#95 step 2). A mail grant ("mail client.com") lets an app handle mail
-// for a domain without serving a website there. The app learns its mail domains from NOOK_MAIL_DOMAINS, and a
-// running site's nook.json "dns": "./dns.sh" prints the records they need, which the Domains page lists beside
-// the A records, ready to copy:
+// DNS records an app's public ports need (#95 step 2). A port-domain grant ("port-domain client.com 25,993") grants
+// ports for a domain without serving a website there; a port-host grant ("port-host mqtt.client.com 8883") for a
+// hostname, which gets its A record and certificate. The app learns them from NOOK_PORT_DOMAINS and
+// NOOK_PORT_HOSTS, and a running site's nook.json "dns": "./dns.sh" prints the records they need, which the
+// Domains page lists beside the A records, ready to copy. For a mail server:
 //
 //	MX   client.com                10 mail.client.com.
 //	TXT  client.com                v=spf1 mx -all
@@ -11,7 +12,7 @@ package core
 //	TXT  _dmarc.client.com         v=DMARC1; p=quarantine
 //
 // One record a line: type, name, then the value (the rest of the line). Only MX, TXT, CNAME and SRV, and only for
-// names in the app's mail domains: an app can't suggest records for a domain it wasn't given. The script runs as
+// names in the app's port domains and hosts: an app can't suggest records for a domain it wasn't given. The script runs as
 // the app's user, with the site's env, for up to 5 seconds each time the page loads.
 
 import (
@@ -68,12 +69,12 @@ func parseDNSRecords(app, out string, domains []string) (recs []DNSRecord, dropp
 }
 
 // runDNSHook is a var for tests: the site's dns script's output.
-var runDNSHook = func(app, site, run string, domains []string) (string, error) {
+var runDNSHook = func(app, site, run string, domains, hosts []string) (string, error) {
 	u, err := LookupApp(app)
 	if err != nil {
 		return "", err
 	}
-	extra := map[string]string{"NOOK_MAIL_DOMAINS": strings.Join(domains, ",")}
+	extra := map[string]string{"NOOK_PORT_DOMAINS": strings.Join(domains, ","), "NOOK_PORT_HOSTS": strings.Join(hosts, ",")}
 	if port := PortOf(app, site); port > 0 {
 		extra["PORT"] = strconv.Itoa(port)
 	}
@@ -95,25 +96,26 @@ var dnsHooks = func(app string) map[string]string {
 	return out
 }
 
-// appDNSRecords asks every app with a mail grant for the records its domains need, in parallel.
+// appDNSRecords asks every app with port grants for the records its domains and hosts need, in parallel.
 func appDNSRecords(gl grants.List) []DNSRecord {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	var all []DNSRecord
 	for _, app := range gl.Apps() {
-		domains := gl.Mail(app)
-		if len(domains) == 0 {
+		domains, hosts := gl.PortDomains(app), gl.PortHosts(app)
+		if len(domains)+len(hosts) == 0 {
 			continue
 		}
+		allowed := append(append([]string{}, domains...), hosts...)
 		for site, run := range dnsHooks(app) {
 			wg.Add(1)
 			go func(app, site, run string) {
 				defer wg.Done()
-				out, err := runDNSHook(app, site, run, domains)
+				out, err := runDNSHook(app, site, run, domains, hosts)
 				if err != nil {
 					return
 				}
-				recs, _ := parseDNSRecords(app, out, domains)
+				recs, _ := parseDNSRecords(app, out, allowed)
 				mu.Lock()
 				all = append(all, recs...)
 				mu.Unlock()

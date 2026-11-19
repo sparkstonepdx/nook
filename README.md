@@ -263,11 +263,11 @@ The Server section on the Apps page looks after the server's own Debian packages
 
 A running site can listen on the server's own ports itself, not through Caddy, the way a mail server takes 25, 465, 587 and 993.
 - **Asking:** the site's `nook.json` says `"ports": [25, 465, 587, 993]` (web sites and services, up to 10, TCP).
-- **Granting:** an admin allows them on the app's **Manage** sheet or with `nook-admin ports APP grant 25,465,587,993` (`revoke` takes them away; `nook-admin ports APP` lists them). Until then the deploy log and the Manage sheet say what it asks for.
+- **Granting:** for a domain or a hostname on the Domains page (`port-domain`, `port-host` grants, below), which also says where they're used; or with no place on the app's **Manage** sheet or `nook-admin ports APP grant 25,465,587,993` (`revoke` takes them away; `nook-admin ports APP` lists them). Until then the deploy log and the Manage sheet say what it asks for.
 - **What changes:** only that one unit may bind the ports both asked for and granted, and for a port under 1024 it gets the one capability that binds it (`CAP_NET_BIND_SERVICE`). Everything else about its sandbox stays as it was.
 - **Never granted:** 22, 53, 80, 443, 2019 (SSH, DNS, Caddy, Caddy's admin API) and nook's app port range. A port is granted to one app at a time.
 - **Firewall:** nook doesn't manage inbound rules; if your provider or `ufw` filters them, open the ports there too.
-- **Certificates for them:** a web site with `"tls": true` in its `nook.json` gets the certificate Caddy holds for its hostname (its wildcard's once that's issued) as systemd credentials: `tls.crt` and `tls.key` in `$CREDENTIALS_DIRECTORY`, readable only by that service, never copied into its folder or backups. Point the app's own TLS at them (Stalwart: `%{file:/run/credentials/UNIT/tls.crt}%`). When Caddy renews, the site restarts within 2 minutes to load the new one; until Caddy has one, it starts without, and restarts once it's issued. One ACME account, and nothing else needs port 80.
+- **Certificates for them:** a web site with `"tls": true` in its `nook.json` gets the certificate Caddy holds for its hostname (its wildcard's once that's issued) as systemd credentials: `tls.crt` and `tls.key` in `$CREDENTIALS_DIRECTORY`, readable only by that service, never copied into its folder or backups. Point the app's own TLS at them (Stalwart: `%{file:/run/credentials/UNIT/tls.crt}%`). A `port-host` grant does the same for its hostname, for every site of the app that listens on public ports, as `HOST.crt` and `HOST.key`; Caddy keeps that certificate even with no site there. When Caddy renews, the site restarts within 2 minutes to load the new one; until Caddy has one, it starts without, and restarts once it's issued. One ACME account, and nothing else needs port 80.
 
 ## Store
 
@@ -300,12 +300,15 @@ nook-admin store policy APP off|notify|patch|minor|all
   - `domain client.com`: `client.com` and every `*.client.com`
   - `sub client.com`: `*.client.com` only (use this for a shared domain)
   - `host blog.client.com`: exactly that hostname
-  - `mail client.com`: mail for `client.com`, never a website there. One app per mail domain; add more domains to the same app any time.
+  - `port-domain client.com 25,465,587,993`: those [public ports](#public-ports), for `client.com`. No website; the app lists the DNS records the domain needs for them (below).
+  - `port-host mqtt.client.com 8883`: those ports, at that hostname. No website; it gets an A record, and Caddy keeps a certificate for it that the app's ports use.
+
+  Add more any time after install; a port belongs to one app.
 
   New apps get `sub <default domain>`. Several apps can share a domain; the first to publish a hostname keeps it.
 - A root domain an app owns (`domain` or `host` grant) with no `www.` folder gets `www.` redirecting to it. A real `www.` site in any app replaces the redirect.
 - The Domains page lists the DNS records each grant needs, each with a Copy button.
-- **Mail domains:** an app with `mail` grants gets them in `NOOK_MAIL_DOMAINS` (comma-separated) and restarts when one is added or removed. A running site's `"dns": "./dns.sh"` prints the records they need, one a line: type, name, value (the rest of the line), like `MX client.com 10 mail.client.com.` or `TXT _dmarc.client.com v=DMARC1; p=quarantine`. Only MX, TXT, CNAME and SRV for names in its mail domains are shown; the script runs as the app's user, for up to 5 seconds, when the page loads.
+- **Where its ports are:** an app gets its port grants in `NOOK_PORT_DOMAINS` and `NOOK_PORT_HOSTS` (comma-separated) and restarts when one is added or removed. A running site's `"dns": "./dns.sh"` prints the records they need, one a line: type, name, value (the rest of the line), like `MX client.com 10 mail.client.com.` or `TXT _dmarc.client.com v=DMARC1; p=quarantine`. Only MX, TXT, CNAME and SRV for names in those domains and hosts are shown; the script runs as the app's user, for up to 5 seconds, when the page loads.
 - **Certificates:** by default Caddy gets one certificate per hostname, and Let's Encrypt allows 50 a week per registered domain, which apps plus PR previews run into. Domains → Certificates sets up a wildcard (`*.domain`, by DNS challenge) for the default domain and each `domain`/`sub` grant:
   - Pick the DNS provider (Cloudflare for now) and paste an API token from the "Edit zone DNS" template, scoped to that zone. nook checks the token can see the zone before saving it to `/etc/nook/dns.env` (root-only), and gives it to Caddy through a systemd drop-in.
   - Caddy needs the provider's plugin. Debian's Caddy can't add plugins, so the page downloads the current Caddy with it from caddyserver.com (the build server `caddy add-package` uses), checks it runs, lists the module and accepts your config, swaps it in for `/usr/bin/caddy` (keeping the old one as `caddy.nook-old`) and holds the package so apt can't put a plugin-less Caddy back. Update Caddy does the same with the same plugins.
@@ -374,7 +377,7 @@ nook-admin install [--domain D] [--ip IP]
 nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
 nook-admin delete NAME
 nook-admin sync NAME | --all
-nook-admin grant list [APP] | grant add|rm APP domain|sub|host|mail NAME
+nook-admin grant list [APP] | grant add|rm APP domain|sub|host NAME | grant add|rm APP port-domain|port-host NAME PORTS
 nook-admin env list|set|unset NAME ...
 nook-admin limits NAME [--memory 512M] [--cpu 100%] [--tasks 512]
 nook-admin headroom

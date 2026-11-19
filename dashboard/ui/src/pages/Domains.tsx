@@ -5,12 +5,12 @@ import { grantLabel } from "./Apps";
 
 type Domains = {
   baseDomain: string; ip: string; apps: string[];
-  grants: { app: string; kind: string; name: string }[];
+  grants: { app: string; kind: string; name: string; ports?: string }[];
   dns: { type: string; name: string; value: string; note: string }[];
   dashboardHost: string; ipAccess: boolean; ipPort: string;
 };
 
-const kindLabel: Record<string, string> = { domain: "the domain and its subdomains", sub: "subdomains only", host: "this hostname", mail: "mail for the domain, no website" };
+const kindLabel: Record<string, string> = { domain: "the domain and its subdomains", sub: "subdomains only", host: "this hostname", "port-domain": "public ports for the domain, no website", "port-host": "public ports at this hostname, no website" };
 
 export default function DomainsPage() {
   const [data, { refetch }] = createResource(() => api<Domains>("/api/domains"));
@@ -33,9 +33,9 @@ export default function DomainsPage() {
             <For each={d().grants} fallback={<li class="row"><span class="empty">Nothing allowed yet.</span></li>}>
               {(g) => (
                 <li class="row">
-                  <span class="row-main"><span class="mono">{grantLabel(g.kind, g.name)}</span><small>{g.app} · {kindLabel[g.kind]}</small></span>
+                  <span class="row-main"><span class="mono">{grantLabel(g.kind, g.name)}<Show when={g.ports}> {g.ports!.split(",").join(", ")}</Show></span><small>{g.app} · {kindLabel[g.kind]}</small></span>
                   <span class="row-end">
-                    <Confirm label="Remove" yes="Remove" ask={g.kind === "mail" ? `Stop ${g.app} handling mail for ${g.name}? It restarts without it; the DNS records stay until you remove them.` : `Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
+                    <Confirm label="Remove" yes="Remove" ask={g.ports ? `Take ${g.name}'s ports ${g.ports} from ${g.app}? It restarts without them; DNS records stay until you remove them.` : `Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
                   </span>
                 </li>
               )}
@@ -113,6 +113,7 @@ export default function DomainsPage() {
             e.preventDefault();
             const f = Object.fromEntries(new FormData(e.currentTarget));
             setAllowing(false);
+            if (f.ports) f.ports = String(f.ports).replace(/[\s,]+/g, ",").replace(/^,|,$/g, "");
             after(runCmd(`Allowed ${grantLabel(String(f.kind), String(f.name))} for ${f.app}`, "/api/grants", { ...f, op: "add" }));
           }}>
             <Field label="App"><select class="select" name="app" required><For each={d().apps}>{(a) => <option>{a}</option>}</For></select></Field>
@@ -121,11 +122,18 @@ export default function DomainsPage() {
                 <option value="domain" selected={kind() === "domain"}>The domain and its subdomains</option>
                 <option value="sub" selected={kind() === "sub"}>Subdomains only</option>
                 <option value="host" selected={kind() === "host"}>Exactly this hostname</option>
-                <option value="mail" selected={kind() === "mail"}>Mail for the domain, no website</option>
+                <option value="port-domain" selected={kind() === "port-domain"}>Public ports for the domain</option>
+                <option value="port-host" selected={kind() === "port-host"}>Public ports at this hostname</option>
               </select>
             </Field>
-            <Show when={kind() === "mail"}><p class="hint">The app gets the domain in <span class="mono">NOOK_MAIL_DOMAINS</span> and restarts. The records it needs (MX, SPF, DKIM, DMARC) show under DNS records. Add more domains the same way later.</p></Show>
-            <Field label={kind() === "host" ? "Hostname" : "Domain"}><input class="input" name="name" required placeholder={kind() === "host" ? "blog.client.com" : "client.com"} /></Field>
+            <Field label={kind() === "host" || kind() === "port-host" ? "Hostname" : "Domain"}><input class="input" name="name" required placeholder={kind() === "host" ? "blog.client.com" : kind() === "port-host" ? "mail.client.com" : "client.com"} /></Field>
+            <Show when={kind() === "port-domain" || kind() === "port-host"}>
+              <Field label="Ports" hint="The ports it listens on itself, not through Caddy. A port belongs to one app."><input class="input mono" name="ports" required inputmode="numeric" placeholder="25, 465, 587, 993" /></Field>
+              <p class="hint">{kind() === "port-domain"
+                ? <>No website. The app gets the domain in <span class="mono">NOOK_PORT_DOMAINS</span> and restarts; the DNS records it asks for (like MX) show below.</>
+                : <>No website. The hostname gets an A record and a certificate the app's ports can use; the app gets it in <span class="mono">NOOK_PORT_HOSTS</span> and restarts.</>}
+              </p>
+            </Show>
           </form>
         </Sheet>
       </>)}</Show>

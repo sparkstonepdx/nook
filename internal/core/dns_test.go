@@ -38,7 +38,7 @@ func TestAppDNSRecords(t *testing.T) {
 		}
 		return map[string]string{"www": "./dns.sh"}
 	}
-	runDNSHook = func(app, site, run string, domains []string) (string, error) {
+	runDNSHook = func(app, site, run string, domains, hosts []string) (string, error) {
 		var b strings.Builder
 		for _, d := range domains {
 			b.WriteString("MX " + d + " 10 mail." + d + ".\nTXT " + d + " v=spf1 mx -all\n")
@@ -46,20 +46,20 @@ func TestAppDNSRecords(t *testing.T) {
 		b.WriteString("MX client.com 10 evil.example.\n") // not its domain, unless granted
 		return b.String(), nil
 	}
-	gl := grants.List{{App: "stalwart", Kind: "mail", Name: "client.com"}, {App: "stalwart", Kind: "mail", Name: "client.org"}, {App: "stalwart", Kind: "host", Name: "mail.client.com"}, {App: "blog", Kind: "domain", Name: "blog.com"}}
+	gl := grants.List{{App: "stalwart", Kind: "port-domain", Name: "client.com", Ports: "25"}, {App: "stalwart", Kind: "port-domain", Name: "client.org", Ports: "25"}, {App: "stalwart", Kind: "host", Name: "mail.client.com"}, {App: "blog", Kind: "domain", Name: "blog.com"}}
 	recs := appDNSRecords(gl)
 	if len(recs) != 5 || recs[0].Name != "client.com" || recs[len(recs)-1].Name != "client.org" {
 		t.Fatalf("%+v", recs)
 	}
 	for _, r := range recs {
 		if r.App != "stalwart" {
-			t.Fatalf("an app without a mail grant got records: %+v", r)
+			t.Fatalf("an app without a ports grant got records: %+v", r)
 		}
 	}
-	if gl.Allowed("stalwart", "client.com") || !gl.Allowed("stalwart", "mail.client.com") || gl.MailOwner("client.org") != "stalwart" {
-		t.Fatal("a mail grant isn't a website")
+	if gl.Allowed("stalwart", "client.com") || !gl.Allowed("stalwart", "mail.client.com") || len(gl.PortDomains("stalwart")) != 2 {
+		t.Fatal("a ports grant isn't a website")
 	}
-	if err := grants.Valid(grants.Grant{App: "stalwart", Kind: "mail", Name: "client.com"}); err != nil {
+	if err := grants.Valid(grants.Grant{App: "stalwart", Kind: "port-domain", Name: "client.com", Ports: "25,993"}); err != nil {
 		t.Fatal(err)
 	}
 }

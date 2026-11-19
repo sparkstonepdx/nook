@@ -1,9 +1,14 @@
-// Package grants decides which hostnames an app may serve. Grants are "app kind name" lines:
+// Package grants decides which hostnames an app may serve, and where its own public ports are. Grants are
+// "app kind name [ports]" lines:
 //
 //	domain client.com   client.com and every *.client.com
 //	sub    client.com   *.client.com only
 //	host   blog.client.com  exactly that hostname
-//	mail   client.com   mail for client.com: its MX, SPF, DKIM and DMARC records (dns.go in core), never a website
+//	port-domain client.com 25,465,587,993   those ports, for client.com: the app may list the DNS records the
+//	                    domain needs for them (MX, TXT, SRV), but serves no website there
+//	port-host mqtt.client.com 8883   those ports, at that hostname: its A record, and Caddy's certificate for it
+//
+// Port grants are what nook knows about an app's ports; nothing about them is specific to mail or anything else.
 package grants
 
 import (
@@ -15,9 +20,17 @@ import (
 	"github.com/sparkstonepdx/nook/internal/names"
 )
 
-type Grant struct{ App, Kind, Name string }
+type Grant struct{ App, Kind, Name, Ports string }
 
-func (g Grant) String() string { return g.App + " " + g.Kind + " " + g.Name }
+func (g Grant) String() string {
+	if g.Ports != "" {
+		return g.App + " " + g.Kind + " " + g.Name + " " + g.Ports
+	}
+	return g.App + " " + g.Kind + " " + g.Name
+}
+
+// IsPorts says the grant is for public ports (port-domain, port-host), not a website.
+func (g Grant) IsPorts() bool { return g.Kind == "port-domain" || g.Kind == "port-host" }
 
 // Label is how the dashboard and CLI show a grant.
 func (g Grant) Label() string {
@@ -26,8 +39,8 @@ func (g Grant) Label() string {
 		return g.Name + " + *." + g.Name
 	case "sub":
 		return "*." + g.Name
-	case "mail":
-		return g.Name + " (mail)"
+	case "port-domain", "port-host":
+		return g.Name + " ports " + strings.ReplaceAll(g.Ports, ",", ", ")
 	}
 	return g.Name
 }
@@ -36,8 +49,22 @@ func Valid(g Grant) error {
 	if !names.App(g.App) {
 		return fmt.Errorf("invalid app name %q", g.App)
 	}
-	if g.Kind != "domain" && g.Kind != "sub" && g.Kind != "host" && g.Kind != "mail" {
-		return fmt.Errorf("kind must be domain, sub, host or mail")
+	switch g.Kind {
+	case "domain", "sub", "host":
+		if g.Ports != "" {
+			return fmt.Errorf("a %s grant has no ports", g.Kind)
+		}
+	case "port-domain", "port-host":
+		if g.Ports == "" {
+			return fmt.Errorf("a %s grant needs its ports, like 25,993", g.Kind)
+		}
+		for _, p := range strings.Split(g.Ports, ",") {
+			if p == "" || strings.Trim(p, "0123456789") != "" || len(p) > 5 {
+				return fmt.Errorf("ports are numbers separated by commas, like 25,993, not %q", g.Ports)
+			}
+		}
+	default:
+		return fmt.Errorf("kind must be domain, sub, host, port-domain or port-host")
 	}
 	if !names.Host(g.Name) {
 		return fmt.Errorf("not a valid domain: %q", g.Name)
@@ -51,8 +78,11 @@ func Parse(text string) List {
 	var out List
 	for _, line := range strings.Split(text, "\n") {
 		f := strings.Fields(line)
-		if len(f) == 3 {
-			out = append(out, Grant{f[0], f[1], f[2]})
+		switch len(f) {
+		case 3:
+			out = append(out, Grant{f[0], f[1], f[2], ""})
+		case 4:
+			out = append(out, Grant{f[0], f[1], f[2], f[3]})
 		}
 	}
 	return out
@@ -149,23 +179,28 @@ func (l List) Apps() []string {
 	return out
 }
 
-// Mail is the domains app handles mail for, in the order they were granted.
-func (l List) Mail(app string) []string {
+// PortDomains is the domains app has port grants on, in the order they were granted.
+func (l List) PortDomains(app string) []string { return l.portNames(app, "port-domain") }
+
+// PortHosts is the hostnames app has port grants at.
+func (l List) PortHosts(app string) []string { return l.portNames(app, "port-host") }
+
+func (l List) portNames(app, kind string) []string {
 	var out []string
 	for _, g := range l.For(app) {
-		if g.Kind == "mail" {
+		if g.Kind == kind {
 			out = append(out, g.Name)
 		}
 	}
 	return out
 }
 
-// MailOwner is the app that handles mail for domain, or "".
-func (l List) MailOwner(domain string) string {
+// Find is app's grant of kind for name, if there is one (to replace its ports).
+func (l List) Find(app, kind, name string) (Grant, bool) {
 	for _, g := range l {
-		if g.Kind == "mail" && g.Name == domain {
-			return g.App
+		if g.App == app && g.Kind == kind && g.Name == name {
+			return g, true
 		}
 	}
-	return ""
+	return Grant{}, false
 }

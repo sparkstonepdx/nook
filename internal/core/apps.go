@@ -281,6 +281,16 @@ func (h *Host) Delete(app, confirm string) error {
 // Grant adds or removes a grant, then re-syncs the app.
 func (h *Host) Grant(add bool, g grants.Grant) error {
 	g.Name = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(g.Name)), "*.")
+	if g.IsPorts() && add {
+		ports, err := checkPortGrant(g.App, g.Ports)
+		if err != nil {
+			return err
+		}
+		g.Ports = ports
+	}
+	if g.IsPorts() && !add && g.Ports == "" {
+		g.Ports = "0" // any: the grant for that place goes, whatever its ports
+	}
 	if err := grants.Valid(g); err != nil {
 		return err
 	}
@@ -292,10 +302,15 @@ func (h *Host) Grant(add bool, g grants.Grant) error {
 		return err
 	}
 	gl, _ := grants.Load(config.GrantsFile)
-	if add && g.Kind == "mail" {
-		if other := gl.MailOwner(g.Name); other != "" && other != g.App {
+	if g.IsPorts() {
+		if old, ok := gl.Find(g.App, g.Kind, g.Name); ok { // one grant per place: its ports are replaced
+			gl = gl.Without(old)
+			if !add {
+				g = old
+			}
+		} else if !add {
 			unlock()
-			return fmt.Errorf("%s already handles mail for %s; one app per mail domain", other, g.Name)
+			return fmt.Errorf("%s has no %s grant for %s", g.App, g.Kind, g.Name)
 		}
 	}
 	if add && !gl.Has(g) {

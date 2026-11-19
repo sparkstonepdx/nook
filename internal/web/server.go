@@ -355,7 +355,7 @@ func (s *Server) routes() []route {
 	add("GET", "/api/apps/:app/env", false, helper("envGet", p("app", "scope"), false))
 	add("POST", "/api/apps/:app/env", false, helper("envApply", p("app", "scope"), true))
 	add("GET", "/api/domains", false, helper("domains", nil, false))
-	add("POST", "/api/grants", false, helper("grant", p("op", "app", "kind", "name"), true))
+	add("POST", "/api/grants", false, helper("grant", p("op", "app", "kind", "name", "ports"), true))
 	add("POST", "/api/default-domain", false, helper("setDefaultDomain", p("domain"), true))
 	add("POST", "/api/dashboard-host", false, helper("setDashboardHost", p("host"), true))
 	add("POST", "/api/ip-access", false, helper("setIPAccess", p("on"), true))

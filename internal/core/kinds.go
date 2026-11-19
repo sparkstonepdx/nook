@@ -43,7 +43,7 @@ type Manifest struct {
 	Sandbox  *SandboxSpec           `json:"sandbox,omitempty"`  // {"syscalls": "strict"}: the system call filter (opt-in while it's tried app by app)
 	Ports    []int                  `json:"ports,omitempty"`    // web and service: public ports it listens on itself, once granted (publicports.go)
 	TLS      bool                   `json:"tls,omitempty"`      // web: its hostname's certificate from Caddy, for TLS it serves itself (apptls.go)
-	DNS      string                 `json:"dns,omitempty"`      // web and service: a script printing the DNS records its mail domains need (dns.go)
+	DNS      string                 `json:"dns,omitempty"`      // web and service: a script printing the DNS records its port domains need (dns.go)
 	calendar string
 }
 
