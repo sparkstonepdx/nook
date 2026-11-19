@@ -10,10 +10,22 @@ body { font-family: var(--font); }
 .nav-link, .dock-link { display: inline-flex; align-items: center; justify-content: center; min-height: var(--tap); padding-inline: var(--space-md); color: var(--muted); text-decoration: none; font-weight: 600; border-radius: var(--radius-field); }
 .nav-link:hover, .dock-link:hover { color: var(--ink); background: var(--fill); }
 .nav-active, .nav-active:hover { color: var(--accent-text); background: var(--fill); }
-.dock-nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; }
-.more-link { border: 0; background: none; font-family: inherit; cursor: pointer; }
-.more-link.nav-active { background: var(--fill); }
-.dock-link { padding-inline: 0; font-size: var(--text-xs); }
+.dock-nav { gap: 0; }
+.dock-nav > .dock-link, .dock-nav > .nav-more { flex: 1 1 0; }
+/* the sections that fit, the rest under ≡ (Wordbag's overflow row) */
+.overflow-nav { position: relative; display: flex; flex-wrap: nowrap; align-items: center; min-width: 0; }
+.overflow-nav .nav-link, .overflow-nav .dock-link { white-space: nowrap; }
+.menu-btn { border: 0; background: none; font-family: inherit; cursor: pointer; min-width: var(--tap); padding-inline: var(--space-sm); width: 100%; }
+.nav-more { position: relative; display: flex; }
+.nav-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: calc(var(--z-dock) + 1); min-width: 11rem; display: flex; flex-direction: column; padding: var(--space-xs);
+  border: var(--border-width) solid var(--line); border-radius: var(--radius-box); background: var(--surface); box-shadow: var(--card-shadow); }
+.nav-menu.up { top: auto; bottom: calc(100% + 6px); }
+.nav-menu a { min-height: var(--tap); display: flex; align-items: center; padding-inline: var(--space-md); border-radius: var(--radius-field); color: var(--ink); text-decoration: none; font-weight: 600; }
+.nav-menu a:hover, .nav-menu a:focus-visible { background: var(--fill); }
+.nav-menu a.nav-active { color: var(--accent-text); }
+.nav-ruler { position: absolute; visibility: hidden; pointer-events: none; display: flex; left: 0; top: 0; width: 0; height: 0; overflow: hidden; }
+.nav-ruler > * { flex: none; }
+.dock-link { padding-inline: var(--space-md); font-size: var(--text-xs); }
 @media (min-width: 700px) { .phone-only { display: none !important; } }
 @media (max-width: 699.98px) { .wide-only { display: none !important; } }
 

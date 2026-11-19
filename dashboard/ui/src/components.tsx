@@ -7,53 +7,97 @@ import { applyUpdate, updateReady } from "./update";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 export { UpdateBanner, UpdateFooter, sayIfUpdated, useUpdate } from "./updates";
 
-// The bar holds the sections used most; the rest are under More.
 const links = [
   { href: "/", label: "Apps", end: true },
-  { href: "/store", label: "Store" },
   { href: "/domains", label: "Domains" },
-];
-const more = [
-  { href: "/services", label: "Services", hint: "Databases, email and the rest, bound to apps" },
-  { href: "/users", label: "Users", hint: "Who can log in, and to which apps" },
-  { href: "/backups", label: "Backups", hint: "Where they go, and restoring" },
+  { href: "/services", label: "Services" },
+  { href: "/store", label: "Store" },
+  { href: "/users", label: "Users" },
+  { href: "/backups", label: "Backups" },
 ];
 
 // On a wide screen the sections are in the top bar; on a phone they move to a dock under the thumb.
 export function Nav() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const [open, setOpen] = createSignal(false);
-  const inMore = () => more.some((l) => location.pathname.startsWith(l.href));
   const logout = async () => { await api("/api/logout", {}); setUser(null); navigate("/login"); };
-  const moreButton = (cls: string) => <button type="button" class={`${cls} more-link${inMore() ? " nav-active" : ""}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>More</button>;
   return (
     <>
       <header class="navbar navbar-flush top-bar">
         <A href="/" class="brand"><Logo /></A>
-        <nav class="menubar wide-only" aria-label="Sections">
-          <For each={links}>{(l) => <A href={l.href} end={l.end} class="nav-link" activeClass="nav-active">{l.label}</A>}</For>
-          {moreButton("nav-link")}
-        </nav>
+        <OverflowNav class="menubar wide-only" link="nav-link" />
         <div class="navbar-end">
           <span class="text-secondary">{user()}</span>
           <button class="btn btn-ghost btn-sm" onClick={logout}>Log out</button>
         </div>
       </header>
       <Dock>
-        <nav class="dock-nav" aria-label="Sections">
-          <For each={links}>{(l) => <A href={l.href} end={l.end} class="dock-link" activeClass="nav-active">{l.label}</A>}</For>
-          {moreButton("dock-link")}
-        </nav>
+        <OverflowNav class="dock-nav" link="dock-link" up />
       </Dock>
-      <Sheet open={open()} title="More" onClose={() => setOpen(false)}>
-        <ul class="list">
-          <For each={more}>{(l) => (
-            <li><A class="row" href={l.href} onClick={() => setOpen(false)}><span class="row-main"><span>{l.label}</span><small>{l.hint}</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
-          )}</For>
-        </ul>
-      </Sheet>
     </>
+  );
+}
+
+/** The three-line menu mark. */
+const MenuIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+);
+
+// Wordbag's overflow row (its PageHead): the sections that fit stay in the bar, in order, and the rest go under ≡.
+// The current one always stays out in the bar. Widths come from an invisible copy at natural size, so nothing
+// wraps or scrolls sideways. up: the menu opens upward (the dock, at the bottom of the screen).
+function OverflowNav(props: { class: string; link: string; up?: boolean }) {
+  const location = useLocation();
+  const [shown, setShown] = createSignal(links.length);
+  const [open, setOpen] = createSignal(false);
+  let nav!: HTMLElement, ruler!: HTMLDivElement;
+  const fit = () => {
+    if (!nav || !ruler || !nav.clientWidth) return;
+    const widths = [...ruler.children].map((el) => (el as HTMLElement).offsetWidth);
+    const more = widths.pop()!, room = nav.clientWidth;
+    const total = (n: number) => widths.slice(0, n).reduce((a, b) => a + b, 0);
+    if (total(widths.length) <= room) return setShown(widths.length);
+    let n = widths.length - 1;
+    while (n > 1 && total(n) + more > room) n--;
+    setShown(n);
+  };
+  const here = () => links.findIndex((l) => (l.end ? location.pathname === l.href : location.pathname.startsWith(l.href)));
+  const inBar = createMemo(() => {
+    const n = shown(), i = here();
+    const idx = links.map((_, k) => k).slice(0, n);
+    if (n < links.length && i >= n) idx[n - 1] = i;
+    return new Set(idx);
+  });
+  onMount(() => {
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(nav);
+    void document.fonts?.ready.then(fit);
+    const away = (e: Event) => { if (open() && !(e.target as HTMLElement).closest(".nav-more")) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc);
+    onCleanup(() => { ro.disconnect(); document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); });
+  });
+  createEffect(() => { location.pathname; setOpen(false); });
+  return (
+    <nav class={`${props.class} overflow-nav`} aria-label="Sections" ref={nav}>
+      <For each={links}>{(l, i) => <Show when={inBar().has(i())}><A href={l.href} end={l.end} class={props.link} activeClass="nav-active">{l.label}</A></Show>}</For>
+      <Show when={inBar().size < links.length}>
+        <div class="nav-more">
+          <button type="button" class={`${props.link} menu-btn`} aria-label="More sections" aria-haspopup="true" aria-expanded={open() ? "true" : "false"} onClick={() => setOpen(!open())}><MenuIcon /></button>
+          <Show when={open()}>
+            <div class={`nav-menu${props.up ? " up" : ""}`} role="menu">
+              <For each={links}>{(l, i) => <Show when={!inBar().has(i())}><A href={l.href} role="menuitem" end={l.end} activeClass="nav-active" onClick={() => setOpen(false)}>{l.label}</A></Show>}</For>
+            </div>
+          </Show>
+        </div>
+      </Show>
+      {/* the same links at their natural width, out of sight, for measuring */}
+      <div class="nav-ruler" aria-hidden="true" ref={ruler}>
+        <For each={links}>{(l) => <span class={props.link}>{l.label}</span>}</For>
+        <span class={`${props.link} menu-btn`}><MenuIcon /></span>
+      </div>
+    </nav>
   );
 }
 
