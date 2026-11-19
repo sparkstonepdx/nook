@@ -61,6 +61,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin services [list]
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
+  nook-admin dns plan|set MAILDOMAIN             a mail domain's records, through the saved Cloudflare token
   nook-admin migrate APP SERVICE TO              move it to another provider with its data (postgres-17)
   nook-admin subduction                          the Subduction server's URL, peer id and Keyhive contact card
   nook-admin firewall                            reload the rules that keep apps off each other's ports
@@ -215,6 +216,25 @@ func main() {
 	case "services":
 		needRoot()
 		servicesCmd(h, args)
+	case "dns":
+		needRoot()
+		switch {
+		case len(args) == 2 && args[0] == "plan":
+			plan, err := core.PlanMailDNS(args[1])
+			if err != nil {
+				die(err)
+			}
+			for _, c := range plan.Changes {
+				fmt.Printf("%-8s %-5s %s  %s\n", c.Action, c.Type, c.Name, c.Value)
+				for _, o := range c.Old {
+					fmt.Printf("         was   %s\n", o)
+				}
+			}
+		case len(args) == 2 && args[0] == "set":
+			die(h.SetMailDNS(args[1]))
+		default:
+			die(fmt.Errorf("usage: nook-admin dns plan|set MAILDOMAIN"))
+		}
 	case "migrate":
 		needRoot()
 		if len(args) != 3 {
