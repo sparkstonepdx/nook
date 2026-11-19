@@ -23,10 +23,14 @@ func grantCmd(h *core.Host, args []string) {
 		}
 		return
 	}
-	if len(args) != 4 || (args[0] != "add" && args[0] != "rm") {
-		die(fmt.Errorf("usage: nook-admin grant list [APP] | nook-admin grant add|rm APP domain|sub|host NAME"))
+	if (len(args) != 4 && len(args) != 5) || (args[0] != "add" && args[0] != "rm") {
+		die(fmt.Errorf("usage: nook-admin grant list [APP] | nook-admin grant add|rm APP domain|sub|host NAME | nook-admin grant add|rm APP port-domain|port-host NAME [PORTS]"))
 	}
-	die(h.Grant(args[0] == "add", grants.Grant{App: args[1], Kind: args[2], Name: args[3]}))
+	g := grants.Grant{App: args[1], Kind: args[2], Name: args[3]}
+	if len(args) == 5 {
+		g.Ports = args[4]
+	}
+	die(h.Grant(args[0] == "add", g))
 }
 
 func envCmd(h *core.Host, args []string) {

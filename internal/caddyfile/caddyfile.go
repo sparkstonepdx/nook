@@ -40,6 +40,9 @@ type Site struct {
 	// provider gets the original path and X-Nook-Site (APP/HOST), which a client can't send its own of.
 	PostTo int
 	App    string
+	// CertOnly is a hostname an app has a port grant at (port-host): Caddy serves nothing there but keeps its
+	// certificate, which the app's own ports use (apptls.go in core).
+	CertOnly bool
 }
 
 const redirectMark = " { # redirect"
@@ -54,7 +57,9 @@ func Render(source string, sites []Site, redirects [][2]string, ownCert func(hos
 		if s.Folder != "" {
 			fmt.Fprintf(&b, "# site %s %s\n", s.Folder, s.Version)
 		}
-		if s.Login != "" {
+		if s.CertOnly {
+			fmt.Fprintf(&b, "%s {\n%s\trespond \"This name is for %s's own ports.\" 404\n}\n", s.Host, tlsLine(s.Host, ownCert), s.App)
+		} else if s.Login != "" {
 			login(&b, s, tlsLine(s.Host, ownCert))
 		} else if s.Port > 0 && s.TokenAuth && len(s.Open) > 0 {
 			fmt.Fprintf(&b, "%s {\n%s\t@nook_open path %s\n\thandle @nook_open {\n\t\troute {\n\t\t\trequest_header -X-Nook-App\n\t\t\treverse_proxy 127.0.0.1:%d {\n\t\t\t\theader_up -Authorization\n%s\t\t\t}\n\t\t}\n\t}\n\thandle {\n%s\t}\n}\n",

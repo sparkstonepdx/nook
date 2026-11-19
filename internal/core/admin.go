@@ -350,7 +350,14 @@ func (h *Host) Domains() map[string]any {
 	}
 	gs := []map[string]string{}
 	for _, g := range gl {
-		gs = append(gs, map[string]string{"app": g.App, "kind": g.Kind, "name": g.Name})
+		gs = append(gs, map[string]string{"app": g.App, "kind": g.Kind, "name": g.Name, "ports": g.Ports})
+		switch g.Kind {
+		case "port-domain": // its records come from the app (below)
+			continue
+		case "port-host":
+			add(g.Name, g.App+"'s ports "+strings.ReplaceAll(g.Ports, ",", ", "))
+			continue
+		}
 		if g.Kind != "sub" {
 			add(g.Name, "")
 		}
@@ -360,6 +367,9 @@ func (h *Host) Domains() map[string]any {
 	}
 	if d.Host != "" {
 		add(d.Host, "dashboard")
+	}
+	for _, r := range appDNSRecords(gl) {
+		dns = append(dns, map[string]string{"type": r.Type, "name": r.Name, "value": r.Value, "note": r.App})
 	}
 	if dns == nil {
 		dns = []map[string]string{}

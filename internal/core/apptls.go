@@ -1,16 +1,21 @@
 package core
 
-// Certificates for an app's own TLS ports (#95 step 3). Mail listens on 465, 587 and 993 itself, not through
-// Caddy, but it needs the same certificate Caddy got for its hostname. A site's nook.json "tls": true hands it
-// over: the unit loads Caddy's certificate and key as systemd credentials, tls.crt and tls.key in
-// $CREDENTIALS_DIRECTORY, readable only by that service. Nothing is copied into the app's folder (or its backups),
-// there's one ACME account and no second port-80 listener.
+// Certificates for an app's own TLS ports (#95 step 3). An app listening on public ports itself (a mail server's
+// 465 and 993) needs the certificate Caddy gets for the hostname they're at. Two ways in:
+//
+//   - a web site's nook.json "tls": true: its own hostname, as tls.crt and tls.key
+//   - a port-host grant (port-host mail.client.com 993): that hostname, as mail.client.com.crt and .key, for every
+//     site of the app that listens on public ports; Caddy keeps a certificate for it even with no site there
+//
+// The unit loads them as systemd credentials in $CREDENTIALS_DIRECTORY, readable only by that service. Nothing is
+// copied into the app's folder (or its backups), there's one ACME account and no second port-80 listener.
 //
 // systemd reads the files when the service starts, so when Caddy renews, the helper restarts it (it looks every 2
 // minutes; renewal is a month ahead). Until Caddy has a certificate for the host, the unit starts without one and
 // the site picks it up as soon as it's issued.
 
 import (
+	"cmp"
 	"crypto/x509"
 	"encoding/pem"
 	"io"
@@ -20,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sparkstonepdx/nook/internal/grants"
 )
 
 // tlsFiles is where Caddy keeps the certificate that covers host: its wildcard's once that's issued, else host's
@@ -63,30 +70,50 @@ func certUntil(f string) (time.Time, bool) {
 	return c.NotAfter, true
 }
 
-// tlsLines is the unit's lines for a site with "tls": a marker the helper looks for, and the credentials once
-// Caddy has a certificate.
-func tlsLines(host string) string {
-	if host == "" {
-		return ""
+// portHostsFor is the port-host grants a site gets certificates for: all of its app's, when it listens on public
+// ports itself.
+func portHostsFor(gl grants.List, app string, m Manifest) []string {
+	if len(m.Ports) == 0 {
+		return nil
 	}
-	out := "X-Nook-TLS=" + host + "\n"
-	if crt, key := tlsFiles(host); crt != "" {
-		out += "LoadCredential=tls.crt:" + crt + "\nLoadCredential=tls.key:" + key + "\n"
-	}
-	return out
+	return gl.PortHosts(app)
 }
 
-// unitTLS reads back what a unit has: the host it asked for, and the certificate file it loads ("" if none yet).
-func unitTLS(text string) (host, crt string) {
-	for _, line := range strings.Split(text, "\n") {
-		if v, ok := strings.CutPrefix(line, "X-Nook-TLS="); ok {
-			host = v
-		}
-		if v, ok := strings.CutPrefix(line, "LoadCredential=tls.crt:"); ok {
-			crt = v
+// tlsLines is the unit's lines for the certificates a site gets: own (with "tls", as tls.crt) and each port host's
+// (as HOST.crt). A marker per host records the file it loaded ("-" until Caddy has one), for the watcher.
+func tlsLines(own string, portHosts []string) string {
+	var b strings.Builder
+	add := func(host, name string) {
+		crt, key := tlsFiles(host)
+		b.WriteString("X-Nook-TLS=" + host + " " + cmp.Or(crt, "-") + "\n")
+		if crt != "" {
+			b.WriteString("LoadCredential=" + name + ".crt:" + crt + "\nLoadCredential=" + name + ".key:" + key + "\n")
 		}
 	}
-	return host, crt
+	if own != "" {
+		add(own, "tls")
+	}
+	for _, h := range portHosts {
+		if h != own {
+			add(h, h)
+		}
+	}
+	return b.String()
+}
+
+// unitTLS reads back the markers: each host and the certificate file it loaded ("" if none yet).
+func unitTLS(text string) map[string]string {
+	out := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if v, ok := strings.CutPrefix(line, "X-Nook-TLS="); ok {
+			host, crt, _ := strings.Cut(v, " ")
+			if crt == "-" {
+				crt = ""
+			}
+			out[host] = crt
+		}
+	}
+	return out
 }
 
 // refreshAppTLS restarts a site whose certificate was renewed since it started, and syncs an app whose site was
@@ -101,24 +128,33 @@ func refreshAppTLS(h *Host) []string {
 		if err != nil {
 			continue
 		}
-		host, crt := unitTLS(string(b))
-		if host == "" {
+		loaded := unitTLS(string(b))
+		if len(loaded) == 0 {
 			continue
 		}
 		unit := filepath.Base(path)
 		app, _, _ := strings.Cut(strings.TrimSuffix(strings.TrimPrefix(unit, "nook-site-"), ".service"), "--")
-		want, _ := tlsFiles(host)
-		if want != crt {
-			resync[app] = true
-			continue
+		var renewed []string
+		hostsOf := make([]string, 0, len(loaded))
+		for host := range loaded {
+			hostsOf = append(hostsOf, host)
 		}
-		st, err := os.Stat(crt)
-		if err != nil {
-			continue
+		sort.Strings(hostsOf)
+		for _, host := range hostsOf {
+			crt := loaded[host]
+			if want, _ := tlsFiles(host); want != crt {
+				resync[app] = true
+				continue
+			}
+			if st, err := os.Stat(crt); err == nil {
+				if started, ok := unitStarted(unit); ok && st.ModTime().After(started) {
+					renewed = append(renewed, host)
+				}
+			}
 		}
-		if started, ok := unitStarted(unit); ok && st.ModTime().After(started) {
+		if len(renewed) > 0 && !resync[app] {
 			restartUnit(unit)
-			did = append(did, "restarted "+unit+": "+host+"'s certificate was renewed")
+			did = append(did, "restarted "+unit+": renewed "+strings.Join(renewed, ", "))
 		}
 	}
 	apps := make([]string, 0, len(resync))

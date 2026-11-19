@@ -215,7 +215,7 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		}
 		return command("nook-admin env apply "+p["app"]+" --scope "+scope.String(), func(h *Host) error { return h.EnvApply(p["app"], scope, req.Set, req.Unset, true) })
 	case "grant":
-		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"]}
+		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"], Ports: p["ports"]}
 		verb := "add"
 		if p["op"] == "remove" {
 			verb = "rm"

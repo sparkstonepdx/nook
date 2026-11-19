@@ -232,3 +232,13 @@ func TestStaticPosts(t *testing.T) {
 		t.Fatalf("caddy adapt: %v\n%s\n%s", err, b, out)
 	}
 }
+
+func TestCertOnly(t *testing.T) {
+	out := Render("x", []Site{{Host: "mqtt.client.com", CertOnly: true, App: "broker"}}, nil, nil)
+	if !strings.Contains(out, "mqtt.client.com {\n\trespond \"This name is for broker's own ports.\" 404\n}\n") {
+		t.Fatal(out)
+	}
+	if live, _ := Hosts(out); len(live) != 1 || live[0] != "mqtt.client.com" {
+		t.Fatalf("a certificate-only host still claims its name: %v", live)
+	}
+}

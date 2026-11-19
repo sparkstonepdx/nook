@@ -6,6 +6,10 @@ package core
 // both asked for and granted is opened to that one unit: SocketBindAllow, and for a port under 1024 the one
 // capability that binds it (CAP_NET_BIND_SERVICE). Everything else about the unit is sandboxed as usual.
 // A port is granted to one app at a time; nook's own ports and the app port range are never granted.
+//
+// Ports are granted for a domain or a hostname (port-domain and port-host grants, in the grants file, from the
+// Domains page), which also says where they're used: the DNS records a domain needs (dns.go) and the certificate a
+// hostname needs (apptls.go). A grant with no place (nook-admin ports APP grant, a store install) still works.
 
 import (
 	"fmt"
@@ -16,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/config"
+	"github.com/sparkstonepdx/nook/internal/grants"
 )
 
 // reservedPorts are what the server itself listens on (SSH, Caddy, Caddy's admin API, DNS).
@@ -25,8 +30,31 @@ func portsPath(app string) string { return filepath.Join(config.StateDir, app+".
 
 var grantedPorts = GrantedPorts // tests stand in
 
-// GrantedPorts is the public ports granted to app, in order.
+// GrantedPorts is the public ports granted to app, with or without a place, in order.
 func GrantedPorts(app string) []int {
+	have := map[int]bool{}
+	for _, p := range unplacedPorts(app) {
+		have[p] = true
+	}
+	gl, _ := grants.Load(config.GrantsFile)
+	for _, g := range gl.For(app) {
+		if g.IsPorts() {
+			ps, _ := ParsePorts(g.Ports)
+			for _, p := range ps {
+				have[p] = true
+			}
+		}
+	}
+	out := make([]int, 0, len(have))
+	for p := range have {
+		out = append(out, p)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// unplacedPorts is the ports granted to app with no domain or hostname (nook-admin ports, store installs).
+func unplacedPorts(app string) []int {
 	b, err := os.ReadFile(portsPath(app))
 	if err != nil {
 		return nil
@@ -39,6 +67,50 @@ func GrantedPorts(app string) []int {
 	}
 	sort.Ints(out)
 	return out
+}
+
+// checkPortGrant is a port-domain or port-host grant's ports, checked and in order ("25,465,587,993").
+func checkPortGrant(app, ports string) (string, error) {
+	ps, err := ParsePorts(ports)
+	if err != nil || len(ps) == 0 {
+		return "", fmt.Errorf("ports are numbers like 25,993, not %q", ports)
+	}
+	s := config.Load()
+	seen := map[int]bool{}
+	var out []int
+	for _, p := range ps {
+		if err := checkPublicPort(p, s.PortMin, s.PortMax); err != nil {
+			return "", err
+		}
+		if err := portFree(app, p); err != nil {
+			return "", err
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	sort.Ints(out)
+	var strs []string
+	for _, p := range out {
+		strs = append(strs, strconv.Itoa(p))
+	}
+	return strings.Join(strs, ","), nil
+}
+
+// portFree says whether p isn't another app's already.
+func portFree(app string, p int) error {
+	for _, other := range Apps() {
+		if other == app {
+			continue
+		}
+		for _, q := range GrantedPorts(other) {
+			if q == p {
+				return fmt.Errorf("port %d is granted to %s already", p, other)
+			}
+		}
+	}
+	return nil
 }
 
 func checkPublicPort(p, min, max int) error {
@@ -72,7 +144,7 @@ func (h *Host) GrantPorts(app string, ports []int, revoke bool) error {
 		return err
 	}
 	have := map[int]bool{}
-	for _, p := range GrantedPorts(app) {
+	for _, p := range unplacedPorts(app) {
 		have[p] = true
 	}
 	s := config.Load()
@@ -84,15 +156,8 @@ func (h *Host) GrantPorts(app string, ports []int, revoke bool) error {
 		if err := checkPublicPort(p, s.PortMin, s.PortMax); err != nil {
 			return err
 		}
-		for _, other := range Apps() {
-			if other == app {
-				continue
-			}
-			for _, q := range GrantedPorts(other) {
-				if q == p {
-					return fmt.Errorf("port %d is granted to %s already", p, other)
-				}
-			}
+		if err := portFree(app, p); err != nil {
+			return err
 		}
 		have[p] = true
 	}

@@ -217,9 +217,9 @@ func (h *Host) syncLocked(app string) error {
 				continue
 			}
 			if man.TLS {
-				h.say("%s: %s: \"tls\" needs a hostname; a service has none, so it gets no certificate", app, s)
+				h.say("%s: %s: \"tls\" needs a hostname; a service has none, so it gets no certificate of its own", app, s)
 			}
-			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), false)
+			changed, err := h.writeUnit(u, s, "", port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), tlsLines("", portHostsFor(gl, app, man)))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -256,7 +256,7 @@ func (h *Host) syncLocked(app string) error {
 				h.say("%s: %s: %v", app, s, err)
 				continue
 			}
-			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), man.TLS)
+			changed, err := h.writeUnit(u, s, host, port, man.Health, man.Listen == "any", man.strict(), h.openPorts(app, s, man.Ports, publicTaken, publicMissing), tlsLines(map[bool]string{true: host}[man.TLS], portHostsFor(gl, app, man)))
 			if err != nil {
 				h.say("%s: %s: %v", app, s, err)
 				continue
@@ -386,6 +386,18 @@ func (h *Host) syncLocked(app string) error {
 		systemctl("restart", unit)
 	}
 
+	// hostnames for its own ports: Caddy keeps their certificates for them (apptls.go)
+	for _, ph := range gl.PortHosts(app) {
+		switch {
+		case hosts[ph]: // one of its sites serves it, and has the certificate already
+		case ph == dash.Host:
+			h.say("%s: %s is the dashboard's address; no certificate for its ports there", app, ph)
+		case claimedByOther(others, ph) != "":
+			h.say("%s: %s is %s's site; no certificate for its ports there", app, ph, claimedByOther(others, ph))
+		default:
+			published = append(published, caddyfile.Site{Host: ph, CertOnly: true, App: app})
+		}
+	}
 	sort.Slice(published, func(i, j int) bool { return published[i].Host < published[j].Host })
 	out := filepath.Join(config.CaddyAppsDir, app+".caddy")
 	caddyfile.StreamCloseDelay = streamCloseDelay()
@@ -530,7 +542,7 @@ func (h *Host) snapshot(u *AppUser, site string, st *syscall.Stat_t, pubs []publ
 	return os.WriteFile(idFile, []byte(id), 0o600)
 }
 
-func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, strict bool, public []int, tls bool) (bool, error) {
+func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string, listenAny, strict bool, public []int, tlsText string) (bool, error) {
 	app := u.Name
 	path := filepath.Join("/etc/systemd/system", UnitName(app, site))
 	log := filepath.Join(config.LogDir, app, site+".log")
@@ -541,10 +553,6 @@ func (h *Host) writeUnit(u *AppUser, site, host string, port int, health string,
 	healthLine := ""
 	if health != "" { // read back by the dashboard and the deploy API (SiteHealth)
 		healthLine = "X-Nook-Health=" + health + "\n"
-	}
-	tlsText := ""
-	if tls {
-		tlsText = tlsLines(host)
 	}
 	text := fmt.Sprintf(`[Unit]
 Description=%[3]s (app %[1]s)
@@ -631,6 +639,14 @@ CapabilityBoundingSet=
 // envLines is the unit's EnvironmentFile lines, general to specific (see env.go).
 func envLines(app, site string) string {
 	var b strings.Builder
+	gl, _ := grants.Load(config.GrantsFile)
+	// where its public ports are (dns.go, apptls.go); a grant re-syncs, restarting it
+	if ds := gl.PortDomains(app); len(ds) > 0 {
+		b.WriteString("Environment=NOOK_PORT_DOMAINS=" + strings.Join(ds, ",") + "\n")
+	}
+	if hs := gl.PortHosts(app); len(hs) > 0 {
+		b.WriteString("Environment=NOOK_PORT_HOSTS=" + strings.Join(hs, ",") + "\n")
+	}
 	for _, f := range envFiles(app, site) {
 		b.WriteString("EnvironmentFile=-" + f + "\n")
 	}
