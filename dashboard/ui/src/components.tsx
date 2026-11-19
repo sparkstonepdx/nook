@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Ansi } from "./ansi";
@@ -7,25 +7,33 @@ import { applyUpdate, updateReady } from "./update";
 import { api, user, setUser, result, setResult, runCmd, notices, dismiss, say } from "./api";
 export { UpdateBanner, UpdateFooter, sayIfUpdated, useUpdate } from "./updates";
 
+// The bar holds the sections used most; the rest are under More.
 const links = [
   { href: "/", label: "Apps", end: true },
-  { href: "/domains", label: "Domains" },
-  { href: "/services", label: "Services" },
   { href: "/store", label: "Store" },
-  { href: "/users", label: "Users" },
-  { href: "/backups", label: "Backups" },
+  { href: "/domains", label: "Domains" },
+];
+const more = [
+  { href: "/services", label: "Services", hint: "Databases, email and the rest, bound to apps" },
+  { href: "/users", label: "Users", hint: "Who can log in, and to which apps" },
+  { href: "/backups", label: "Backups", hint: "Where they go, and restoring" },
 ];
 
 // On a wide screen the sections are in the top bar; on a phone they move to a dock under the thumb.
 export function Nav() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [open, setOpen] = createSignal(false);
+  const inMore = () => more.some((l) => location.pathname.startsWith(l.href));
   const logout = async () => { await api("/api/logout", {}); setUser(null); navigate("/login"); };
+  const moreButton = (cls: string) => <button type="button" class={`${cls} more-link${inMore() ? " nav-active" : ""}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>More</button>;
   return (
     <>
       <header class="navbar navbar-flush top-bar">
         <A href="/" class="brand"><Logo /></A>
         <nav class="menubar wide-only" aria-label="Sections">
           <For each={links}>{(l) => <A href={l.href} end={l.end} class="nav-link" activeClass="nav-active">{l.label}</A>}</For>
+          {moreButton("nav-link")}
         </nav>
         <div class="navbar-end">
           <span class="text-secondary">{user()}</span>
@@ -35,8 +43,16 @@ export function Nav() {
       <Dock>
         <nav class="dock-nav" aria-label="Sections">
           <For each={links}>{(l) => <A href={l.href} end={l.end} class="dock-link" activeClass="nav-active">{l.label}</A>}</For>
+          {moreButton("dock-link")}
         </nav>
       </Dock>
+      <Sheet open={open()} title="More" onClose={() => setOpen(false)}>
+        <ul class="list">
+          <For each={more}>{(l) => (
+            <li><A class="row" href={l.href} onClick={() => setOpen(false)}><span class="row-main"><span>{l.label}</span><small>{l.hint}</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
+          )}</For>
+        </ul>
+      </Sheet>
     </>
   );
 }
