@@ -19,6 +19,7 @@ import (
 
 	"github.com/sparkstonepdx/nook/internal/config"
 	"github.com/sparkstonepdx/nook/internal/grants"
+	"github.com/sparkstonepdx/nook/internal/names"
 	"github.com/sparkstonepdx/nook/internal/notfound"
 	"github.com/sparkstonepdx/nook/internal/rpc"
 	"github.com/sparkstonepdx/nook/internal/update"
@@ -214,6 +215,17 @@ func Dispatch(req *rpc.Request) rpc.Response {
 			return data(nil, err)
 		}
 		return command("nook-admin env apply "+p["app"]+" --scope "+scope.String(), func(h *Host) error { return h.EnvApply(p["app"], scope, req.Set, req.Unset, true) })
+	case "dnsPlan":
+		if !names.Host(p["domain"]) || !names.App(p["app"]) {
+			return data(nil, fmt.Errorf("not an app and domain: %q %q", p["app"], p["domain"]))
+		}
+		plan, err := PlanDNS(p["app"], p["domain"])
+		return data(plan, err)
+	case "dnsSet":
+		if !names.Host(p["domain"]) || !names.App(p["app"]) {
+			return data(nil, fmt.Errorf("not an app and domain: %q %q", p["app"], p["domain"]))
+		}
+		return command("nook-admin dns set "+p["app"]+" "+p["domain"], func(h *Host) error { return h.SetDNS(p["app"], p["domain"]) })
 	case "grant":
 		g := grants.Grant{App: p["app"], Kind: p["kind"], Name: p["name"], Ports: p["ports"]}
 		verb := "add"

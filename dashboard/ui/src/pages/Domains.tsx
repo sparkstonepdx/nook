@@ -7,8 +7,11 @@ type Domains = {
   baseDomain: string; ip: string; apps: string[];
   grants: { app: string; kind: string; name: string; ports?: string }[];
   dns: { type: string; name: string; value: string; note: string }[];
-  dashboardHost: string; ipAccess: boolean; ipPort: string;
+  dashboardHost: string; ipAccess: boolean; ipPort: string; cloudflare?: boolean;
 };
+
+type DNSChange = { type: string; name: string; value: string; action: "ok" | "add" | "replace"; old?: string[] };
+type DNSPlan = { domain: string; app: string; zone: string; changes: DNSChange[] };
 
 const kindLabel: Record<string, string> = { domain: "the domain and its subdomains", sub: "subdomains only", host: "this hostname", "port-domain": "public ports for the domain, no website", "port-host": "public ports at this hostname, no website" };
 
@@ -18,6 +21,10 @@ export default function DomainsPage() {
   const [kind, setKind] = createSignal("domain");
   const [allowing, setAllowing] = createSignal(false);
   const [moving, setMoving] = createSignal(""); // the default domain waiting on "Change?"
+  const [planFor, setPlanFor] = createSignal<{ app: string; domain: string } | null>(null);
+  const [plan] = createResource(planFor, (f) => api<DNSPlan>("/api/dns/plan", f));
+  const pending = () => (plan()?.changes ?? []).filter((c) => c.action !== "ok");
+  const replaces = () => pending().filter((c) => c.action === "replace");
 
   return (
     <>
@@ -35,6 +42,7 @@ export default function DomainsPage() {
                 <li class="row">
                   <span class="row-main"><span class="mono">{grantLabel(g.kind, g.name)}<Show when={g.ports}> {g.ports!.split(",").join(", ")}</Show></span><small>{g.app} · {kindLabel[g.kind]}</small></span>
                   <span class="row-end">
+                    <Show when={g.ports && d().cloudflare}><button class="btn btn-secondary btn-sm" onClick={() => setPlanFor({ app: g.app, domain: g.name })}>Set DNS</button></Show>
                     <Confirm label="Remove" yes="Remove" ask={g.ports ? `Take ${g.name}'s ports ${g.ports} from ${g.app}? It restarts without them; DNS records stay until you remove them.` : `Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
                   </span>
                 </li>
@@ -106,6 +114,30 @@ export default function DomainsPage() {
         </section>
 
         <NotFoundPage />
+
+        <Sheet open={!!planFor()} title={`DNS for ${planFor()?.domain}`} onClose={() => setPlanFor(null)}
+          footer={<><button class="btn btn-secondary" onClick={() => setPlanFor(null)}>{pending().length ? "Cancel" : "Close"}</button><Show when={pending().length}>
+            <button class="btn" onClick={() => { const f = planFor()!; setPlanFor(null); after(runCmd(`Set DNS for ${f.domain}`, "/api/dns/set", f)); }}>{replaces().length ? `Replace ${replaces().length} and add ${pending().length - replaces().length}` : `Add ${pending().length}`}</button>
+          </Show></>}>
+          <Show when={plan.error}><div class="note note-bad">{String(plan.error?.message)}</div></Show>
+          <Show when={plan.loading}><p class="hint">Asking {planFor()?.app} and Cloudflare…</p></Show>
+          <Show when={plan()}>{(pl) => (<>
+            <p class="hint">{pl().app} needs these in the Cloudflare zone {pl().zone}. <Show when={!pending().length}>They're all set already.</Show></p>
+            <Show when={replaces().some((c) => c.type === "MX")}><div class="note note-warn">This replaces the domain's MX records, so its mail starts arriving at {pl().app} instead.</div></Show>
+            <ul class="list">
+              <For each={pl().changes}>{(c) => (
+                <li class="row">
+                  <span class="row-main">
+                    <span><span class="mono">{c.type} {c.name}</span></span>
+                    <small class="mono dns-value">{c.value}</small>
+                    <For each={c.old}>{(o) => <small class="mono dns-value text-secondary"><s>{o}</s></small>}</For>
+                  </span>
+                  <span class="row-end"><StatusBadge ok={c.action === "ok" ? true : undefined} warn={c.action === "replace"}>{{ ok: "set", add: "add", replace: "replace" }[c.action]}</StatusBadge></span>
+                </li>
+              )}</For>
+            </ul>
+          </>)}</Show>
+        </Sheet>
 
         <Sheet open={allowing()} title="Allow a domain" onClose={() => setAllowing(false)}
           footer={<><button class="btn btn-secondary" onClick={() => setAllowing(false)}>Cancel</button><button class="btn" type="submit" form="allow">Allow</button></>}>

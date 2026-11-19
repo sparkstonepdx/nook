@@ -380,7 +380,7 @@ func (h *Host) Domains() map[string]any {
 	}
 	return map[string]any{
 		"baseDomain": h.S.BaseDomain, "ip": h.S.SSHHost, "apps": apps, "grants": gs, "dns": dns,
-		"dashboardHost": d.Host, "ipAccess": d.IPAccess, "ipPort": d.IPPort,
+		"dashboardHost": d.Host, "ipAccess": d.IPAccess, "ipPort": d.IPPort, "cloudflare": HasCloudflareToken(),
 	}
 }
 
