@@ -24,7 +24,7 @@ func grantCmd(h *core.Host, args []string) {
 		return
 	}
 	if len(args) != 4 || (args[0] != "add" && args[0] != "rm") {
-		die(fmt.Errorf("usage: nook-admin grant list [APP] | nook-admin grant add|rm APP domain|sub|host NAME"))
+		die(fmt.Errorf("usage: nook-admin grant list [APP] | nook-admin grant add|rm APP domain|sub|host|mail NAME"))
 	}
 	die(h.Grant(args[0] == "add", grants.Grant{App: args[1], Kind: args[2], Name: args[3]}))
 }

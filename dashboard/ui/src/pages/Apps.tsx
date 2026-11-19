@@ -16,7 +16,7 @@ type App = { name: string; changed: number; memory: string; memoryMax: string; c
 type Overview = { baseDomain: string; apps: App[]; system: { free: string; df: string; caddy: string }; defaults: { memory: string; cpu: string; tasks: string } };
 
 const mb = (v?: string) => (v && /^\d+$/.test(v) ? `${Math.round(Number(v) / 1048576)}M` : "");
-export const grantLabel = (k: string, n: string) => (k === "domain" ? `${n} + *.${n}` : k === "sub" ? `*.${n}` : n);
+export const grantLabel = (k: string, n: string) => (k === "domain" ? `${n} + *.${n}` : k === "sub" ? `*.${n}` : k === "mail" ? `${n} (mail)` : n);
 const kindTitle = { static: "static files", web: "HTTP server at this hostname", service: "runs on its port with no hostname; only apps bound to it can reach it", cron: "runs on a schedule" };
 
 // A problem worth seeing from the list, or nothing when all is well.

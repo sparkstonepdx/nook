@@ -3,6 +3,7 @@
 //	domain client.com   client.com and every *.client.com
 //	sub    client.com   *.client.com only
 //	host   blog.client.com  exactly that hostname
+//	mail   client.com   mail for client.com: its MX, SPF, DKIM and DMARC records (dns.go in core), never a website
 package grants
 
 import (
@@ -25,6 +26,8 @@ func (g Grant) Label() string {
 		return g.Name + " + *." + g.Name
 	case "sub":
 		return "*." + g.Name
+	case "mail":
+		return g.Name + " (mail)"
 	}
 	return g.Name
 }
@@ -33,8 +36,8 @@ func Valid(g Grant) error {
 	if !names.App(g.App) {
 		return fmt.Errorf("invalid app name %q", g.App)
 	}
-	if g.Kind != "domain" && g.Kind != "sub" && g.Kind != "host" {
-		return fmt.Errorf("kind must be domain, sub or host")
+	if g.Kind != "domain" && g.Kind != "sub" && g.Kind != "host" && g.Kind != "mail" {
+		return fmt.Errorf("kind must be domain, sub, host or mail")
 	}
 	if !names.Host(g.Name) {
 		return fmt.Errorf("not a valid domain: %q", g.Name)
@@ -144,4 +147,25 @@ func (l List) Apps() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Mail is the domains app handles mail for, in the order they were granted.
+func (l List) Mail(app string) []string {
+	var out []string
+	for _, g := range l.For(app) {
+		if g.Kind == "mail" {
+			out = append(out, g.Name)
+		}
+	}
+	return out
+}
+
+// MailOwner is the app that handles mail for domain, or "".
+func (l List) MailOwner(domain string) string {
+	for _, g := range l {
+		if g.Kind == "mail" && g.Name == domain {
+			return g.App
+		}
+	}
+	return ""
 }

@@ -45,7 +45,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin directory [add|rm HOST]              sites listed in the public directory (GET /api/v1/directory)
   nook-admin sync NAME | --all                   rebuild routes and services (runs on its own after deploys)
   nook-admin grant list [APP]
-  nook-admin grant add|rm APP domain|sub|host NAME
+  nook-admin grant add|rm APP domain|sub|host|mail NAME
   nook-admin env list NAME [--values]
   nook-admin env set NAME KEY [KEY ...]          prompts for each value (stays out of shell history)
   nook-admin env set NAME KEY=value ...

@@ -292,6 +292,12 @@ func (h *Host) Grant(add bool, g grants.Grant) error {
 		return err
 	}
 	gl, _ := grants.Load(config.GrantsFile)
+	if add && g.Kind == "mail" {
+		if other := gl.MailOwner(g.Name); other != "" && other != g.App {
+			unlock()
+			return fmt.Errorf("%s already handles mail for %s; one app per mail domain", other, g.Name)
+		}
+	}
 	if add && !gl.Has(g) {
 		gl = append(gl, g)
 	} else if !add {

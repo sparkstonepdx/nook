@@ -631,6 +631,10 @@ CapabilityBoundingSet=
 // envLines is the unit's EnvironmentFile lines, general to specific (see env.go).
 func envLines(app, site string) string {
 	var b strings.Builder
+	gl, _ := grants.Load(config.GrantsFile)
+	if ds := gl.Mail(app); len(ds) > 0 { // the mail domains it may handle (dns.go); a grant re-syncs, restarting it
+		b.WriteString("Environment=NOOK_MAIL_DOMAINS=" + strings.Join(ds, ",") + "\n")
+	}
 	for _, f := range envFiles(app, site) {
 		b.WriteString("EnvironmentFile=-" + f + "\n")
 	}

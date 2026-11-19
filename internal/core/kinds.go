@@ -43,6 +43,7 @@ type Manifest struct {
 	Sandbox  *SandboxSpec           `json:"sandbox,omitempty"`  // {"syscalls": "strict"}: the system call filter (opt-in while it's tried app by app)
 	Ports    []int                  `json:"ports,omitempty"`    // web and service: public ports it listens on itself, once granted (publicports.go)
 	TLS      bool                   `json:"tls,omitempty"`      // web: its hostname's certificate from Caddy, for TLS it serves itself (apptls.go)
+	DNS      string                 `json:"dns,omitempty"`      // web and service: a script printing the DNS records its mail domains need (dns.go)
 	calendar string
 }
 
@@ -99,6 +100,9 @@ func (u *AppUser) readManifest(site string) (Manifest, error) {
 	}
 	if len(m.Ports) > 10 {
 		return m, fmt.Errorf("nook.json: at most 10 ports")
+	}
+	if m.DNS != "" && (!hookRE.MatchString(m.DNS) || strings.Contains(m.DNS, "..")) {
+		return m, fmt.Errorf("nook.json: dns is a script in the site folder, like ./dns.sh, not %q", m.DNS)
 	}
 	for _, p := range m.Ports {
 		if p < 1 || p > 65535 {

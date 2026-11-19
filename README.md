@@ -300,10 +300,12 @@ nook-admin store policy APP off|notify|patch|minor|all
   - `domain client.com`: `client.com` and every `*.client.com`
   - `sub client.com`: `*.client.com` only (use this for a shared domain)
   - `host blog.client.com`: exactly that hostname
+  - `mail client.com`: mail for `client.com`, never a website there. One app per mail domain; add more domains to the same app any time.
 
   New apps get `sub <default domain>`. Several apps can share a domain; the first to publish a hostname keeps it.
 - A root domain an app owns (`domain` or `host` grant) with no `www.` folder gets `www.` redirecting to it. A real `www.` site in any app replaces the redirect.
-- The Domains page lists the DNS records each grant needs.
+- The Domains page lists the DNS records each grant needs, each with a Copy button.
+- **Mail domains:** an app with `mail` grants gets them in `NOOK_MAIL_DOMAINS` (comma-separated) and restarts when one is added or removed. A running site's `"dns": "./dns.sh"` prints the records they need, one a line: type, name, value (the rest of the line), like `MX client.com 10 mail.client.com.` or `TXT _dmarc.client.com v=DMARC1; p=quarantine`. Only MX, TXT, CNAME and SRV for names in its mail domains are shown; the script runs as the app's user, for up to 5 seconds, when the page loads.
 - **Certificates:** by default Caddy gets one certificate per hostname, and Let's Encrypt allows 50 a week per registered domain, which apps plus PR previews run into. Domains → Certificates sets up a wildcard (`*.domain`, by DNS challenge) for the default domain and each `domain`/`sub` grant:
   - Pick the DNS provider (Cloudflare for now) and paste an API token from the "Edit zone DNS" template, scoped to that zone. nook checks the token can see the zone before saving it to `/etc/nook/dns.env` (root-only), and gives it to Caddy through a systemd drop-in.
   - Caddy needs the provider's plugin. Debian's Caddy can't add plugins, so the page downloads the current Caddy with it from caddyserver.com (the build server `caddy add-package` uses), checks it runs, lists the module and accepts your config, swaps it in for `/usr/bin/caddy` (keeping the old one as `caddy.nook-old`) and holds the package so apt can't put a plugin-less Caddy back. Update Caddy does the same with the same plugins.
@@ -372,7 +374,7 @@ nook-admin install [--domain D] [--ip IP]
 nook-admin create NAME [--memory 256M] [--cpu 50%] [--tasks 256] [--repo owner/name]
 nook-admin delete NAME
 nook-admin sync NAME | --all
-nook-admin grant list [APP] | grant add|rm APP domain|sub|host NAME
+nook-admin grant list [APP] | grant add|rm APP domain|sub|host|mail NAME
 nook-admin env list|set|unset NAME ...
 nook-admin limits NAME [--memory 512M] [--cpu 100%] [--tasks 512]
 nook-admin headroom

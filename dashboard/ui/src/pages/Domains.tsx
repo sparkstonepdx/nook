@@ -1,5 +1,5 @@
 import { For, Show, createResource, createSignal } from "solid-js";
-import { api, runCmd } from "../api";
+import { api, runCmd, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm, ConfirmStrip } from "../components";
 import { grantLabel } from "./Apps";
 
@@ -10,7 +10,7 @@ type Domains = {
   dashboardHost: string; ipAccess: boolean; ipPort: string;
 };
 
-const kindLabel: Record<string, string> = { domain: "the domain and its subdomains", sub: "subdomains only", host: "this hostname" };
+const kindLabel: Record<string, string> = { domain: "the domain and its subdomains", sub: "subdomains only", host: "this hostname", mail: "mail for the domain, no website" };
 
 export default function DomainsPage() {
   const [data, { refetch }] = createResource(() => api<Domains>("/api/domains"));
@@ -35,7 +35,7 @@ export default function DomainsPage() {
                 <li class="row">
                   <span class="row-main"><span class="mono">{grantLabel(g.kind, g.name)}</span><small>{g.app} · {kindLabel[g.kind]}</small></span>
                   <span class="row-end">
-                    <Confirm label="Remove" yes="Remove" ask={`Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
+                    <Confirm label="Remove" yes="Remove" ask={g.kind === "mail" ? `Stop ${g.app} handling mail for ${g.name}? It restarts without it; the DNS records stay until you remove them.` : `Remove ${grantLabel(g.kind, g.name)} from ${g.app}? Its sites on it go offline.`} onYes={() => after(runCmd(`Removed ${grantLabel(g.kind, g.name)} from ${g.app}`, "/api/grants", { ...g, op: "remove" }))} />
                   </span>
                 </li>
               )}
@@ -46,12 +46,18 @@ export default function DomainsPage() {
 
         <section class="section">
           <h2>DNS records</h2>
-          <div class="card table-wrap flush">
-            <table class="table">
-              <thead><tr><th>Type</th><th>Name</th><th>Value</th><th>For</th></tr></thead>
-              <tbody><For each={d().dns}>{(r) => <tr><td class="mono">{r.type}</td><td class="mono">{r.name}</td><td class="mono">{r.value}</td><td class="text-secondary">{r.note}</td></tr>}</For></tbody>
-            </table>
-          </div>
+          <ul class="list">
+            <For each={d().dns}>{(r) => (
+              <li class="row">
+                <span class="row-main">
+                  <span><span class="mono">{r.type}</span> <span class="mono">{r.name}</span></span>
+                  <small class="mono dns-value">{r.value}</small>
+                  <Show when={r.note}><small>for {r.note}</small></Show>
+                </span>
+                <span class="row-end"><button type="button" class="btn btn-ghost btn-sm" aria-label={`Copy the ${r.type} value for ${r.name}`} onClick={() => navigator.clipboard?.writeText(r.value).then(() => say("Copied"))}>Copy</button></span>
+              </li>
+            )}</For>
+          </ul>
         </section>
 
         <section class="section">
@@ -115,8 +121,10 @@ export default function DomainsPage() {
                 <option value="domain" selected={kind() === "domain"}>The domain and its subdomains</option>
                 <option value="sub" selected={kind() === "sub"}>Subdomains only</option>
                 <option value="host" selected={kind() === "host"}>Exactly this hostname</option>
+                <option value="mail" selected={kind() === "mail"}>Mail for the domain, no website</option>
               </select>
             </Field>
+            <Show when={kind() === "mail"}><p class="hint">The app gets the domain in <span class="mono">NOOK_MAIL_DOMAINS</span> and restarts. The records it needs (MX, SPF, DKIM, DMARC) show under DNS records. Add more domains the same way later.</p></Show>
             <Field label={kind() === "host" ? "Hostname" : "Domain"}><input class="input" name="name" required placeholder={kind() === "host" ? "blog.client.com" : "client.com"} /></Field>
           </form>
         </Sheet>
