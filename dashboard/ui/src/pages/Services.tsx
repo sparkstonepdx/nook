@@ -1,12 +1,14 @@
-import { For, Show, createResource, createSignal } from "solid-js";
-import { api, runCmd } from "../api";
+import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js";
+import { api, attempt, runCmd, say } from "../api";
 import { Field, PageHead, Sheet, StatusBadge, Confirm } from "../components";
 
 type Iface = { name: string; desc: string; env: string[] };
 type Provider = { id: string; interface: string; desc: string; version?: string; ready: boolean; note?: string };
-type Binding = { app: string; interface: string; provider: string; as?: Record<string, string>; env: string[]; ready: boolean };
+type Move = { id: string; version?: string };
+type Binding = { app: string; interface: string; provider: string; as?: Record<string, string>; env: string[]; ready: boolean; moves?: Move[] };
+type Migration = { app: string; interface: string; from: string; to: string; started: string; done?: boolean; error?: string; out?: string };
 type Request = { app: string; interface: string; wants?: string; sites: string[]; optional?: boolean };
-type View = { apps: string[]; interfaces: Iface[]; providers: Provider[]; bindings: Binding[]; requests: Request[] };
+type View = { apps: string[]; interfaces: Iface[]; providers: Provider[]; bindings: Binding[]; requests: Request[]; migrations: Migration[] };
 
 const label = (id: string) => id.replace(/^app:/, "");
 
@@ -27,6 +29,29 @@ export default function Services() {
   const providersFor = (name: string) => (data()?.providers ?? []).filter((p) => p.interface === name);
   // an optional service is only worth asking about once something can provide it
   const waiting = () => (data()?.requests ?? []).filter((r) => !r.optional || providersFor(r.interface).some((p) => p.ready));
+  const [moving, setMoving] = createSignal<Binding | null>(null);
+  const migration = (b: Binding) => (data()?.migrations ?? []).find((m) => m.app === b.app && m.interface === b.interface);
+  const running = () => (data()?.migrations ?? []).some((m) => !m.done);
+  // while a move runs, follow it; say how it ended once
+  const told = new Set<string>();
+  createEffect(() => {
+    for (const m of data()?.migrations ?? []) {
+      const key = m.app + m.started;
+      if (!m.done || told.has(key)) continue;
+      told.add(key);
+      if (m.error) say(`Couldn't move ${m.app}'s ${m.interface}`, { kind: "error", detail: m.error });
+      else say(`Moved ${m.app}'s ${m.interface} to ${label(m.to)}`, { kind: "success" });
+    }
+    if (running()) {
+      const t = setTimeout(refetch, 2000);
+      onCleanup(() => clearTimeout(t));
+    }
+  });
+  const startMove = async (b: Binding, to: string) => {
+    setMoving(null);
+    const ok = await attempt(`Couldn't move ${b.app}'s ${b.interface}`, () => api("/api/services/migrate", { app: b.app, interface: b.interface, provider: to }));
+    if (ok) refetch();
+  };
   const bind = async (app: string, name: string, provider: string, as: Record<string, string> = {}) => {
     await runCmd(`Bound ${app} to ${name}`, "/api/services/bind", { app, interface: name, provider, set: as });
     refetch();
@@ -74,13 +99,23 @@ export default function Services() {
                 <span class="row-main">
                   <span>{b.app} <span class="text-secondary">uses</span> {b.interface}</span>
                   <small>from {label(b.provider)} · sees <span class="mono">{b.env.join(" ") || "nothing"}</span></small>
+                  <Show when={migration(b)}>{(m) => (
+                    <Show when={!m().done} fallback={<Show when={m().error}><small class="text-error">Moving to {label(m().to)} failed: {m().error}</small></Show>}>
+                      <small>Moving to {label(m().to)}: {b.app} is stopped while its data is copied</small>
+                    </Show>
+                  )}</Show>
                 </span>
                 <span class="row-end">
+                  <Show when={b.moves?.length && !(migration(b) && !migration(b)!.done)}>
+                    <button class="btn btn-sm btn-secondary" onClick={() => setMoving(b)}>Move</button>
+                  </Show>
                   <Show when={!b.ready}><StatusBadge ok={false} title="The provider isn't running or no longer offers this">unavailable</StatusBadge></Show>
-                  <Confirm label="Unbind" yes="Unbind" ask={`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.`} onYes={async () => {
-                    await runCmd(`Unbound ${b.app} from ${b.interface}`, "/api/services/unbind", { app: b.app, interface: b.interface });
-                    refetch();
-                  }} />
+                  <Show when={!(migration(b) && !migration(b)!.done)}>
+                    <Confirm label="Unbind" yes="Unbind" ask={`Unbind ${b.app} from ${b.interface}? Its env goes away and its sites restart.`} onYes={async () => {
+                      await runCmd(`Unbound ${b.app} from ${b.interface}`, "/api/services/unbind", { app: b.app, interface: b.interface });
+                      refetch();
+                    }} />
+                  </Show>
                 </span>
               </li>
             )}
@@ -105,6 +140,25 @@ export default function Services() {
           Known services (postgres, email, alerts, analytics, s3) have fixed env names, so their providers are interchangeable.
         </p>
       </section>
+
+      <Sheet open={!!moving()} title={`Move ${moving()?.app}'s ${moving()?.interface}`} onClose={() => setMoving(null)}
+        footer={<><button class="btn btn-secondary" onClick={() => setMoving(null)}>Cancel</button><button class="btn" type="submit" form="move">Move it</button></>}>
+        <Show when={moving()}>{(b) => (
+          <form id="move" onSubmit={(e) => { e.preventDefault(); startMove(b(), String(new FormData(e.currentTarget).get("to"))); }}>
+            <p>{b().app} gets its {b().interface} from <span class="mono">{label(b().provider)}</span>. Moving copies its data to the one you pick and switches it over.</p>
+            <Field label="To">
+              <select class="select" name="to">
+                <For each={b().moves}>{(m) => <option value={m.id}>{label(m.id)}{m.version ? ` ${m.version}` : ""}</option>}</For>
+              </select>
+            </Field>
+            <ul class="hint">
+              <li>{b().app} stops while it's copied, then starts with its new env.</li>
+              <li>If anything fails it goes back to {label(b().provider)}, unchanged.</li>
+              <li>{label(b().provider)} keeps its copy until you remove it.</li>
+            </ul>
+          </form>
+        )}</Show>
+      </Sheet>
 
       <Sheet open={binding()} title="Bind an app" onClose={() => setBinding(false)}
         footer={<><button class="btn btn-secondary" onClick={() => setBinding(false)}>Cancel</button><button class="btn" type="submit" form="bind" disabled={!iface()}>Bind</button></>}>

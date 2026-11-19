@@ -348,6 +348,7 @@ func (s *Server) routes() []route {
 	add("GET", "/api/subduction", false, helper("subduction", nil, false))
 	add("POST", "/api/services/bind", false, helper("bind", p("app", "interface", "provider"), true))
 	add("POST", "/api/services/unbind", false, helper("unbind", p("app", "interface"), true))
+	add("POST", "/api/services/migrate", false, helper("migrate", p("app", "interface", "provider"), false))
 	add("GET", "/api/apps/:app/tokens", false, helper("tokenList", p("app"), false))
 	add("POST", "/api/apps/:app/tokens", false, helper("tokenCreate", p("app", "label"), false))
 	add("POST", "/api/apps/:app/tokens/:id/revoke", false, helper("tokenRevoke", p("app", "id"), false))

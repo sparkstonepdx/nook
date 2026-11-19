@@ -48,7 +48,8 @@ var Known = map[string]Interface{
 // Version is what consumers' constraints are checked against ("17", "8.3"). Provision runs when an app is bound
 // (./provision.sh APP, as the provider's user, in its site folder): it sets up what that app needs (a login, a
 // database) and prints KEY=value lines for the interface's env names, which override the templates. Deprovision
-// runs when the binding goes.
+// runs when the binding goes. Export (./export.sh APP) writes that app's data to stdout and Import reads it on
+// stdin, so a consumer can move to another provider with its data (migrate.go).
 //
 // For static sites (#98): Publish runs on each publish of a bound static site that needs the interface, before
 // it goes live (publish_hooks.go); PublishFiles picks which of its files the hook sees (default *.html, *.htm).
@@ -63,6 +64,8 @@ type ProvideSpec struct {
 	Version      string            `json:"version,omitempty"`
 	Provision    string            `json:"provision,omitempty"`
 	Deprovision  string            `json:"deprovision,omitempty"`
+	Export       string            `json:"export,omitempty"`
+	Import       string            `json:"import,omitempty"`
 	Publish      string            `json:"publish,omitempty"`
 	PublishFiles []string          `json:"publish_files,omitempty"`
 	Posts        bool              `json:"posts,omitempty"`
@@ -95,7 +98,7 @@ func checkServices(m *Manifest) error {
 		}
 		spec.Runtime = m.Kind == "runtime" // only nook says what's a runtime
 		if spec.Runtime {
-			if spec.Provision != "" || spec.Deprovision != "" || spec.Publish != "" || spec.Posts {
+			if spec.Provision != "" || spec.Deprovision != "" || spec.Export != "" || spec.Import != "" || spec.Publish != "" || spec.Posts {
 				return fmt.Errorf("nook.json: provides %q: a runtime is files, not a process: it has no hooks or posts", name)
 			}
 			if err := checkRuntimeSpec(spec); err != nil {
@@ -134,7 +137,7 @@ func checkServices(m *Manifest) error {
 				return fmt.Errorf("nook.json: provides %q: publish_files are file name patterns like *.html, not %q", name, pat)
 			}
 		}
-		for _, hook := range []string{spec.Provision, spec.Deprovision, spec.Publish} {
+		for _, hook := range []string{spec.Provision, spec.Deprovision, spec.Export, spec.Import, spec.Publish} {
 			if hook != "" && (!hookRE.MatchString(hook) || strings.Contains(hook, "..")) {
 				return fmt.Errorf("nook.json: provides %q: hooks are scripts in the site folder, like ./provision.sh, not %q", name, hook)
 			}
@@ -580,12 +583,14 @@ type ServicesView struct {
 	Providers  []Provider   `json:"providers"`
 	Bindings   []BindingRow `json:"bindings"`
 	Requests   []Request    `json:"requests"`
+	Migrations []Migration  `json:"migrations"`
 }
 
 type BindingRow struct {
 	Binding
-	Env   []string `json:"env"` // names the app sees
-	Ready bool     `json:"ready"`
+	Env   []string        `json:"env"` // names the app sees
+	Ready bool            `json:"ready"`
+	Moves []MigrateTarget `json:"moves,omitempty"` // providers it can move to with its data
 }
 
 type Request struct {
@@ -597,7 +602,7 @@ type Request struct {
 }
 
 func ServicesOverview() ServicesView {
-	v := ServicesView{Apps: Apps(), Providers: Providers(), Bindings: []BindingRow{}, Requests: []Request{}}
+	v := ServicesView{Apps: Apps(), Providers: Providers(), Bindings: []BindingRow{}, Requests: []Request{}, Migrations: Migrations()}
 	if v.Apps == nil {
 		v.Apps = []string{}
 	}
@@ -628,6 +633,7 @@ func ServicesOverview() ServicesView {
 		if p, ok := findProvider(b.Provider, b.Interface); ok {
 			row.Ready = p.Ready
 		}
+		row.Moves = migrateTargets(b, v.Providers)
 		v.Bindings = append(v.Bindings, row)
 	}
 	for _, app := range Apps() {
