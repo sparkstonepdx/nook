@@ -190,6 +190,17 @@ func main() {
 		}
 	}
 	failed := false
+	ids := make([]string, 0, len(c.Repos))
+	for id := range c.Repos {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if err := core.VerifyAptRepo(id, c.Repos[id], func(u string) ([]byte, error) { return get(u, "*/*") }); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			failed = true
+		}
+	}
 	for _, f := range files {
 		a, err := build(f)
 		if err != nil {

@@ -285,3 +285,34 @@ func aptVersion(a CatalogApp) string {
 	}
 	return strings.TrimSpace(out)
 }
+
+// VerifyAptRepo is catalog-build's check of one repos.json entry: its fields, that its key file holds exactly the
+// pinned keys, and that the repository answers for Debian 13 (trixie). fetch reads a URL. It's the check the first
+// install would otherwise make, run when the catalog is built so a typo fails CI instead of an install.
+func VerifyAptRepo(id string, r AptRepo, fetch func(url string) ([]byte, error)) error {
+	if !aptRepoIDRE.MatchString(id) {
+		return fmt.Errorf("repos.json: %q isn't a repository name (a-z, 0-9, -)", id)
+	}
+	if err := r.check(); err != nil {
+		return fmt.Errorf("repos.json: %s: %v", id, err)
+	}
+	key, err := fetch(r.KeyURL)
+	if err != nil {
+		return fmt.Errorf("repos.json: %s: its key: %v", id, err)
+	}
+	if why := r.keysMismatch(keyFingerprints(key)); why != "" {
+		return fmt.Errorf("repos.json: %s: the key file at %s %s", id, r.KeyURL, why)
+	}
+	base := strings.TrimSuffix(r.URL, "/") + "/"
+	if r.Suite == "./" {
+		base += "./"
+	} else {
+		base += "dists/" + strings.ReplaceAll(r.Suite, "{codename}", "trixie") + "/"
+	}
+	if _, err := fetch(base + "InRelease"); err != nil {
+		if _, err2 := fetch(base + "Release"); err2 != nil {
+			return fmt.Errorf("repos.json: %s: no InRelease or Release at %s: %v", id, base, err)
+		}
+	}
+	return nil
+}

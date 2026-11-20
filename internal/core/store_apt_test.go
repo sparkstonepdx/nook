@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -167,5 +168,44 @@ func TestAptKeyFilesAndFlatRepos(t *testing.T) {
 	}
 	if got := keyFingerprints([]byte("x")); len(got) != 2 || got[0] != a || got[1] != b {
 		t.Fatalf("primary keys only, every one: %v", got)
+	}
+}
+
+func TestVerifyAptRepo(t *testing.T) {
+	a, b := strings.Repeat("A", 40), strings.Repeat("B", 40)
+	old := aptRun
+	defer func() { aptRun = old }()
+	aptRun = func(env []string, name string, args ...string) (string, error) {
+		return "pub:-:4096:1:X:::\nfpr:::::::::" + a + ":\n", nil
+	}
+	served := map[string]bool{"https://k/key.asc": true, "https://apt.example.org/dists/trixie-pgdg/InRelease": true, "https://flat.example.org/repo/./Release": true}
+	var asked []string
+	fetch := func(u string) ([]byte, error) {
+		asked = append(asked, u)
+		if served[u] {
+			return []byte("x"), nil
+		}
+		return nil, fmt.Errorf("404")
+	}
+	pg := AptRepo{URL: "https://apt.example.org/", Suite: "{codename}-pgdg", Components: []string{"main"}, Key: a, KeyURL: "https://k/key.asc"}
+	if err := VerifyAptRepo("pgdg", pg, fetch); err != nil {
+		t.Fatal(err)
+	}
+	flat := AptRepo{URL: "https://flat.example.org/repo", Suite: "./", Key: a, KeyURL: "https://k/key.asc"}
+	if err := VerifyAptRepo("flat", flat, fetch); err != nil {
+		t.Fatalf("a flat repository with only Release: %v (asked %v)", err, asked)
+	}
+	for name, c := range map[string]struct {
+		id string
+		r  AptRepo
+	}{
+		"wrong key":    {"pgdg", AptRepo{URL: pg.URL, Suite: pg.Suite, Components: pg.Components, Key: b, KeyURL: pg.KeyURL}},
+		"key url typo": {"pgdg", AptRepo{URL: pg.URL, Suite: pg.Suite, Components: pg.Components, Key: a, KeyURL: "https://k/kye.asc"}},
+		"url typo":     {"pgdg", AptRepo{URL: "https://apt.exmaple.org", Suite: pg.Suite, Components: pg.Components, Key: a, KeyURL: pg.KeyURL}},
+		"bad id":       {"PG DG", pg},
+	} {
+		if err := VerifyAptRepo(c.id, c.r, fetch); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }
