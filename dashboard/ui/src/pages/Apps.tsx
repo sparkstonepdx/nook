@@ -292,7 +292,10 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
           <ul class="list">
             <li><A class="row" href={`/apps/${a().name}/env`}><span class="row-main"><span>Environment</span><small>Secrets and settings its sites load</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
             <li><A class="row" href={`/apps/${a().name}/deploy`}><span class="row-main"><span>Deploy</span><small>Tokens and the setup for its repo</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
-            <li><A class="row" href={`/apps/${a().name}/sync-log`}><span class="row-main"><span>Sync log</span><small>What the last syncs did</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
+            <For each={a().sites.filter((x) => x.running || x.kind === "cron")}>{(x) => (
+              <li><A class="row" href={`/apps/${a().name}/sites/${encodeURIComponent(x.name)}/logs`}><span class="row-main"><span>Logs{a().sites.filter((y) => y.running || y.kind === "cron").length > 1 ? `: ${x.name}` : ""}</span><small>What {x.host || x.name} has printed lately</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
+            )}</For>
+            <li><A class="row" href={`/apps/${a().name}/sync-log`}><span class="row-main"><span>Sync log</span><small>What nook did on its last deploys</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
             <li><button class="row" onClick={() => props.onLimits(a().name)}><span class="row-main"><span>Limits</span><small>{a().memoryMax || "?"} memory · {cpuPct(a().cpu)} CPU</small></span><span class="row-end"><span class="chev">›</span></span></button></li>
             <li><A class="row" href="/domains"><span class="row-main"><span>Domains</span><small>{a().grants.length ? a().grants.map(([, k, n]) => grantLabel(k, n)).join(", ") : "Nothing allowed yet"}</small></span><span class="row-end"><span class="chev">›</span></span></A></li>
           </ul>
