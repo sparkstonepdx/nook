@@ -10,6 +10,8 @@ import (
 	"github.com/sparkstonepdx/nook/internal/config"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +21,8 @@ type AppTrend struct {
 	Limit      uint64  `json:"limit"`      // its own limit, or the server's memory when it has none
 	OwnLimit   bool    `json:"ownLimit"`   // Limit is the app's own (MemoryMax), not the server's
 	CPU        float64 `json:"cpu"`        // % of one core, averaged over the last day
+	CPULimit   float64 `json:"cpuLimit"`   // its CPUQuota as % of one core; 0: none
+	CPUPoints  []Point `json:"cpuPoints"`  // % of one core for the chart, at most 120 points over the range
 	PerDay     float64 `json:"perDay"`     // bytes a day its floor is rising (0: flat or falling, or not enough data)
 	DaysLeft   float64 `json:"daysLeft"`   // until the floor reaches Limit; -1: not heading there
 	FullAt     int64   `json:"fullAt"`     // unix time of that, or 0
@@ -147,6 +151,7 @@ func appTrends(all []Sample, now time.Time, span time.Duration) []AppTrend {
 			}
 		}
 		t.Points = appPoints(shown, app, 120, func(x AppSample) uint64 { return x.Mem })
+		t.CPUPoints = cpuPoints(shown, app, 120)
 		diskTrend(&t, week, shown, last, x, now)
 		out = append(out, t)
 	}
@@ -235,6 +240,60 @@ func appPoints(in []Sample, app string, n int, v func(AppSample) uint64) []Point
 		out = append(out, Point{T: int64(start + (float64(k)+0.5)*step), V: toMB(buckets[k].sum / buckets[k].n)})
 	}
 	return out
+}
+
+// cpuPoints is app's CPU use between consecutive samples, as % of one core, averaged into at most n buckets.
+// Gaps under a minute are skipped (too noisy), and so are falls in the running count (it restarted).
+func cpuPoints(in []Sample, app string, n int) []Point {
+	if len(in) < 2 {
+		return []Point{}
+	}
+	start, end := float64(in[0].T), float64(in[len(in)-1].T)
+	step := math.Max((end-start)/float64(n), 300)
+	type acc struct{ sum, n float64 }
+	buckets := map[int]*acc{}
+	for i := 1; i < len(in); i++ {
+		a, okA := in[i-1].Apps[app]
+		b, okB := in[i].Apps[app]
+		dt := float64(in[i].T - in[i-1].T)
+		if !okA || !okB || dt < 60 || b.CPUNs < a.CPUNs || a.CPUNs == 0 {
+			continue
+		}
+		k := min(int((float64(in[i].T)-start)/step), n-1)
+		if buckets[k] == nil {
+			buckets[k] = &acc{}
+		}
+		buckets[k].sum += float64(b.CPUNs-a.CPUNs) / 1e9 / dt * 100
+		buckets[k].n++
+	}
+	keys := make([]int, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	out := make([]Point, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, Point{T: int64(start + (float64(k)+0.5)*step), V: math.Round(buckets[k].sum/buckets[k].n*10) / 10})
+	}
+	return out
+}
+
+// quotaPct is systemd's CPUQuotaPerSecUSec ("500ms", "1s", "1.5s", "infinity") as % of one core; 0 for no limit.
+func quotaPct(q string) float64 {
+	q = strings.TrimSpace(q)
+	mul := 0.1 // ms
+	if v, ok := strings.CutSuffix(q, "ms"); ok {
+		q = v
+	} else if v, ok := strings.CutSuffix(q, "s"); ok {
+		q, mul = v, 100
+	} else {
+		return 0
+	}
+	n, err := strconv.ParseFloat(q, 64)
+	if err != nil {
+		return 0
+	}
+	return math.Round(n*mul*10) / 10
 }
 
 // trendAdvice warns about an app heading for its limit (or the server's memory) within two weeks.

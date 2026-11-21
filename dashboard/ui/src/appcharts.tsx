@@ -2,12 +2,12 @@ import { Show, createResource, createRoot, createSignal, onCleanup } from "solid
 import { api } from "./api";
 import { bytes } from "./format";
 
-// Each app's memory and disk over the last week, with where they're heading, shown inside its row on the Apps page.
+// Each app's memory, CPU and disk over the last week, with where they're heading, shown inside its row on the Apps page.
 // One request for every app (the headroom view at a week), refreshed every minute while the page is open.
 type Point = { t: number; v: number };
 type DiskParts = { total: number; sites: number; builds: number; data: number; logs: number; store: number; at: number };
 export type AppTrend = {
-  app: string; mem: number; limit: number; ownLimit: boolean; cpu: number; perDay: number; daysLeft: number; fullAt: number; kills: number;
+  app: string; mem: number; limit: number; ownLimit: boolean; cpu: number; cpuLimit: number; cpuPoints: Point[]; perDay: number; daysLeft: number; fullAt: number; kills: number;
   points: Point[]; projection: Point[];
   disk: number; diskParts?: DiskParts; diskFree: number; diskPerDay: number; diskDaysLeft: number; diskFullAt: number; diskPoints: Point[]; diskProjection: Point[];
 };
@@ -18,6 +18,8 @@ const [trends, { refetch }] = createRoot(() =>
   createResource(on, () => api<{ apps?: AppTrend[] }>("/api/headroom?range=7d").then((h) => h.apps ?? []).catch(() => [] as AppTrend[])),
 );
 export const trendFor = (app: string) => trends()?.find((t) => t.app === app);
+// After a change the charts show (a new limit): the server reads the apps live, so this is current at once.
+export const reloadTrends = () => on() && refetch();
 
 // Loads the figures now and keeps them fresh while the calling page is open.
 export function refreshTrends() {
@@ -30,20 +32,20 @@ export function refreshTrends() {
 const dayText = (unix: number) => new Date(unix * 1000).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 
 // A week as a line, with an optional limit (dashed hairline) and the projection (dashed, up to a week ahead).
-function Spark(props: { points: Point[]; projection: Point[]; limitMB?: number; label: string }) {
+function Spark(props: { points: Point[]; projection: Point[]; limit?: number; label: string }) {
   const W = 300, H = 48;
   const t0 = () => props.points[0]?.t ?? 0;
   const t1 = () => Math.max(props.points[props.points.length - 1]?.t ?? 1, props.projection[1]?.t ?? 0);
   const top = () => {
     const peak = Math.max(1, ...[...props.points, ...props.projection].map((p) => p.v));
-    return props.limitMB ? Math.max(props.limitMB, peak) * 1.05 : peak * 1.25;
+    return props.limit ? Math.max(props.limit, peak) * 1.05 : peak * 1.25;
   };
   const x = (t: number) => ((t - t0()) / Math.max(1, t1() - t0())) * W;
   const y = (v: number) => H - 2 - (v / top()) * (H - 4);
   const path = (ps: Point[]) => ps.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
   return (
     <svg class="spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={props.label}>
-      <Show when={props.limitMB}><line class="limit" x1="0" x2={W} y1={y(props.limitMB!)} y2={y(props.limitMB!)} /></Show>
+      <Show when={props.limit}><line class="limit" x1="0" x2={W} y1={y(props.limit!)} y2={y(props.limit!)} /></Show>
       <path class="line" d={path(props.points)} />
       <Show when={props.projection.length === 2}><path class="projection" d={path(props.projection)} /></Show>
     </svg>
@@ -77,6 +79,14 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
     if (a.diskDaysLeft < 0 || a.diskDaysLeft > 365) return rate; // a date years out says nothing
     return `${rate} · the disk is full ${a.diskDaysLeft < 1 ? "within a day" : `around ${dayText(a.diskFullAt)}`} at this rate`;
   };
+  const cpuNow = () => Math.round(t()!.cpuPoints[t()!.cpuPoints.length - 1]?.v ?? 0);
+  const cpuPeak = () => Math.round(Math.max(0, ...t()!.cpuPoints.map((p) => p.v)));
+  const cpuNear = () => t()!.cpuLimit > 0 && cpuPeak() >= t()!.cpuLimit * 0.9;
+  const cpuTrend = () => {
+    const a = t()!;
+    if (a.cpuPoints.length < 2) return "Measured every 5 minutes; the line shows after 10";
+    return `${Math.round(a.cpu)}% of a core on average today · peak ${cpuPeak()}% this week${cpuNear() ? " · held back by its limit at times" : ""}`;
+  };
   const parts = () => {
     const p = t()?.diskParts;
     if (!p) return "";
@@ -89,11 +99,19 @@ export function AppCharts(props: { app: string; onLimits: (app: string) => void 
         <div class="app-charts">
           <figure class="app-chart" classList={{ soon: memSoon() }}>
             <figcaption>
-              <span>Memory <small class="figures">{bytes(a().mem)}{a().ownLimit ? ` of ${bytes(a().limit)}` : ""} · {a().cpu}% CPU</small></span>
+              <span>Memory <small class="figures">{bytes(a().mem)}{a().ownLimit ? ` of ${bytes(a().limit)}` : ""}</small></span>
               <small class={memSoon() ? "trend-soon" : ""}>{memTrend()}<Show when={a().kills > 0}> · stopped {a().kills} {a().kills === 1 ? "time" : "times"} by its limit this week</Show></small>
             </figcaption>
-            <Show when={a().points.length > 1}><Spark points={a().points} projection={a().projection} limitMB={a().ownLimit ? a().limit / (1 << 20) : undefined} label={`${a().app} memory over the last week: ${memTrend()}`} /></Show>
+            <Show when={a().points.length > 1}><Spark points={a().points} projection={a().projection} limit={a().ownLimit ? a().limit / (1 << 20) : undefined} label={`${a().app} memory over the last week: ${memTrend()}`} /></Show>
             <Show when={memSoon() && a().ownLimit}><button class="btn btn-secondary btn-sm" onClick={() => props.onLimits(a().app)}>Change limit</button></Show>
+          </figure>
+          <figure class="app-chart" classList={{ soon: cpuNear() }}>
+            <figcaption>
+              <span>CPU <small class="figures">{cpuNow()}%{a().cpuLimit ? ` of ${a().cpuLimit}%` : ""} now</small></span>
+              <small class={cpuNear() ? "trend-soon" : ""}>{cpuTrend()}</small>
+            </figcaption>
+            <Show when={a().cpuPoints.length > 1}><Spark points={a().cpuPoints} projection={[]} limit={a().cpuLimit || undefined} label={`${a().app} CPU over the last week: ${cpuTrend()}`} /></Show>
+            <Show when={cpuNear()}><button class="btn btn-secondary btn-sm" onClick={() => props.onLimits(a().app)}>Change limit</button></Show>
           </figure>
           <Show when={a().disk > 0}>
             <figure class="app-chart" classList={{ soon: diskSoon() }}>

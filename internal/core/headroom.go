@@ -308,8 +308,25 @@ func Headroom(rng string) HeadroomView {
 	all := readSamples(keepSamples)
 	v := analyse(all, time.Now())
 	v.Series, v.Since = series(all, span, time.Now())
-	v.Apps = appTrends(all, time.Now(), span)
+	v.Apps = appTrends(withLive(all), time.Now(), span)
+	for i := range v.Apps {
+		v.Apps[i].CPULimit = quotaPct(UnitProps("nook-"+v.Apps[i].App+".slice", "CPUQuotaPerSecUSec")["CPUQuotaPerSecUSec"])
+	}
 	return v
+}
+
+// withLive adds a reading taken now to the samples, so the app figures (a limit just changed, memory now) don't
+// wait up to 5 minutes for the sampler. Only the app figures are read; the rest is copied from the last sample.
+func withLive(all []Sample) []Sample {
+	if len(all) == 0 || time.Now().Unix()-all[len(all)-1].T < 30 {
+		return all
+	}
+	live := all[len(all)-1]
+	live.T, live.Apps = time.Now().Unix(), map[string]AppSample{}
+	for _, a := range Apps() {
+		live.Apps[a] = appSample(a)
+	}
+	return append(all[:len(all):len(all)], live)
 }
 
 func analyse(all []Sample, now time.Time) HeadroomView {

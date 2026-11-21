@@ -5,7 +5,7 @@ import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../compo
 import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
-import { AppCharts, refreshTrends, trendFor } from "../appcharts";
+import { AppCharts, refreshTrends, reloadTrends, trendFor } from "../appcharts";
 import { ago, bytes } from "../format";
 import { readStored, storedSignal, writeStored } from "../storage";
 import { AppBackupRow } from "../backups";
@@ -354,7 +354,7 @@ function LimitsSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             const f = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
             const name = a().name;
             props.onClose();
-            props.after(runCmd(`Changed ${name}'s limits`, `/api/apps/${name}/limits`, f));
+            props.after(runCmd(`Changed ${name}'s limits`, `/api/apps/${name}/limits`, f).finally(reloadTrends));
           }}>
             <p class="hint">{mb(a().memory) ? `Using ${mb(a().memory)} now. ` : ""}Changes apply at once, without restarting it.</p>
             <div class="field-row">
