@@ -113,9 +113,29 @@ func (h *Host) SetLimits(app, memory, cpu, tasks string) error {
 		return err
 	}
 	systemctl("daemon-reload")
-	systemctl("set-property", "--runtime", "nook-"+app+".slice", "MemoryMax="+cur["MemoryMax"], "MemoryHigh="+cmp.Or(memoryHigh(cur["MemoryMax"]), "infinity"), "CPUQuota="+cur["CPUQuota"], "TasksMax="+cur["TasksMax"])
+	slice := "nook-" + app + ".slice"
+	if out, err := Run("systemctl", "set-property", "--runtime", slice, "MemoryMax="+cur["MemoryMax"], "MemoryHigh="+cmp.Or(memoryHigh(cur["MemoryMax"]), "infinity"), "CPUQuota="+cur["CPUQuota"], "TasksMax="+cur["TasksMax"]); err != nil {
+		return fmt.Errorf("systemd didn't take the new limits: %s", strings.TrimSpace(out))
+	}
+	// read them back: something with more say (an old drop-in) would leave the running slice as it was
+	got := UnitProps(slice, "MemoryMax", "TasksMax", "DropInPaths")
+	if want := memBytes(cur["MemoryMax"]); want > 0 && got["MemoryMax"] != strconv.FormatInt(want, 10) {
+		return fmt.Errorf("the slice file says %s, but the running slice still has MemoryMax=%s; drop-ins: %s", cur["MemoryMax"], got["MemoryMax"], cmp.Or(got["DropInPaths"], "none"))
+	}
+	if got["TasksMax"] != "" && got["TasksMax"] != cur["TasksMax"] {
+		return fmt.Errorf("the slice file says %s tasks, but the running slice still has TasksMax=%s; drop-ins: %s", cur["TasksMax"], got["TasksMax"], cmp.Or(got["DropInPaths"], "none"))
+	}
 	h.say("%s: memory %s, cpu %s, tasks %s", app, cur["MemoryMax"], cur["CPUQuota"], cur["TasksMax"])
 	return nil
+}
+
+// memBytes is 512M or 2G in bytes, as systemd reports MemoryMax; 0 if it isn't one.
+func memBytes(s string) int64 {
+	if !memRE.MatchString(s) {
+		return 0
+	}
+	n, _ := strconv.ParseInt(s[:len(s)-1], 10, 64)
+	return n << map[byte]uint{'K': 10, 'M': 20, 'G': 30}[s[len(s)-1]]
 }
 
 // Create makes the user, folders, limits, deploy key and grant, and returns what to paste into GitHub.
