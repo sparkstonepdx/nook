@@ -122,3 +122,35 @@ func TestAppTrendNeedsADay(t *testing.T) {
 		t.Fatal("under a day of data shouldn't project")
 	}
 }
+
+func TestCPUPoints(t *testing.T) {
+	now := time.Now()
+	var ns uint64
+	all := history(now, 1, func(age time.Duration, s *Sample) {
+		if age == 6*time.Hour {
+			ns = 0 // restarted: the count starts over
+		}
+		ns += uint64(150 * time.Second) // 1.5 s of CPU per 5 minutes: 50% of a core
+		s.Apps["sync"] = AppSample{Mem: 100 * mib1, CPUNs: ns}
+	})
+	ps := cpuPoints(all, "sync", 120)
+	if len(ps) < 100 {
+		t.Fatalf("got %d points", len(ps))
+	}
+	for _, p := range ps {
+		if p.V != 50 {
+			t.Fatalf("point %v: want 50%%", p)
+		}
+	}
+	if tr := find(appTrends(all, now, 24*time.Hour), "sync"); len(tr.CPUPoints) != len(ps) {
+		t.Fatalf("trend has %d cpu points", len(tr.CPUPoints))
+	}
+}
+
+func TestQuotaPct(t *testing.T) {
+	for q, want := range map[string]float64{"500ms": 50, "1s": 100, "1.5s": 150, "2s": 200, "infinity": 0, "": 0, "[not set]": 0} {
+		if got := quotaPct(q); got != want {
+			t.Errorf("quotaPct(%q) = %v, want %v", q, got, want)
+		}
+	}
+}
