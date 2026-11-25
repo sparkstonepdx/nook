@@ -109,10 +109,11 @@ func caddyForceAutomate() bool { return caddyAtLeast(caddyVersion(), 2, 10) }
 
 // streamCloseDelay is how long live websockets outlast a reload on Caddy 2.7+ (older ones reject the setting and
 // close them at once). When it runs out Caddy closes them whatever the state, and clients reconnect through the
-// new config; two minutes keeps access changes (login, a removed site) prompt.
+// new config. A day, so a deploy never drops a long-lived sync connection; the cost is that a connection opened
+// before an access change (login turned on, a site removed) can last up to a day after it.
 func streamCloseDelay() string {
 	if caddyAtLeast(caddyVersion(), 2, 7) {
-		return "2m"
+		return "24h"
 	}
 	return ""
 }
