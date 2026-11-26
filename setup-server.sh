@@ -4,14 +4,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/sparkstonepdx/nook/main/setup-server.sh | sh   (public repo)
 #   git clone ... && cd nook && sh setup-server.sh                                              (private repo: builds from source)
 #
-# SUBDUCTION=1 also builds the Subduction sync server (slow on 1 GB); then run ./extras/subduction-app.sh.
 # Safe to re-run.
 set -eu
 
 SWAP_GB="${SWAP_GB:-2}"
 REPO="${NOOK_TOKEN_REPO:-sparkstonepdx/nook}"
-SUBDUCTION_VERSION="0.22.0"
-INGEST_VERSION="0.9.0"
 
 say() { printf '\n==> %s\n' "$*"; }
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
@@ -60,28 +57,6 @@ else
 fi
 "$work/nook-admin" install
 
-if [ "${SUBDUCTION:-0}" = 1 ]; then
-  say "subduction binaries"
-  if [ -x /usr/local/bin/subduction_cli ] && [ -x /usr/local/bin/automerge-subduction-ingest ]; then
-    echo "found in /usr/local/bin, skipping build"
-  else
-    echo "compiling on this machine (one job at a time to fit in RAM + swap; this is the slow part)"
-    apt-get install -y -qq build-essential pkg-config libssl-dev nodejs npm >/dev/null
-    if ! command -v cargo >/dev/null 2>&1; then
-      curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
-    fi
-    # shellcheck disable=SC1091
-    . "$HOME/.cargo/env"
-    # Build on disk, not /tmp: Debian 13's /tmp is RAM-backed (half of RAM), and the build needs ~1.2 GB.
-    BUILD_DIR=/var/tmp/subduction-build
-    avail_mb=$(df -Pm /var/tmp | awk 'NR==2 {print $4}')
-    [ "$avail_mb" -ge 2048 ] || { echo "need ~2 GB free on /var/tmp for the build, have ${avail_mb} MB"; exit 1; }
-    CARGO_TARGET_DIR="$BUILD_DIR" CARGO_BUILD_JOBS=1 cargo install --locked --root /usr/local \
-      "subduction_cli@${SUBDUCTION_VERSION}" "automerge_subduction_ingest@${INGEST_VERSION}"
-    rm -rf "$BUILD_DIR"
-  fi
-  /usr/local/bin/subduction_cli --version
-fi
 
 say "server notes"
 if [ -e /root/README.md ] && ! grep -q 'nook-helper' /root/README.md; then
@@ -143,9 +118,8 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 
 ## Subduction (optional)
 
-- Build: `SUBDUCTION=1 sh setup-server.sh`, then `./extras/subduction-app.sh` (re-run to upgrade).
-- Data: `/srv/nook/subduction/data/subduction`, key `/srv/nook/subduction/data/subduction.key` (**back this up**)
-- Logs: `tail -f /var/log/nook/subduction/subduction.log`
+- Install it from the dashboard's Store (Subduction). Data: `/srv/nook/APP/data/subduction`, key `/srv/nook/APP/data/subduction.key` (**back this up**)
+- Keyhive identity: the app's own site shows the address, peer id and contact card apps need, each with a Copy.
 
 ## System
 
