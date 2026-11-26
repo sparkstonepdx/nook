@@ -64,7 +64,6 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin unbind APP SERVICE                  (a database is kept)
   nook-admin dns plan|set APP NAME               the records its port grant on NAME needs, through the saved Cloudflare token
   nook-admin migrate APP SERVICE TO              move it to another provider with its data (postgres-17)
-  nook-admin subduction                          the Subduction server's URL, peer id and Keyhive contact card
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
 
@@ -242,19 +241,6 @@ func main() {
 			die(fmt.Errorf("usage: nook-admin migrate APP SERVICE TO  (like: nook-admin migrate shop postgres postgres-17)"))
 		}
 		die(h.Migrate(args[0], args[1], args[2]))
-	case "subduction":
-		needRoot()
-		id := core.Subduction()
-		if !id.Installed {
-			die(fmt.Errorf("no Subduction app on this server (install it from the store)"))
-		}
-		fmt.Printf("SUBDUCTION_URL=%s\nSYNC_SERVER_PEER_ID=%s\n", id.URL, id.PeerID)
-		if id.Card != "" {
-			fmt.Printf("SYNC_SERVER_CONTACT_CARD=%s\n", id.Card)
-		}
-		if id.Problem != "" {
-			fmt.Fprintln(os.Stderr, id.Problem)
-		}
 	case "invite":
 		needRoot()
 		store, err := web.OpenStore(config.WebStateDir)

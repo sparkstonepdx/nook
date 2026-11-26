@@ -9,7 +9,6 @@ import { AppCharts, refreshTrends, reloadTrends, trendFor } from "../appcharts";
 import { ago, bytes } from "../format";
 import { readStored, storedSignal, writeStored } from "../storage";
 import { AppBackupRow } from "../backups";
-import { SubductionIdentity } from "../subduction";
 
 type Site = { name: string; host: string; running: boolean; live: boolean; port: string; ActiveState?: string; SubState?: string; MainPID?: string; MemoryCurrent?: string; NRestarts?: string; kind: "static" | "web" | "service" | "cron"; schedule?: string; next?: string; last?: string; result?: string; health?: string; healthy?: boolean; healthError?: string; strict?: boolean };
 type App = { name: string; changed: number; memory: string; memoryMax: string; cpu: string; watcher: string; sites: Site[]; redirects: string[]; grants: string[][]; login: boolean; loginApp: boolean; ports: number[]; portsAsk: number[] };
@@ -319,7 +318,6 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             </ul>
           </Show>
           <AppBackupRow app={a().name} after={props.after} />
-          <SubductionIdentity app={a().name} />
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>
             <div class="field-row">

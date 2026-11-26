@@ -40,7 +40,7 @@ var Ops = map[string]bool{
 	"grant": true, "setDefaultDomain": true, "setDashboardHost": true, "setIPAccess": true, "notFoundGet": true, "notFoundSet": true,
 	"updateStatus": true, "updateNow": true, "updateCheck": true,
 	"tokenApp": true, "deploy": true, "undeploy": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
-	"services": true, "subduction": true, "bind": true, "unbind": true, "migrate": true, "instructions": true, "setRepo": true, "setLogin": true, "setPorts": true, "ciEnv": true,
+	"services": true, "bind": true, "unbind": true, "migrate": true, "instructions": true, "setRepo": true, "setLogin": true, "setPorts": true, "ciEnv": true,
 	"store": true, "storeJobs": true, "backupStatus": true, "appDisk": true, "pairStep": true, "backupSetup": true, "backupRun": true, "backupSnapshots": true, "backupRestore": true, "backupSkip": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "headroom": true, "setLimits": true, "catalogRemove": true, "storeImage": true, "certs": true, "certSet": true, "certRemove": true, "caddyPlugin": true, "caddyUpgrade": true,
 	"directory": true, "directorySet": true, "dnsPlan": true, "dnsSet": true,
 	"systemStatus": true, "systemCheck": true, "systemUpdate": true, "systemAuto": true, "systemRestart": true,

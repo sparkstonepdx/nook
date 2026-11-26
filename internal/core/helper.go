@@ -374,11 +374,6 @@ func Dispatch(req *rpc.Request) rpc.Response {
 		return data(map[string]any{}, nil)
 	case "services":
 		return data(ServicesOverview(), nil)
-	case "subduction":
-		if p["app"] != "" {
-			return data(SubductionFor(p["app"]), nil)
-		}
-		return data(Subduction(), nil)
 	case "bind":
 		return command("nook-admin bind "+p["app"]+" "+p["interface"]+" "+p["provider"], func(h *Host) error {
 			return h.Bind(p["app"], p["interface"], p["provider"], req.Set)

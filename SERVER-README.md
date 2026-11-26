@@ -53,7 +53,7 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 ## Subduction (optional)
 
 - Install it from the dashboard's Store (Subduction). Data: `/srv/nook/APP/data/subduction`, key `/srv/nook/APP/data/subduction.key` (**back this up**)
-- Keyhive identity: the app's Manage sheet (or `nook-admin subduction`) shows the address, peer id and contact card apps need, each with a Copy.
+- Keyhive identity: the app's own site shows the address, peer id and contact card apps need, each with a Copy.
 
 ## System
 
