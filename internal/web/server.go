@@ -345,7 +345,7 @@ func (s *Server) routes() []route {
 	add("POST", "/api/store/:app/update", false, helper("storeUpdate", p("app", "force"), true))
 	add("POST", "/api/store/:app/policy", false, helper("storePolicy", p("app", "policy"), false))
 	add("GET", "/api/services", false, helper("services", nil, false))
-	add("GET", "/api/subduction", false, helper("subduction", nil, false))
+	add("GET", "/api/subduction", false, helper("subduction", p("app"), false))
 	// one-off: moving the hand-set-up Subduction onto the catalog's (core/subductionmove.go)
 	add("GET", "/api/subduction/move", false, helper("subductionMove", nil, false))
 	add("POST", "/api/subduction/move", false, helper("subductionMoveStart", nil, false))

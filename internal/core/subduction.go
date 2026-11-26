@@ -111,7 +111,7 @@ func cardIssuer(card []byte) ([]byte, error) {
 
 // subductionIdentity reads the identity from the app's data folder: key at data/subduction.key, card at
 // data/subduction-card.json.
-func subductionIdentity(home, baseDomain string) SubductionIdentity {
+func subductionIdentity(home, host string) SubductionIdentity {
 	keyFile := filepath.Join(home, "data", "subduction.key")
 	b, err := os.ReadFile(keyFile)
 	if err != nil {
@@ -120,7 +120,7 @@ func subductionIdentity(home, baseDomain string) SubductionIdentity {
 		}
 		return SubductionIdentity{Installed: true, Problem: "Couldn't read the key: " + err.Error()}
 	}
-	id := SubductionIdentity{Installed: true, URL: "wss://" + names.HostOf(SubductionSite, baseDomain)}
+	id := SubductionIdentity{Installed: true, URL: "wss://" + host}
 	seed, err := ReadSeed(b)
 	if err != nil {
 		id.Problem = err.Error()
@@ -152,15 +152,42 @@ func subductionIdentity(home, baseDomain string) SubductionIdentity {
 	return id
 }
 
-// Subduction is this server's Subduction identity, for the dashboard and `nook-admin subduction`: the app serving
-// the subduction site (the catalog's, once the hand setup has moved onto it; subductionmove.go), else app subduction.
+// subductionSite is app's Subduction site: the one it was installed from the catalog on (any name), or the hand
+// setup's (extras/subduction-app.sh: app subduction, site subduction). "" when app isn't a Subduction.
+func subductionSite(app string) string {
+	rec, fromStore := readInstalled()[app]
+	return subductionSiteOf(app, rec, fromStore, SiteNames(app))
+}
+
+func subductionSiteOf(app string, rec Installed, fromStore bool, sites []string) string {
+	if fromStore {
+		if rec.ID == "subduction" && (rec.Catalog == "" || rec.Catalog == OfficialCatalog) {
+			return rec.Site
+		}
+		return ""
+	}
+	if app == SubductionApp && slices.Contains(sites, SubductionSite) {
+		return SubductionSite
+	}
+	return ""
+}
+
+// SubductionFor is app's Subduction identity, or one with Installed false when app isn't a Subduction.
+func SubductionFor(app string) SubductionIdentity {
+	site := subductionSite(app)
+	if site == "" {
+		return SubductionIdentity{}
+	}
+	return subductionIdentity(filepath.Join(config.AppsDir, app), names.HostOf(site, config.Load().BaseDomain))
+}
+
+// Subduction is this server's Subduction identity, for `nook-admin subduction` and the dashboard when it doesn't
+// name an app: the first Subduction app (the catalog's, whatever its name and site, or the hand setup's).
 func Subduction() SubductionIdentity {
-	app := SubductionApp
 	for _, a := range Apps() {
-		if slices.Contains(SiteNames(a), SubductionSite) {
-			app = a
-			break
+		if id := SubductionFor(a); id.Installed {
+			return id
 		}
 	}
-	return subductionIdentity(filepath.Join(config.AppsDir, app), config.Load().BaseDomain)
+	return SubductionIdentity{}
 }

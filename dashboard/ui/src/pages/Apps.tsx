@@ -321,7 +321,7 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             </ul>
           </Show>
           <AppBackupRow app={a().name} after={props.after} />
-          <Show when={a().sites.some((s) => s.name === "subduction")}><SubductionIdentity /></Show>
+          <SubductionIdentity app={a().name} />
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>
             <div class="field-row">

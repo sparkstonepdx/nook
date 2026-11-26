@@ -375,6 +375,9 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "services":
 		return data(ServicesOverview(), nil)
 	case "subduction":
+		if p["app"] != "" {
+			return data(SubductionFor(p["app"]), nil)
+		}
 		return data(Subduction(), nil)
 	case "subductionMove":
 		return data(SubductionMoveStatus(), nil)

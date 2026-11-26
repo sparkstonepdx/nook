@@ -32,7 +32,7 @@ func cardFor(pub []byte) string {
 
 func TestSubductionIdentity(t *testing.T) {
 	home := t.TempDir()
-	if id := subductionIdentity(home, "example.com"); id.Installed {
+	if id := subductionIdentity(home, "subduction.example.com"); id.Installed {
 		t.Fatal("installed with no key")
 	}
 	seed := make([]byte, 32)
@@ -41,11 +41,11 @@ func TestSubductionIdentity(t *testing.T) {
 	}
 	pub := writeKey(t, home, seed)
 
-	id := subductionIdentity(home, "example.com")
+	id := subductionIdentity(home, "subduction.example.com")
 	if id.URL != "wss://subduction.example.com" || id.PeerIDHex != hex.EncodeToString(pub) || id.Card == "" || id.Problem != "" {
 		t.Fatalf("no saved card: made from the key: %+v", id)
 	}
-	if again := subductionIdentity(home, "example.com"); again.Card != id.Card {
+	if again := subductionIdentity(home, "subduction.example.com"); again.Card != id.Card {
 		t.Fatal("the made card changes between reads")
 	}
 	if iss, err := cardIssuer([]byte(id.Card)); err != nil || !ed25519.PublicKey(iss).Equal(ed25519.PublicKey(pub)) {
@@ -53,14 +53,14 @@ func TestSubductionIdentity(t *testing.T) {
 	}
 
 	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(cardFor(pub)), 0o600)
-	id = subductionIdentity(home, "example.com")
+	id = subductionIdentity(home, "subduction.example.com")
 	if id.Card == "" || id.Problem != "" {
 		t.Fatalf("card: %+v", id)
 	}
 
 	other := ed25519.NewKeyFromSeed(make([]byte, 32)).Public().(ed25519.PublicKey)
 	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(cardFor(other)), 0o600)
-	if id = subductionIdentity(home, "example.com"); id.Card != "" || !strings.Contains(id.Problem, "different key") {
+	if id = subductionIdentity(home, "subduction.example.com"); id.Card != "" || !strings.Contains(id.Problem, "different key") {
 		t.Fatalf("someone else's card: %+v", id)
 	}
 }
@@ -77,7 +77,7 @@ func TestReadSeed(t *testing.T) {
 
 // A card made by extras/subduction-card.mjs with @keyhive/keyhive 0.4.0-alpha.1, for a throwaway key.
 func TestSubductionRealCard(t *testing.T) {
-	id := subductionIdentity("testdata/subduction", "example.com")
+	id := subductionIdentity("testdata/subduction", "subduction.example.com")
 	if id.Card == "" || id.Problem != "" {
 		t.Fatalf("%+v", id)
 	}
@@ -111,5 +111,26 @@ func TestMakeCardSignature(t *testing.T) {
 	}
 	if !ed25519.Verify(b(v.Add.Issuer), b(v.Add.Payload.ShareKey), b(v.Add.Signature)) || len(v.Add.Payload.ShareKey) != 32 {
 		t.Fatalf("signature doesn't verify: %s", c)
+	}
+}
+
+func TestSubductionSiteOf(t *testing.T) {
+	for _, c := range []struct {
+		app       string
+		rec       Installed
+		fromStore bool
+		sites     []string
+		want      string
+	}{
+		{"subduction", Installed{}, false, []string{"subduction"}, "subduction"},                                    // the hand setup
+		{"sync", Installed{ID: "subduction", Catalog: "official", Site: "relay"}, true, []string{"relay"}, "relay"}, // the catalog's, any name and site
+		{"subduction-2", Installed{ID: "subduction", Site: "subduction"}, true, []string{"subduction"}, "subduction"},
+		{"subduction", Installed{ID: "subduction", Catalog: "someone", Site: "x"}, true, []string{"x"}, ""}, // a community catalog's: not trusted as the server
+		{"pocketbase", Installed{ID: "pocketbase", Site: "pb"}, true, []string{"pb"}, ""},
+		{"web", Installed{}, false, []string{"subduction"}, ""}, // a hand-made app that isn't the hand setup
+	} {
+		if got := subductionSiteOf(c.app, c.rec, c.fromStore, c.sites); got != c.want {
+			t.Errorf("%s %+v: %q, want %q", c.app, c.rec, got, c.want)
+		}
 	}
 }

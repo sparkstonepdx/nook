@@ -5,9 +5,10 @@ import { Field } from "./components";
 type SubductionId = { installed: boolean; url?: string; peerId?: string; peerIdHex?: string; card?: string; problem?: string };
 
 // What an app needs to reach this server's Subduction relay with Keyhive: its address, its peer id and its
-// contact card, each with its own Copy. In the subduction app's Manage sheet.
-export function SubductionIdentity() {
-  const [id] = createResource(() => api<SubductionId>("/api/subduction").catch(() => undefined));
+// contact card, each with its own Copy. In the Manage sheet of a Subduction app (the catalog's, whatever its name
+// and site, or the hand setup's); nothing for any other app.
+export function SubductionIdentity(props: { app: string }) {
+  const [id] = createResource(() => props.app, (app) => api<SubductionId>(`/api/subduction?app=${encodeURIComponent(app)}`).catch(() => undefined));
   const copy = (text: string, what: string) => { navigator.clipboard?.writeText(text); say(`${what} copied`); };
   const env = (v: SubductionId) =>
     [`SUBDUCTION_URL=${v.url}`, `SYNC_SERVER_PEER_ID=${v.peerId}`, v.card && `SYNC_SERVER_CONTACT_CARD=${v.card}`].filter(Boolean).join("\n");

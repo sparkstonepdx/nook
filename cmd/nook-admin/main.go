@@ -246,7 +246,7 @@ func main() {
 		needRoot()
 		id := core.Subduction()
 		if !id.Installed {
-			die(fmt.Errorf("no Subduction app on this server (extras/subduction-app.sh sets one up)"))
+			die(fmt.Errorf("no Subduction app on this server (install it from the store)"))
 		}
 		fmt.Printf("SUBDUCTION_URL=%s\nSYNC_SERVER_PEER_ID=%s\n", id.URL, id.PeerID)
 		if id.Card != "" {
