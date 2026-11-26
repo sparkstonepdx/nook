@@ -375,7 +375,17 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "services":
 		return data(ServicesOverview(), nil)
 	case "subduction":
+		if p["app"] != "" {
+			return data(SubductionFor(p["app"]), nil)
+		}
 		return data(Subduction(), nil)
+	case "subductionMove":
+		return data(SubductionMoveStatus(), nil)
+	case "subductionMoveStart":
+		return data(map[string]any{"started": true}, StartSubductionMove())
+	case "subductionMoveFinish":
+		keep := p["keep"] == "true"
+		return command(map[bool]string{true: "delete the old Subduction app", false: "go back to the old Subduction app"}[keep], func(h *Host) error { return h.FinishSubductionMove(keep) })
 	case "bind":
 		return command("nook-admin bind "+p["app"]+" "+p["interface"]+" "+p["provider"], func(h *Host) error {
 			return h.Bind(p["app"], p["interface"], p["provider"], req.Set)

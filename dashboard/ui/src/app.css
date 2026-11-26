@@ -321,3 +321,7 @@ img.app-coin { background: var(--surface-2, transparent); }
 .system-updates .row-end { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xs); margin-left: auto; }
 .system-packages summary { cursor: pointer; color: var(--muted); padding-block: var(--space-xs); }
 .dns-value { overflow-wrap: anywhere; }
+/* one-off: moving the hand-set-up Subduction onto the catalog's (subductionmove.tsx) */
+.move-card { display: grid; gap: var(--space-sm); justify-items: start; margin-bottom: var(--space-lg); }
+.move-card h2 { margin: 0; font-size: 1.1rem; }
+.move-card .danger-zone { width: 100%; }
