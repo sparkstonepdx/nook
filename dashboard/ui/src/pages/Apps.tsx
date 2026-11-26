@@ -5,7 +5,6 @@ import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../compo
 import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
-import { SubductionMoveCard } from "../subductionmove";
 import { AppCharts, refreshTrends, reloadTrends, trendFor } from "../appcharts";
 import { ago, bytes } from "../format";
 import { readStored, storedSignal, writeStored } from "../storage";
@@ -117,7 +116,6 @@ export default function Apps() {
         <button class="btn" onClick={() => setCreating(true)}>New app</button>
       </PageHead>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
-      <SubductionMoveCard after={after} />
       <Launcher />
 
       <Show when={(data()?.apps.length ?? 0) > 1}>

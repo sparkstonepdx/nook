@@ -52,16 +52,17 @@ func TestSubductionIdentity(t *testing.T) {
 		t.Fatalf("made card's issuer: %v", err)
 	}
 
-	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(cardFor(pub)), 0o600)
-	id = subductionIdentity(home, "subduction.example.com")
-	if id.Card == "" || id.Problem != "" {
-		t.Fatalf("card: %+v", id)
+	made := id.Card
+	saved := cardFor(pub)
+	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(saved), 0o600)
+	if id = subductionIdentity(home, "subduction.example.com"); id.Card != saved || id.Problem != "" {
+		t.Fatalf("a saved card for this key is kept: %+v", id)
 	}
 
 	other := ed25519.NewKeyFromSeed(make([]byte, 32)).Public().(ed25519.PublicKey)
 	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(cardFor(other)), 0o600)
-	if id = subductionIdentity(home, "subduction.example.com"); id.Card != "" || !strings.Contains(id.Problem, "different key") {
-		t.Fatalf("someone else's card: %+v", id)
+	if id = subductionIdentity(home, "subduction.example.com"); id.Card != made || id.Problem != "" {
+		t.Fatalf("someone else's saved card: made from the key instead: %+v", id)
 	}
 }
 
@@ -75,7 +76,8 @@ func TestReadSeed(t *testing.T) {
 	}
 }
 
-// A card made by extras/subduction-card.mjs with @keyhive/keyhive 0.4.0-alpha.1, for a throwaway key.
+// A card made by @keyhive/keyhive 0.4.0-alpha.1 (in Node, how cards were made before nook made them), for a
+// throwaway key: a saved card like it is kept.
 func TestSubductionRealCard(t *testing.T) {
 	id := subductionIdentity("testdata/subduction", "subduction.example.com")
 	if id.Card == "" || id.Problem != "" {
@@ -116,21 +118,18 @@ func TestMakeCardSignature(t *testing.T) {
 
 func TestSubductionSiteOf(t *testing.T) {
 	for _, c := range []struct {
-		app       string
 		rec       Installed
 		fromStore bool
-		sites     []string
 		want      string
 	}{
-		{"subduction", Installed{}, false, []string{"subduction"}, "subduction"},                                    // the hand setup
-		{"sync", Installed{ID: "subduction", Catalog: "official", Site: "relay"}, true, []string{"relay"}, "relay"}, // the catalog's, any name and site
-		{"subduction-2", Installed{ID: "subduction", Site: "subduction"}, true, []string{"subduction"}, "subduction"},
-		{"subduction", Installed{ID: "subduction", Catalog: "someone", Site: "x"}, true, []string{"x"}, ""}, // a community catalog's: not trusted as the server
-		{"pocketbase", Installed{ID: "pocketbase", Site: "pb"}, true, []string{"pb"}, ""},
-		{"web", Installed{}, false, []string{"subduction"}, ""}, // a hand-made app that isn't the hand setup
+		{Installed{ID: "subduction", Catalog: "official", Site: "relay"}, true, "relay"}, // any app and site name
+		{Installed{ID: "subduction", Site: "subduction"}, true, "subduction"},
+		{Installed{ID: "subduction", Catalog: "someone", Site: "x"}, true, ""}, // a community catalog's: not trusted as the server
+		{Installed{ID: "pocketbase", Site: "pb"}, true, ""},
+		{Installed{}, false, ""}, // not from the store
 	} {
-		if got := subductionSiteOf(c.app, c.rec, c.fromStore, c.sites); got != c.want {
-			t.Errorf("%s %+v: %q, want %q", c.app, c.rec, got, c.want)
+		if got := subductionSiteOf(c.rec, c.fromStore); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.rec, got, c.want)
 		}
 	}
 }
