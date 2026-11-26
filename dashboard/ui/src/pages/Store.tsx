@@ -105,7 +105,7 @@ export default function Store() {
       <Show when={detail()} fallback={<Show when={data()}><PageHead title="Not in your catalogs" back={{ href: "/store/install", label: "Install" }} /><p class="lede">Refresh the catalog, or check the link.</p></Show>}>
         {(a) => <>
           <AppDetail app={a()} all={data()?.catalog ?? []} installed={installedIDs().has(`${a().catalog}/${a().id}`)} onInstall={() => setPicked(a())} />
-          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} poll={pollNow} />
+          <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} managed={new Set((data()?.installed ?? []).map((r) => r.app))} poll={pollNow} />
         </>}
       </Show>
     }>
@@ -230,7 +230,7 @@ export default function Store() {
           <div class="note note-warn"><span>It's a community catalog, not the official one. nook doesn't review it, so add it only if you trust whoever runs it.</span></div>
         </div>
       </Sheet>
-      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} poll={pollNow} />
+      <InstallSheet app={picked()} onClose={() => setPicked(null)} onDone={() => { refetch(); navigate("/store"); }} taken={installedIDs()} used={new Set(data()?.taken ?? [])} managed={new Set((data()?.installed ?? []).map((r) => r.app))} poll={pollNow} />
       <InstalledSheet row={row()} onClose={() => setOpen(null)} onDone={() => refetch()} poll={pollNow} />
     </>
     </Show>
@@ -386,7 +386,7 @@ function InstalledSheet(props: { row?: Row; onClose: () => void; onDone: () => v
   );
 }
 
-function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string>; used: Set<string>; poll: () => void }) {
+function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDone: () => void; taken: Set<string>; used: Set<string>; managed: Set<string>; poll: () => void }) {
   const [phase, setPhaseNow] = createSignal<Phase>("form");
   const [out, setOutNow] = createSignal("");
   const [name, setName] = createSignal("");
@@ -408,12 +408,17 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
       if (free) return sfx;
     }
   };
-  const defaultName = (a: CatalogApp) => (a.versions?.length ? `${a.id}-${pick().replace(".", "-")}` : `${a.id}${copyNo(a)}`);
-  const defaultSite = (a: CatalogApp) => (a.versions?.length ? defaultName(a) : `${a.site ?? a.id}${copyNo(a)}`);
+  // an app of this name that didn't come from the store (set up by hand before the catalog had it) can be taken
+  // over: its data and site stay, the catalog's build replaces its own, and the store updates it from then on
+  const adoptable = (a: CatalogApp) => !a.versions?.length && props.used.has(`app:${a.id}`) && !props.managed.has(a.id);
+  const [adopt, setAdopt] = createSignal(true);
+  const adopting = () => !!props.app && adoptable(props.app) && adopt();
+  const defaultName = (a: CatalogApp) => (a.versions?.length ? `${a.id}-${pick().replace(".", "-")}` : adopting() ? a.id : `${a.id}${copyNo(a)}`);
+  const defaultSite = (a: CatalogApp) => (a.versions?.length ? defaultName(a) : adopting() ? (a.site ?? a.id) : `${a.site ?? a.id}${copyNo(a)}`);
   return (
     <Sheet open={!!props.app} title={props.app ? (phase() === "failed" ? `${props.app.name} didn't install` : `Install ${props.app.name}`) : ""} onClose={close}
       footer={<Show when={phase() === "form"} fallback={<button type="button" class="btn btn-secondary" onClick={close}>{finished() ? "Close" : "Hide"}</button>}>
-        <button type="button" class="btn btn-secondary" onClick={close}>Cancel</button><button class="btn" type="submit" form="store-install">Install</button>
+        <button type="button" class="btn btn-secondary" onClick={close}>Cancel</button><button class="btn" type="submit" form="store-install">{adopting() ? "Take over" : "Install"}</button>
       </Show>}>
       <Show when={props.app}>
         {(a) => (
@@ -432,7 +437,7 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
             const f = new FormData(e.currentTarget);
             const env: Record<string, string> = {};
             for (const fld of app.env ?? []) env[fld.key] = String(f.get(`env.${fld.key}`) ?? "");
-            const body = { catalog: app.catalog, id: app.id, app: String(f.get("app")), site: String(f.get("site")), policy: String(f.get("policy")), version: app.versions?.length ? pick() : "", set: env };
+            const body = { catalog: app.catalog, id: app.id, app: String(f.get("app")), site: String(f.get("site")), policy: String(f.get("policy")), version: app.versions?.length ? pick() : "", adopt: adopting(), set: env };
             setName(body.app);
             await run("/api/store/install", body, props.poll, guard(setPhaseNow), guard(setOutNow));
           }}>
@@ -447,9 +452,15 @@ function InstallSheet(props: { app: CatalogApp | null; onClose: () => void; onDo
                 <select class="select" onChange={(e) => setMajor(e.currentTarget.value)}><For each={[...(a().versions ?? [])].reverse()}>{(v) => <option value={v} selected={v === pick()}>{a().name} {v}</option>}</For></select>
               </Field>
             </Show>
+            <Show when={adoptable(a())}>
+              <label class="switch-row">
+                <input type="checkbox" role="switch" checked={adopt()} onChange={(e) => setAdopt(e.currentTarget.checked)} />
+                <span><span>Take over the app {a().id}</span><small>It was set up by hand. Its data and site stay; this version replaces its build, and the store updates it from now on. Off: install a second copy instead.</small></span>
+              </label>
+            </Show>
             <div class="field-row">
-              <Field label="App name"><input class="input mono" name="app" value={defaultName(a())} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
-              <Field label="Site"><input class="input mono" name="site" value={defaultSite(a())} required /></Field>
+              <Field label="App name"><input class="input mono" name="app" value={defaultName(a())} readOnly={adopting()} pattern="[a-z][a-z0-9\-]{1,23}" required /></Field>
+              <Field label="Site"><input class="input mono" name="site" value={defaultSite(a())} readOnly={adopting()} required /></Field>
             </div>
             <p class="hint">{a().kind === "cron" || a().kind === "service" || a().kind === "runtime" ? "It has no hostname." : "A subdomain, or a hostname the app is allowed."}</p>
             <Field label="Updates">

@@ -9,7 +9,7 @@ import (
 )
 
 func storeCmd(h *core.Host, args []string) {
-	usage := fmt.Errorf("usage: nook-admin store [list] | catalogs [add REPO|URL | rm ID] | install ID [--catalog C] [--app NAME] [--site S] [--policy P] [--env K=V ...] | update APP [--force] | policy APP P | check")
+	usage := fmt.Errorf("usage: nook-admin store [list] | catalogs [add REPO|URL | rm ID] | install ID [--catalog C] [--app NAME] [--site S] [--policy P] [--env K=V ...] [--adopt] | update APP [--force] | policy APP P | check")
 	if len(args) == 0 || args[0] == "list" {
 		v := core.StoreOverview(len(args) > 1 && args[1] == "--refresh")
 		if v.Error != "" {
@@ -60,6 +60,10 @@ func storeCmd(h *core.Host, args []string) {
 	case "install":
 		o := core.InstallOpts{Env: map[string]string{}}
 		for i := 1; i < len(args); i++ {
+			if args[i] == "--adopt" {
+				o.Adopt = true
+				continue
+			}
 			if i+1 < len(args) {
 				switch args[i] {
 				case "--catalog":

@@ -270,3 +270,19 @@ func TestCatalogRuntimeAndPorts(t *testing.T) {
 		t.Fatal("a cron job doesn't listen")
 	}
 }
+
+func TestAdoptCheck(t *testing.T) {
+	for _, c := range []struct {
+		exists, managed, adopt, ok bool
+	}{
+		{false, false, false, true}, // a new install
+		{true, false, false, false}, // the name is taken
+		{true, false, true, true},   // taking over a hand-made app
+		{false, false, true, false}, // nothing to take over
+		{true, true, true, false},   // already the store's
+	} {
+		if err := adoptCheck("subduction", c.exists, c.managed, c.adopt); (err == nil) != c.ok {
+			t.Errorf("%+v: %v", c, err)
+		}
+	}
+}

@@ -104,13 +104,30 @@ func healthy(app, site string, a CatalogApp) error {
 
 // ---- install / update / remove ----
 
+// adoptCheck: a new install needs a free name; a takeover needs an app of that name the store doesn't manage yet.
+func adoptCheck(app string, exists, managed, adopt bool) error {
+	switch {
+	case exists && !adopt:
+		return fmt.Errorf("app %s already exists; pick another name, or take it over", app)
+	case !exists && adopt:
+		return fmt.Errorf("there's no app %s to take over", app)
+	case adopt && managed:
+		return fmt.Errorf("app %s already comes from the store", app)
+	}
+	return nil
+}
+
 type InstallOpts struct {
 	Catalog, ID, App, Site, Policy string // Catalog: empty for the official one
 	Version                        string // a major from the entry's versions (an apt app); empty for the newest
 	Env                            map[string]string
+	// Adopt takes over an existing app of that name that didn't come from the store (one set up by hand, like
+	// Subduction before it was in the catalog): its user, data and site stay, the catalog's build replaces the
+	// site's, and from then on the store updates it. A failed takeover leaves the app in place.
+	Adopt bool
 }
 
-// StoreInstall installs a catalog app as a new nook app.
+// StoreInstall installs a catalog app as a new nook app, or takes over an existing one (Adopt).
 func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	if o.Catalog == "" {
 		o.Catalog = OfficialCatalog
@@ -153,10 +170,15 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 	if !names.App(o.App) || !names.Site(o.Site) {
 		return fmt.Errorf("bad app or site name")
 	}
-	if _, err := LookupApp(o.App); err == nil {
-		return fmt.Errorf("app %s already exists; pick another name", o.App)
+	_, lookErr := LookupApp(o.App)
+	_, managed := readInstalled()[o.App]
+	if err := adoptCheck(o.App, lookErr == nil, managed, o.Adopt); err != nil {
+		return err
 	}
 	for _, other := range Apps() { // a second copy of an app needs its own site too
+		if other == o.App && o.Adopt { // taking over: its own site is the one to replace
+			continue
+		}
 		if slices.Contains(SiteNames(other), o.Site) {
 			return fmt.Errorf("the site %s is app %s's already; pick another, like %s-2", o.Site, other, o.Site)
 		}
@@ -195,12 +217,14 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 		return err
 	}
 	defer done()
-	if _, err := h.Create(CreateOpts{Name: o.App, Memory: a.Memory, CPU: a.CPU}); err != nil {
+	if o.Adopt {
+		h.say("taking over app %s: its data stays, site %s gets %s %s", o.App, o.Site, a.Name, a.Version)
+	} else if _, err := h.Create(CreateOpts{Name: o.App, Memory: a.Memory, CPU: a.CPU}); err != nil {
 		return err
 	}
-	// a failed install removes the app it just made, so the same name can be tried again
+	// a failed install removes the app it just made, so the same name can be tried again; a takeover leaves it
 	defer func() {
-		if err != nil {
+		if err != nil && !o.Adopt {
 			h.say("install failed; removing app %s", o.App)
 			if derr := h.Delete(o.App, o.App); derr != nil {
 				h.say("couldn't remove %s: %v (delete it from the Apps page)", o.App, derr)

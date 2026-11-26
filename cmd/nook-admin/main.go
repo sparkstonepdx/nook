@@ -57,7 +57,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin instructions APP [--site S] [--repo OWNER/NAME] [--new-token]   how to deploy to APP, any time
   nook-admin token create APP [--label L]        a deploy token (shown once) for the deploy API
   nook-admin token list [APP] | rm APP ID
-  nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...]
+  nook-admin store [list] | install ID [--app NAME] [--site S] [--policy P] [--env K=V ...] [--adopt]
   nook-admin store update APP [--force] | policy APP off|notify|patch|minor|all | check
   nook-admin services [list]
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres

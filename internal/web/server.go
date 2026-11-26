@@ -339,7 +339,7 @@ func (s *Server) routes() []route {
 	add("GET", "/api/backup/snapshots", false, helper("backupSnapshots", p("app", "from"), false))
 	add("POST", "/api/apps/:app/restore", false, helper("backupRestore", p("app", "snapshot"), true))
 	add("POST", "/api/apps/:app/backup-skip", false, helper("backupSkip", p("app", "skip"), true))
-	add("POST", "/api/store/install", false, helper("storeInstall", p("catalog", "id", "app", "site", "policy", "version"), true))
+	add("POST", "/api/store/install", false, helper("storeInstall", p("catalog", "id", "app", "site", "policy", "version", "adopt"), true))
 	add("POST", "/api/store/catalogs", false, helper("catalogAdd", p("source"), false))
 	add("POST", "/api/store/catalogs/:id/remove", false, helper("catalogRemove", p("id"), false))
 	add("POST", "/api/store/:app/update", false, helper("storeUpdate", p("app", "force"), true))
