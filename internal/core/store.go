@@ -108,6 +108,8 @@ type InstallOpts struct {
 	Catalog, ID, App, Site, Policy string // Catalog: empty for the official one
 	Version                        string // a major from the entry's versions (an apt app); empty for the newest
 	Env                            map[string]string
+	// prepare runs after the app is made and before the first deploy starts it (subductionmove.go fills its data)
+	prepare func(app string) error
 }
 
 // StoreInstall installs a catalog app as a new nook app.
@@ -207,6 +209,11 @@ func (h *Host) StoreInstall(o InstallOpts) (err error) {
 			}
 		}
 	}()
+	if o.prepare != nil {
+		if err := o.prepare(o.App); err != nil {
+			return err
+		}
+	}
 	if len(env) > 0 {
 		if err := h.EnvApply(o.App, Scope{"site", o.Site}, env, nil, false); err != nil {
 			return err

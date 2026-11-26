@@ -5,6 +5,7 @@ import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../compo
 import Server from "./Server";
 import Launcher from "./Launcher";
 import { directory, setListed } from "../directory";
+import { SubductionMoveCard } from "../subductionmove";
 import { AppCharts, refreshTrends, reloadTrends, trendFor } from "../appcharts";
 import { ago, bytes } from "../format";
 import { readStored, storedSignal, writeStored } from "../storage";
@@ -116,6 +117,7 @@ export default function Apps() {
         <button class="btn" onClick={() => setCreating(true)}>New app</button>
       </PageHead>
       <Show when={data.error}><div class="note note-bad">{String(data.error!.message)}</div></Show>
+      <SubductionMoveCard after={after} />
       <Launcher />
 
       <Show when={(data()?.apps.length ?? 0) > 1}>
@@ -319,7 +321,7 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             </ul>
           </Show>
           <AppBackupRow app={a().name} after={props.after} />
-          <Show when={a().name === "subduction"}><SubductionIdentity /></Show>
+          <Show when={a().sites.some((s) => s.name === "subduction")}><SubductionIdentity /></Show>
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>
             <div class="field-row">

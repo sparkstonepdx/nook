@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/sparkstonepdx/nook/internal/config"
@@ -114,7 +115,15 @@ func subductionIdentity(home, baseDomain string) SubductionIdentity {
 	return id
 }
 
-// Subduction is this server's Subduction identity, for the dashboard and `nook-admin subduction`.
+// Subduction is this server's Subduction identity, for the dashboard and `nook-admin subduction`: the app serving
+// the subduction site (the catalog's, once the hand setup has moved onto it; subductionmove.go), else app subduction.
 func Subduction() SubductionIdentity {
-	return subductionIdentity(filepath.Join(config.AppsDir, SubductionApp), config.Load().BaseDomain)
+	app := SubductionApp
+	for _, a := range Apps() {
+		if slices.Contains(SiteNames(a), SubductionSite) {
+			app = a
+			break
+		}
+	}
+	return subductionIdentity(filepath.Join(config.AppsDir, app), config.Load().BaseDomain)
 }
