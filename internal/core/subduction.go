@@ -6,7 +6,9 @@ package core
 // against the server need the card and peer id as build variables; the dashboard shows them ready to copy.
 
 import (
+	"crypto/ecdh"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -51,6 +53,37 @@ func ReadSeed(b []byte) ([]byte, error) {
 		return b, nil
 	}
 	return nil, fmt.Errorf("the key file must hold 32 bytes, raw or as 64 hex digits")
+}
+
+// makeCard makes the server's Keyhive contact card from its key, the way @keyhive/keyhive does: an Add op whose
+// payload is an X25519 share key, signed by the server's Ed25519 key over the share key's 32 bytes (bincode of the
+// op). The share key is derived from the seed, so the card is the same every time it's made. Only the public
+// halves are in it. Replaces extras/subduction-card.mjs, which needed Node on the server.
+func makeCard(seed []byte) (string, error) {
+	h := sha256.Sum256(append([]byte("nook subduction share key\x00"), seed...))
+	share, err := ecdh.X25519().NewPrivateKey(h[:])
+	if err != nil {
+		return "", err
+	}
+	pub := share.PublicKey().Bytes()
+	priv := ed25519.NewKeyFromSeed(seed)
+	ints := func(b []byte) []int {
+		out := make([]int, len(b))
+		for i, x := range b {
+			out[i] = int(x)
+		}
+		return out
+	}
+	type payload struct {
+		ShareKey []int `json:"share_key"`
+	}
+	type add struct {
+		Payload   payload `json:"payload"`
+		Issuer    []int   `json:"issuer"`
+		Signature []int   `json:"signature"`
+	}
+	b, err := json.Marshal(map[string]add{"Add": {payload{ints(pub)}, ints(priv.Public().(ed25519.PublicKey)), ints(ed25519.Sign(priv, pub))}})
+	return string(b), err
 }
 
 // cardIssuer is the public key a contact card says it's from.
@@ -98,8 +131,12 @@ func subductionIdentity(home, baseDomain string) SubductionIdentity {
 
 	card, err := os.ReadFile(filepath.Join(home, "data", "subduction-card.json"))
 	switch {
-	case os.IsNotExist(err):
-		id.Problem = "No contact card yet. Re-run extras/subduction-app.sh with Node installed to make one."
+	case os.IsNotExist(err): // none saved (the catalog app, or a hand setup without Node): made here from the key
+		if c, err := makeCard(seed); err != nil {
+			id.Problem = "Couldn't make the contact card: " + err.Error()
+		} else {
+			id.Card = c
+		}
 	case err != nil:
 		id.Problem = "Couldn't read the contact card: " + err.Error()
 	default:

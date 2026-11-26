@@ -3,6 +3,7 @@ package core
 import (
 	"crypto/ed25519"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -41,8 +42,14 @@ func TestSubductionIdentity(t *testing.T) {
 	pub := writeKey(t, home, seed)
 
 	id := subductionIdentity(home, "example.com")
-	if id.URL != "wss://subduction.example.com" || id.PeerIDHex != hex.EncodeToString(pub) || id.Card != "" || !strings.Contains(id.Problem, "No contact card") {
-		t.Fatalf("no card: %+v", id)
+	if id.URL != "wss://subduction.example.com" || id.PeerIDHex != hex.EncodeToString(pub) || id.Card == "" || id.Problem != "" {
+		t.Fatalf("no saved card: made from the key: %+v", id)
+	}
+	if again := subductionIdentity(home, "example.com"); again.Card != id.Card {
+		t.Fatal("the made card changes between reads")
+	}
+	if iss, err := cardIssuer([]byte(id.Card)); err != nil || !ed25519.PublicKey(iss).Equal(ed25519.PublicKey(pub)) {
+		t.Fatalf("made card's issuer: %v", err)
 	}
 
 	os.WriteFile(filepath.Join(home, "data", "subduction-card.json"), []byte(cardFor(pub)), 0o600)
@@ -73,5 +80,36 @@ func TestSubductionRealCard(t *testing.T) {
 	id := subductionIdentity("testdata/subduction", "example.com")
 	if id.Card == "" || id.Problem != "" {
 		t.Fatalf("%+v", id)
+	}
+}
+
+// The card Go makes is signed the way Keyhive checks it: Ed25519 over the share key's 32 bytes.
+func TestMakeCardSignature(t *testing.T) {
+	seed := make([]byte, 32)
+	seed[0] = 7
+	c, err := makeCard(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Add struct {
+			Payload struct {
+				ShareKey []int `json:"share_key"`
+			} `json:"payload"`
+			Issuer, Signature []int
+		}
+	}
+	if err := json.Unmarshal([]byte(c), &v); err != nil {
+		t.Fatal(err)
+	}
+	b := func(x []int) []byte {
+		o := make([]byte, len(x))
+		for i, n := range x {
+			o[i] = byte(n)
+		}
+		return o
+	}
+	if !ed25519.Verify(b(v.Add.Issuer), b(v.Add.Payload.ShareKey), b(v.Add.Signature)) || len(v.Add.Payload.ShareKey) != 32 {
+		t.Fatalf("signature doesn't verify: %s", c)
 	}
 }
