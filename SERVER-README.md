@@ -41,7 +41,7 @@ App users (and their deploy keys) only get `nook site deploy|rm|restart|list|log
 
 - `nook-admin update` installs the latest signed release (verifies the ed25519 signature and checksums, swaps both binaries, restarts the dashboard; running sites keep running).
 - A daily check shows "update available" on the dashboard and in the login message. Put `UPDATE_NOTIFY_URL=https://ntfy.sh/<topic>` (or a Discord/Slack webhook) in `/etc/nook/update.env` to get pinged.
-- While the repo is private, add `GITHUB_TOKEN=<read-only token for the nook repo>` to `/etc/nook/update.env`.
+- Optional: `GITHUB_TOKEN=<any read-only token>` in `/etc/nook/update.env` raises GitHub's limit from 60 to 5,000 requests an hour. One GitHub refuses (expired, revoked) is skipped, with a note in the log, so it can't stop updates.
 
 ## Caddy
 
