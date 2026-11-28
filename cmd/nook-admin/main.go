@@ -63,7 +63,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
   nook-admin dns plan|set APP NAME               the records its port grant on NAME needs, through the saved Cloudflare token
-  nook-admin link [list|code|join CODE|remove ID]  servers linked with this one (#111)
+  nook-admin link [list|code [--manage ROLE]|join CODE [CLIENT]|remove ID|audit]  linked and managed servers (#111)
   nook-admin migrate APP SERVICE TO              move it to another provider with its data (postgres-17)
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
@@ -308,19 +308,37 @@ func main() {
 				if l.Seen > 0 {
 					seen = time.Unix(l.Seen, 0).Format(time.DateTime)
 				}
-				fmt.Printf("%s  %s  %s  last heard from %s\n", l.ID, l.Name, l.Kind, seen)
+				fmt.Printf("%s  %s  %s %s %s  last heard from %s\n", l.ID, l.Name, l.Kind, l.Role, l.Entity, seen)
 			}
 		case args[0] == "code":
-			code, err := h.LinkCode(core.LinkSame)
+			kind, role := core.LinkSame, ""
+			if len(args) == 3 && args[1] == "--manage" {
+				kind, role = core.LinkManaged, args[2]
+			} else if len(args) != 1 {
+				die(fmt.Errorf("usage: nook-admin link code [--manage operator|admin]"))
+			}
+			code, err := h.LinkCode(kind, role)
 			die(err)
 			fmt.Printf("On the other server, within 24 hours: Server page, Linked servers, Link, and paste\n\n  %s\n\nor run nook-admin link join CODE there. Keep it private: whoever has it can act on this server.\n", code)
-		case len(args) == 2 && args[0] == "join":
-			_, err := h.LinkJoin(args[1])
+		case (len(args) == 2 || len(args) == 3) && args[0] == "join":
+			entity := ""
+			if len(args) == 3 {
+				entity = args[2]
+			}
+			_, err := h.LinkJoin(args[1], entity)
 			die(err)
+		case args[0] == "audit":
+			for _, e := range core.LinkAudit(200, true) {
+				ok := "ran"
+				if !e.Allowed {
+					ok = "refused"
+				}
+				fmt.Printf("%s  %s  %s  %s %s  %s\n", time.Unix(e.Time, 0).Format(time.DateTime), e.Server, e.By, ok, e.Op, e.Detail)
+			}
 		case len(args) == 2 && (args[0] == "remove" || args[0] == "revoke"):
 			die(h.LinkRemove(args[1], true))
 		default:
-			die(fmt.Errorf("usage: nook-admin link [list] | link code | link join CODE | link remove ID"))
+			die(fmt.Errorf("usage: nook-admin link [list] | link code [--manage operator|admin] | link join CODE [CLIENT] | link remove ID | link audit"))
 		}
 	case "helper":
 		needRoot()

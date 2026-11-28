@@ -347,10 +347,12 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "links":
 		return data(GetLinks(), nil)
 	case "linkCode":
-		code, err := h.LinkCode(cmp.Or(p["kind"], LinkSame))
+		code, err := h.LinkCode(cmp.Or(p["kind"], LinkSame), p["role"])
 		return data(map[string]any{"code": code}, err)
 	case "linkJoin":
-		return command("nook-admin link join CODE", func(h *Host) error { _, err := h.LinkJoin(req.Secret); return err })
+		return command("nook-admin link join CODE", func(h *Host) error { _, err := h.LinkJoin(req.Secret, p["entity"]); return err })
+	case "linkAudit":
+		return data(map[string]any{"entries": LinkAudit(50, p["all"] == "true")}, nil)
 	case "linkRemove":
 		return command("nook-admin link remove "+p["id"], func(h *Host) error { return h.LinkRemove(p["id"], p["tell"] != "false") })
 	case "linkHello":
