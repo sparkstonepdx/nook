@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +42,7 @@ func linkTest(t *testing.T) LinkSelf {
 func TestLinkCodeHello(t *testing.T) {
 	me := linkTest(t)
 	h := New(io.Discard)
-	code, err := h.LinkCode(LinkSame)
+	code, err := h.LinkCode(LinkSame, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +168,96 @@ func TestAppFileAllowed(t *testing.T) {
 		if appFileAllowed("web", p) {
 			t.Errorf("%s allowed", p)
 		}
+	}
+}
+
+func TestManagedPolicy(t *testing.T) {
+	op := Link{Name: "agency.example", Kind: LinkManager, Role: RoleOperator}
+	admin := Link{Name: "agency.example", Kind: LinkManager, Role: RoleAdmin}
+	client := Link{Name: "client.example", Kind: LinkClient, Role: RoleAdmin}
+	for _, o := range []string{"storeInstall", "envApply", "systemUpdate", "siteLogs", "dnsSet", "tokenCreate", "backupRun"} {
+		if err := LinkAllowed(op, o); err != nil {
+			t.Errorf("operator %s: %v", o, err)
+		}
+	}
+	for _, o := range []string{"deleteApp", "backupSetup", "backupRestore", "systemRestart", "setPorts", "catalogAdd", "setDashboardHost", "appMoveOut"} {
+		if LinkAllowed(op, o) == nil {
+			t.Errorf("operator was allowed %s", o)
+		}
+	}
+	for _, o := range []string{"deleteApp", "systemRestart", "setPorts"} {
+		if err := LinkAllowed(admin, o); err != nil {
+			t.Errorf("admin %s: %v", o, err)
+		}
+	}
+	for _, o := range []string{"backupSetup", "appMoveOut", "linkRemove", "deploy"} {
+		if LinkAllowed(admin, o) == nil {
+			t.Errorf("admin was allowed %s", o)
+		}
+	}
+	if LinkAllowed(client, "overview") == nil {
+		t.Error("a managed server ran something on its manager")
+	}
+}
+
+func TestManagedLinking(t *testing.T) {
+	me := linkTest(t)
+	old := auditFile
+	af := filepath.Join(t.TempDir(), "audit.jsonl")
+	auditFile = func() string { return af }
+	t.Cleanup(func() { auditFile = old })
+	h := New(io.Discard)
+	if _, err := h.LinkCode(LinkManaged, "root"); err == nil {
+		t.Fatal("a made-up role was taken")
+	}
+	code, err := h.LinkCode(LinkManaged, RoleOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := linkRE.FindStringSubmatch(code)
+	got, err := h.LinkHello(m[2], LinkSelf{ID: "agency-1", Name: "admin.agency.example", URL: "https://admin.agency.example", Pub: me.Pub})
+	if err != nil || got.Kind != LinkManaged || got.Role != RoleOperator {
+		t.Fatalf("%+v %v", got, err)
+	}
+	l, _ := FindLink("agency-1")
+	if l.Kind != LinkManager || l.Role != RoleOperator {
+		t.Fatalf("the managing server's link here: %+v", l)
+	}
+	if a := LinkAudit(10, true); len(a) != 1 || a[0].Op != "linked" {
+		t.Fatalf("audit %+v", a)
+	}
+
+	// requests from it are audited, refused ones too
+	saveLink(Link{ID: me.ID, Name: "admin.agency.example", Pub: me.Pub, Kind: LinkManager, Role: RoleOperator})
+	sign := func(req string) LinkSigned {
+		k, _ := linkKey()
+		ts := strconvItoa(time.Now().Unix())
+		body := []byte(req)
+		return LinkSigned{From: me.ID, Time: ts, Method: "POST", Path: "/api/v1/link/rpc", Body: body,
+			Signature: base64.StdEncoding.EncodeToString(ed25519.Sign(k, linkMessage(me.ID, me.ID, "POST", "/api/v1/link/rpc", ts, body)))}
+	}
+	r := LinkServe(sign(`{"op":"deleteApp","by":"sam","params":{"app":"shop","confirm":"shop"}}`))
+	if r.Status != 403 {
+		t.Fatalf("an operator deleted an app: %+v", r)
+	}
+	a := LinkAudit(10, true)
+	if a[0].Op != "deleteApp" || a[0].Allowed || a[0].By != "sam" || strings.Contains(a[0].Detail, "confirm") {
+		t.Fatalf("audit %+v", a[0])
+	}
+}
+
+func strconvItoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestJoinManaged(t *testing.T) {
+	me := linkTest(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(LinkSelf{ID: "shop-9f", Name: "admin.shop.example", URL: "https://admin.shop.example", Pub: me.Pub, Kind: LinkManaged, Role: RoleAdmin})
+	}))
+	defer srv.Close()
+	linkBase = func(string) string { return srv.URL }
+	linkClient = srv.Client()
+	l, err := New(io.Discard).LinkJoin("nooklink_admin.shop.example/"+strings.Repeat("a", 43), "Second Chance Records")
+	if err != nil || l.Kind != LinkClient || l.Role != RoleAdmin || l.Entity != "Second Chance Records" {
+		t.Fatalf("%+v %v", l, err)
 	}
 }

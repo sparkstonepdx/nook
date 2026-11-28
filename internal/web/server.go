@@ -293,9 +293,10 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/ports", false, helper("setPorts", p("app", "ports", "revoke"), true))
 	add("POST", "/api/apps/:app/move", false, s.moveApp)
 	add("GET", "/api/links", false, helper("links", nil, false))
-	add("POST", "/api/links/code", false, helper("linkCode", p("kind"), false))
+	add("POST", "/api/links/code", false, helper("linkCode", p("kind", "role"), false))
+	add("GET", "/api/links/audit", false, helper("linkAudit", p("all"), false))
 	add("POST", "/api/links/join", false, func(c *ctx) (any, error) {
-		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "linkJoin", By: c.me, Secret: c.str("code")}, time.Minute)
+		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "linkJoin", By: c.me, Secret: c.str("code"), Params: map[string]string{"entity": c.str("entity")}}, time.Minute)
 		if err != nil {
 			return nil, fail(502, err.Error())
 		}

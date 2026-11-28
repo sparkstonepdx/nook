@@ -43,7 +43,14 @@ import (
 )
 
 const (
-	LinkSame = "same" // both servers are yours: everything, and users kept in step
+	LinkSame    = "same"    // both servers are yours: everything, and users kept in step
+	LinkManaged = "managed" // a code's kind: this server is to be managed by the one that takes it
+	LinkManager = "manager" // on a managed server: the server that manages it, with its Role
+	LinkClient  = "client"  // on the managing server: a server it manages, in its Entity
+
+	RoleOperator = "operator" // deploys, store, env, domains, updates, logs
+	RoleAdmin    = "admin"    // everything a local admin does, but backups' settings
+
 	linkTTL  = 24 * time.Hour
 	linkSkew = 5 * time.Minute
 )
@@ -63,8 +70,10 @@ type Link struct {
 	Name  string `json:"name"` // its dashboard's address
 	URL   string `json:"url"`  // https://NAME
 	Pub   string `json:"pub"`  // its Ed25519 public key, base64
-	Kind  string `json:"kind"` // LinkSame
-	Since int64  `json:"since"`
+	Kind   string `json:"kind"`             // LinkSame, LinkManager or LinkClient
+	Role   string `json:"role,omitempty"`   // a managed link's: RoleOperator or RoleAdmin
+	Entity string `json:"entity,omitempty"` // on the managing side: which client the server belongs to
+	Since  int64  `json:"since"`
 	Seen  int64  `json:"seen,omitempty"` // the last request it sent that checked out
 }
 
@@ -74,7 +83,8 @@ type LinkSelf struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
 	Pub  string `json:"pub"`
-	Kind string `json:"kind,omitempty"` // in a hello's answer: what the link is
+	Kind string `json:"kind,omitempty"` // in a hello's answer: what the link is (LinkSame or LinkManaged)
+	Role string `json:"role,omitempty"` // and a managed link's role
 }
 
 func readLinks() []Link {
@@ -164,6 +174,7 @@ type linkCode struct {
 	Hash    string `json:"hash"`
 	Expires int64  `json:"expires"`
 	Kind    string `json:"kind"`
+	Role    string `json:"role,omitempty"`
 }
 
 func codesPath() string { return filepath.Join(linkDir, "codes.json") }
@@ -183,9 +194,17 @@ func writeCodes(c []linkCode) error {
 	return config.WriteAtomic(codesPath(), b, 0o600)
 }
 
-// LinkCode makes a one-time code another server takes to link with this one.
-func (h *Host) LinkCode(kind string) (string, error) {
-	if kind != LinkSame {
+// LinkCode makes a one-time code another server takes to link with this one: kind LinkSame for another server
+// of yours, or LinkManaged (with a role) to let that server's owner manage this one. The managed server always
+// makes the code, so it always opts in.
+func (h *Host) LinkCode(kind, role string) (string, error) {
+	switch {
+	case kind == LinkSame:
+		role = ""
+	case kind == LinkManaged && (role == RoleOperator || role == RoleAdmin):
+	case kind == LinkManaged:
+		return "", fmt.Errorf("a managed link is %s or %s, not %q", RoleOperator, RoleAdmin, role)
+	default:
 		return "", fmt.Errorf("unknown kind of link %q", kind)
 	}
 	me, err := linkSelf()
@@ -197,7 +216,7 @@ func (h *Host) LinkCode(kind string) (string, error) {
 	secret := base64.RawURLEncoding.EncodeToString(b)
 	linkMu.Lock()
 	defer linkMu.Unlock()
-	if err := writeCodes(append(readCodes(), linkCode{Hash: pairHash(secret), Expires: time.Now().Add(linkTTL).Unix(), Kind: kind})); err != nil {
+	if err := writeCodes(append(readCodes(), linkCode{Hash: pairHash(secret), Expires: time.Now().Add(linkTTL).Unix(), Kind: kind, Role: role})); err != nil {
 		return "", err
 	}
 	return "nooklink_" + me.Name + "/" + secret, nil
@@ -234,18 +253,26 @@ func (h *Host) LinkHello(secret string, other LinkSelf) (LinkSelf, error) {
 	if err != nil {
 		return LinkSelf{}, err
 	}
-	if err := saveLink(Link{ID: other.ID, Name: other.Name, URL: other.URL, Pub: other.Pub, Kind: c.Kind, Since: time.Now().Unix()}); err != nil {
+	kind := c.Kind
+	if kind == LinkManaged {
+		kind = LinkManager // here, the other server manages this one
+	}
+	if err := saveLink(Link{ID: other.ID, Name: other.Name, URL: other.URL, Pub: other.Pub, Kind: kind, Role: c.Role, Since: time.Now().Unix()}); err != nil {
 		return LinkSelf{}, err
 	}
-	me.Kind = c.Kind
+	if kind == LinkManager {
+		linkAudit(Link{Name: other.Name}, "", "linked", fmt.Sprintf("manages this server as %s", c.Role), true)
+	}
+	me.Kind, me.Role = c.Kind, c.Role
 	return me, nil
 }
 
 // linkClient talks to other servers (a var for tests).
 var linkClient = &http.Client{Timeout: 15 * time.Minute}
 
-// LinkJoin takes another server's code and links this server with it.
-func (h *Host) LinkJoin(code string) (Link, error) {
+// LinkJoin takes another server's code and links this server with it. For a managed server, entity is the client
+// it belongs to here (its address when empty).
+func (h *Host) LinkJoin(code, entity string) (Link, error) {
 	m := linkRE.FindStringSubmatch(strings.TrimSpace(code))
 	if m == nil {
 		return Link{}, errors.New("a link code looks like nooklink_admin.example.com/…: make one on the other server's Server page")
@@ -271,14 +298,27 @@ func (h *Host) LinkJoin(code string) (Link, error) {
 	if other.Name != m[1] {
 		return Link{}, fmt.Errorf("%s says it's %s", m[1], other.Name)
 	}
-	if other.Kind != LinkSame {
+	l := Link{ID: other.ID, Name: other.Name, URL: other.URL, Pub: other.Pub, Since: time.Now().Unix()}
+	switch {
+	case other.Kind == LinkSame:
+		l.Kind = LinkSame
+	case other.Kind == LinkManaged && (other.Role == RoleOperator || other.Role == RoleAdmin):
+		l.Kind, l.Role = LinkClient, other.Role
+		l.Entity = strings.TrimSpace(entity)
+		if l.Entity == "" || len(l.Entity) > 60 || strings.ContainsAny(l.Entity, "\n\r<>") {
+			l.Entity = other.Name
+		}
+	default:
 		return Link{}, fmt.Errorf("%s offered a kind of link this server doesn't know (%q): update nook here", m[1], other.Kind)
 	}
-	l := Link{ID: other.ID, Name: other.Name, URL: other.URL, Pub: other.Pub, Kind: other.Kind, Since: time.Now().Unix()}
 	if err := saveLink(l); err != nil {
 		return Link{}, err
 	}
-	h.say("linked with %s (%s)", l.Name, l.ID)
+	if l.Kind == LinkClient {
+		h.say("this server now manages %s (%s) as %s, for %s", l.Name, l.ID, l.Role, l.Entity)
+	} else {
+		h.say("linked with %s (%s)", l.Name, l.ID)
+	}
 	return l, nil
 }
 
@@ -397,6 +437,26 @@ func LinkCheck(s LinkSigned) (Link, error) {
 var linkRefused = map[string]bool{"pairStep": true, "deploy": true, "undeploy": true, "tokenApp": true, "ciEnv": true,
 	"serverScan": true, "serverSetup": true, "serverSetupStatus": true}
 
+// operatorOps is what a manager with the operator role may run: deploys, the store, env, domains and
+// certificates, system and nook updates, logs, and looking. Not: deleting or moving apps, users (they're never
+// sent), backups' settings or restores, catalogs, public ports, the dashboard's address, restarting the server.
+var operatorOps = map[string]bool{
+	"overview": true, "headroom": true, "domains": true, "createApp": true, "syncApp": true, "syncAll": true, "reloadCaddy": true,
+	"siteOp": true, "siteLogs": true, "syncLog": true, "instructions": true, "setRepo": true, "setLogin": true, "setLimits": true,
+	"envGet": true, "envApply": true, "tokenList": true, "tokenCreate": true, "tokenRevoke": true,
+	"grant": true, "setDefaultDomain": true, "dnsPlan": true, "dnsSet": true, "notFoundGet": true, "notFoundSet": true,
+	"certs": true, "certSet": true, "certRemove": true, "caddyPlugin": true, "caddyUpgrade": true,
+	"store": true, "storeJobs": true, "storeImage": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true,
+	"services": true, "bind": true, "unbind": true, "directory": true, "directorySet": true,
+	"updateStatus": true, "updateNow": true, "updateCheck": true,
+	"systemStatus": true, "systemCheck": true, "systemUpdate": true, "systemAuto": true,
+	"backupStatus": true, "backupRun": true, "backupSnapshots": true, "appDisk": true,
+}
+
+// managerRefused is what no manager runs, admin or not: backups' settings (a client's backups go only where the
+// client set them, #111), and taking an app's data off the server.
+var managerRefused = map[string]bool{"backupSetup": true, "appMoveOut": true, "appMoveIn": true, "appMoveBack": true}
+
 // LinkAllowed says whether a linked server may run op here.
 func LinkAllowed(l Link, op string) error {
 	if linkRefused[op] || strings.HasPrefix(op, "link") {
@@ -405,10 +465,16 @@ func LinkAllowed(l Link, op string) error {
 	if !rpc.Ops[op] {
 		return fmt.Errorf("unknown operation %q", op)
 	}
-	if l.Kind != LinkSame {
-		return fmt.Errorf("a %s link can't run %s", l.Kind, op)
+	switch l.Kind {
+	case LinkSame:
+		return nil
+	case LinkManager:
+		if managerRefused[op] || (l.Role != RoleAdmin && !operatorOps[op]) {
+			return fmt.Errorf("%s manages this server as %s, which doesn't include %s", l.Name, cmp.Or(l.Role, "nothing"), op)
+		}
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%s can't run anything on this server (it's one this server manages)", l.Name)
 }
 
 // LinkServe runs a linked server's helper request here, once its signature has checked out.
@@ -421,7 +487,11 @@ func LinkServe(s LinkSigned) rpc.Response {
 	if err := json.Unmarshal(s.Body, &req); err != nil {
 		return rpc.Response{Error: "bad request", Status: 400}
 	}
-	if err := LinkAllowed(l, req.Op); err != nil {
+	err = LinkAllowed(l, req.Op)
+	if l.Kind == LinkManager {
+		linkAudit(l, req.By, req.Op, auditDetail(req.Params), err == nil)
+	}
+	if err != nil {
 		return rpc.Response{Error: err.Error(), Status: 403}
 	}
 	req.By = cmp.Or(req.By, "someone") + "@" + l.Name
@@ -439,6 +509,9 @@ func (h *Host) LinkRemove(id string, tell bool) error {
 		if _, err := LinkSend(id, "POST", "/api/v1/link/bye", []byte("{}")); err != nil {
 			h.say("couldn't tell %s (%v): it keeps its side until it's removed there too, but this server refuses it", l.Name, err)
 		}
+	}
+	if l.Kind == LinkManager {
+		linkAudit(l, "", "unlinked", "", true)
 	}
 	linkMu.Lock()
 	defer linkMu.Unlock()
