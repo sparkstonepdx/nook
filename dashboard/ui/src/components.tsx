@@ -31,7 +31,7 @@ export function Nav() {
         </div>
       </header>
       <Dock>
-        <OverflowNav class="dock-nav" link="dock-link" up />
+        <OverflowNav class="dock-nav" link="dock-link" up max={5} />
       </Dock>
     </>
   );
@@ -44,8 +44,9 @@ const MenuIcon = () => (
 
 // Wordbag's overflow row (its PageHead): the sections that fit stay in the bar, in order, and the rest go under ≡.
 // The current one always stays out in the bar. Widths come from an invisible copy at natural size, so nothing
-// wraps or scrolls sideways. up: the menu opens upward (the dock, at the bottom of the screen).
-function OverflowNav(props: { class: string; link: string; up?: boolean }) {
+// wraps or scrolls sideways. up: the menu opens upward (the dock, at the bottom of the screen). max: the most slots in
+// the row, ≡ included (build-docs: the bottom row holds five at most, however wide the screen).
+function OverflowNav(props: { class: string; link: string; up?: boolean; max?: number }) {
   const location = useLocation();
   const [shown, setShown] = createSignal(links.length);
   const [open, setOpen] = createSignal(false);
@@ -55,8 +56,9 @@ function OverflowNav(props: { class: string; link: string; up?: boolean }) {
     const widths = [...ruler.children].map((el) => (el as HTMLElement).offsetWidth);
     const more = widths.pop()!, room = nav.clientWidth;
     const total = (n: number) => widths.slice(0, n).reduce((a, b) => a + b, 0);
-    if (total(widths.length) <= room) return setShown(widths.length);
-    let n = widths.length - 1;
+    const max = props.max ?? Infinity;
+    if (widths.length <= max && total(widths.length) <= room) return setShown(widths.length);
+    let n = Math.min(widths.length - 1, max - 1); // room for ≡
     while (n > 1 && total(n) + more > room) n--;
     setShown(n);
   };
