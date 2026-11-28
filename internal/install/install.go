@@ -151,7 +151,7 @@ SITE_MAX_BYTES=1073741824
 		write(config.DashboardEnv, "", 0o600)
 	}
 	if !fileExists(config.UpdateEnv) {
-		write(config.UpdateEnv, "# GITHUB_TOKEN=<read-only token for the nook repo, only needed while it's private>\n# UPDATE_NOTIFY_URL=https://ntfy.sh/<your-topic>   (or a Discord/Slack webhook)\n", 0o600)
+		write(config.UpdateEnv, "# GITHUB_TOKEN=<any read-only token: optional, raises GitHub's limit from 60 to 5,000 requests an hour>\n# UPDATE_NOTIFY_URL=https://ntfy.sh/<your-topic>   (or a Discord/Slack webhook)\n", 0o600)
 	}
 	s := config.Load()
 

@@ -89,24 +89,30 @@ func get(url, token, accept string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// getTo streams the body into w, refusing anything over max bytes.
+// getTo streams the body into w, refusing anything over max bytes. A token GitHub refuses (expired, revoked, or
+// without access) is dropped for a second try: the nook repo and the catalog are public, so the token is only an
+// extra, and a stale one in update.env shouldn't stop updates.
 func getTo(url, token, accept string, w io.Writer, max int64, size func(int64)) error {
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Accept", accept)
-	req.Header.Set("User-Agent", "nook-updater")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token) // Go drops it on the redirect to the asset host
-	}
-	resp, err := client.Do(req)
+	resp, err := request(url, token, accept)
 	if err != nil {
 		return err
+	}
+	if token != "" && (resp.StatusCode == 401 || resp.StatusCode == 403) && !rateLimited(resp) {
+		why := githubMessage(resp)
+		resp.Body.Close()
+		if resp, err = request(url, "", accept); err != nil {
+			return err
+		}
+		if resp.StatusCode == 200 {
+			fmt.Fprintf(os.Stderr, "GitHub refused the GITHUB_TOKEN in %s (%s); went without it. Replace or remove it.\n", config.UpdateEnv, why)
+		}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
 		return errors.New("not found (private repo? put a read-only GITHUB_TOKEN in " + config.UpdateEnv + ")")
 	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("GitHub returned %s", resp.Status)
+		return githubError(resp, token != "")
 	}
 	if size != nil && resp.ContentLength > 0 {
 		size(resp.ContentLength)
@@ -116,6 +122,51 @@ func getTo(url, token, accept string, w io.Writer, max int64, size func(int64)) 
 		err = fmt.Errorf("download over %d MB", max>>20)
 	}
 	return err
+}
+
+func request(url, token, accept string) (*http.Response, error) {
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Accept", accept)
+	req.Header.Set("User-Agent", "nook-updater")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token) // Go drops it on the redirect to the asset host
+	}
+	return client.Do(req)
+}
+
+// rateLimited: GitHub's 403 (or 429) for a used-up rate limit, rather than for the token.
+func rateLimited(resp *http.Response) bool {
+	return (resp.StatusCode == 403 || resp.StatusCode == 429) && (resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != "")
+}
+
+// githubMessage is the "message" of GitHub's JSON error, or the status.
+func githubMessage(resp *http.Response) string {
+	var e struct {
+		Message string `json:"message"`
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if json.Unmarshal(b, &e) == nil && e.Message != "" {
+		return e.Message
+	}
+	return resp.Status
+}
+
+// githubError says why GitHub said no, and what to do about it.
+func githubError(resp *http.Response, withToken bool) error {
+	if rateLimited(resp) {
+		until := ""
+		if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			until = " until " + time.Unix(reset, 0).Local().Format("15:04")
+		} else if ra := resp.Header.Get("Retry-After"); ra != "" {
+			until = " for " + ra + " s"
+		}
+		hint := "a GITHUB_TOKEN (any read-only token) in " + config.UpdateEnv + " raises the limit from 60 to 5,000 an hour"
+		if withToken {
+			hint = "the token's own limit is used up too"
+		}
+		return fmt.Errorf("GitHub's rate limit for this server is used up%s (%s)", until, hint)
+	}
+	return fmt.Errorf("GitHub returned %s: %s", resp.Status, githubMessage(resp))
 }
 
 func latest() (*release, string, error) {
