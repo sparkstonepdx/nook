@@ -43,6 +43,7 @@ var Ops = map[string]bool{
 	"services": true, "bind": true, "unbind": true, "migrate": true, "instructions": true, "setRepo": true, "setLogin": true, "setPorts": true, "ciEnv": true,
 	"store": true, "storeJobs": true, "backupStatus": true, "appDisk": true, "pairStep": true, "backupSetup": true, "backupRun": true, "backupSnapshots": true, "backupRestore": true, "backupSkip": true, "storeInstall": true, "storeUpdate": true, "storePolicy": true, "catalogAdd": true, "headroom": true, "setLimits": true, "catalogRemove": true, "storeImage": true, "certs": true, "certSet": true, "certRemove": true, "caddyPlugin": true, "caddyUpgrade": true,
 	"directory": true, "directorySet": true, "dnsPlan": true, "dnsSet": true,
+	"serverScan": true, "serverSetup": true, "serverSetupStatus": true,
 	"systemStatus": true, "systemCheck": true, "systemUpdate": true, "systemAuto": true, "systemRestart": true,
 }
 

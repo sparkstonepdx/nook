@@ -210,7 +210,7 @@ func (s *Server) routes() []route {
 			if params != nil {
 				req.Params = params(c)
 			}
-			if op == "envApply" || op == "bind" || op == "storeInstall" || op == "backupSetup" {
+			if op == "envApply" || op == "bind" || op == "storeInstall" || op == "backupSetup" || op == "serverSetup" {
 				req.Set, req.Unset = map[string]string{}, []string{}
 				if m, ok := c.body["set"].(map[string]any); ok {
 					for k, v := range m {
@@ -285,6 +285,9 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
 	add("POST", "/api/apps/:app/login", false, helper("setLogin", p("app", "on"), true))
 	add("POST", "/api/apps/:app/ports", false, helper("setPorts", p("app", "ports", "revoke"), true))
+	add("POST", "/api/servers/scan", false, helper("serverScan", p("host", "port", "user"), false))
+	add("POST", "/api/servers/setup", false, helper("serverSetup", p("host", "port", "user", "fingerprint", "move"), false))
+	add("GET", "/api/servers/setup", false, helper("serverSetupStatus", nil, false))
 	add("GET", "/api/system", false, helper("systemStatus", nil, false))
 	add("POST", "/api/system/check", false, helper("systemCheck", nil, true))
 	add("POST", "/api/system/update", false, helper("systemUpdate", p("security"), true))
