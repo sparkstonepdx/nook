@@ -227,8 +227,14 @@ func (s *Server) routes() []route {
 					}
 				}
 			}
-			resp, err := rpc.Call(s.Socket, req, 10*time.Minute)
-			if err != nil {
+			var resp *rpc.Response
+			var err error
+			// another server's: X-Nook-Server names a linked server (links themselves are always this server's)
+			if srv := c.r.Header.Get("X-Nook-Server"); srv != "" && !strings.HasPrefix(op, "link") {
+				if resp, err = s.call(srv, c.me, req); err != nil {
+					return nil, err
+				}
+			} else if resp, err = rpc.Call(s.Socket, req, 10*time.Minute); err != nil {
 				return nil, fail(502, err.Error())
 			}
 			if resp.Error != "" {
@@ -285,6 +291,20 @@ func (s *Server) routes() []route {
 	add("POST", "/api/apps/:app/repo", false, helper("setRepo", p("app", "repo"), false))
 	add("POST", "/api/apps/:app/login", false, helper("setLogin", p("app", "on"), true))
 	add("POST", "/api/apps/:app/ports", false, helper("setPorts", p("app", "ports", "revoke"), true))
+	add("POST", "/api/apps/:app/move", false, s.moveApp)
+	add("GET", "/api/links", false, helper("links", nil, false))
+	add("POST", "/api/links/code", false, helper("linkCode", p("kind"), false))
+	add("POST", "/api/links/join", false, func(c *ctx) (any, error) {
+		resp, err := rpc.Call(s.Socket, rpc.Request{Op: "linkJoin", By: c.me, Secret: c.str("code")}, time.Minute)
+		if err != nil {
+			return nil, fail(502, err.Error())
+		}
+		if resp.OK {
+			go s.SyncUsers()
+		}
+		return map[string]any{"ok": resp.OK, "code": resp.Code, "cmd": resp.Cmd, "out": resp.Out}, nil
+	})
+	add("POST", "/api/links/:id/remove", false, helper("linkRemove", p("id"), true))
 	add("POST", "/api/servers/scan", false, helper("serverScan", p("host", "port", "user"), false))
 	add("POST", "/api/servers/setup", false, helper("serverSetup", p("host", "port", "user", "fingerprint", "move"), false))
 	add("GET", "/api/servers/setup", false, helper("serverSetupStatus", nil, false))
@@ -519,6 +539,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/v1/directory" || strings.HasPrefix(r.URL.Path, "/api/v1/directory/") {
 		s.publicDirectory(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/link/") {
+		s.linkAPI(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/pair/") {

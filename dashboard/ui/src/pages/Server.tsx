@@ -1,5 +1,6 @@
 import { For, Show, createMemo, createResource, createSignal, onCleanup } from "solid-js";
-import { api, runCmd } from "../api";
+import { api, runCmd, server } from "../api";
+import { LinkedServers, current, links } from "../links";
 import { StatusBadge } from "../components";
 import { ServerSetup } from "../serversetup";
 import { SystemUpdates } from "../system";
@@ -87,7 +88,10 @@ export default function Server(props: { caddy: string; onLimits: (app: string) =
       <div class="chart-head system-head"><span class="eyebrow">System</span></div>
       <SystemUpdates />
       <div class="chart-head system-head"><span class="eyebrow">Servers</span></div>
-      <ServerSetup />
+      <Show when={!server} fallback={<p class="hint">Linking servers and setting up new ones is on each server's own dashboard. You're acting on {current()?.name} from {links()?.self?.name}.</p>}>
+        <LinkedServers />
+        <ServerSetup />
+      </Show>
     </section>
   );
 }

@@ -18,11 +18,25 @@ export async function loadSession() {
   } catch { setUser(null); }
 }
 
-export async function api<T = any>(path: string, body?: unknown): Promise<T> {
+// Which server the dashboard is acting on: "" for this one, or a linked server's id. Every request carries it
+// (X-Nook-Server) and this server passes it on. It lasts for the tab; switching reloads, so nothing cached for
+// one server shows for another.
+const SERVER_KEY = "nook.server";
+export const server: string = (() => { try { return sessionStorage.getItem(SERVER_KEY) ?? ""; } catch { return ""; } })();
+export function switchServer(id: string, to = location.pathname) {
+  try { if (id) sessionStorage.setItem(SERVER_KEY, id); else sessionStorage.removeItem(SERVER_KEY); } catch { /* private mode */ }
+  location.assign(to);
+}
+
+// on: the server to ask, when it isn't the one being acted on ("" is still that one; use the id for this server)
+export async function api<T = any>(path: string, body?: unknown, on?: string): Promise<T> {
   const post = body !== undefined;
+  const headers: Record<string, string> = post ? { "content-type": "application/json" } : {};
+  const srv = on ?? server;
+  if (srv) headers["x-nook-server"] = srv;
   const res = await fetch(path, {
     method: post ? "POST" : "GET",
-    headers: post ? { "content-type": "application/json" } : {},
+    headers,
     body: post ? JSON.stringify(body) : undefined,
     credentials: "same-origin",
   });
