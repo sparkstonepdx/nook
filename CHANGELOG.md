@@ -1,5 +1,11 @@
 # nook
 
+## 1.49.1
+
+### Patch Changes
+
+- 0565b9c: Update checks and downloads no longer fail with a bare 403. A GITHUB_TOKEN in update.env that GitHub refuses (expired, revoked, no access) is skipped and the request goes without it: the nook repo and the catalog are public. A used-up rate limit says so, with when it resets and that a token raises it; any other refusal shows GitHub's own message.
+
 ## 1.49.0
 
 ### Minor Changes
