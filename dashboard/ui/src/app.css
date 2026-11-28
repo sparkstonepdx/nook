@@ -321,3 +321,5 @@ img.app-coin { background: var(--surface-2, transparent); }
 .system-updates .row-end { flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-xs); margin-left: auto; }
 .system-packages summary { cursor: pointer; color: var(--muted); padding-block: var(--space-xs); }
 .dns-value { overflow-wrap: anywhere; }
+
+.fingerprint { word-break: break-all; }

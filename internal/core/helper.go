@@ -344,6 +344,17 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "backupSkip":
 		on := p["skip"] == "true"
 		return command("nook-admin backup skip "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetBackupSkip(p["app"], on) })
+	case "serverScan":
+		port, _ := strconv.Atoi(p["port"])
+		keys, err := ScanHostKeys(SetupTarget{Host: p["host"], Port: port, User: p["user"]})
+		return data(map[string]any{"keys": keys}, err)
+	case "serverSetup":
+		port, _ := strconv.Atoi(p["port"])
+		err := New(io.Discard).SetupServer(SetupTarget{Host: p["host"], Port: port, User: p["user"]}, p["fingerprint"],
+			SetupLogin{Password: req.Set["password"], Key: req.Set["key"]}, p["move"] == "true")
+		return data(map[string]any{"started": err == nil}, err)
+	case "serverSetupStatus":
+		return data(map[string]any{"job": ServerSetupStatus()}, nil)
 	case "storeJobs":
 		return data(map[string]any{"jobs": StoreJobs()}, nil)
 	case "storeInstall":
