@@ -32,7 +32,7 @@ export function ServerPick() {
           const s = servers().find((x) => x.id === e.currentTarget.value);
           switchServer(s && !s.here ? s.id : "");
         }}>
-          <For each={servers()}>{(s) => <option value={s.id}>{s.name}{s.here ? " (this one)" : ""}</option>}</For>
+          <For each={servers()}>{(s) => <option value={s.id}>{s.name}{s.here ? " (this dashboard)" : ""}</option>}</For>
         </select>
       </label>
     </Show>
@@ -177,15 +177,15 @@ function MoveSheet(props: { app: string; open: boolean; onClose: () => void; onM
     <Sheet open={props.open} title={`Move ${props.app}`} onClose={close} wide>
       <Show when={done()} fallback={
         <div class="stack">
-          <p class="hint">{props.app} stops here, is backed up, and starts on the other server from that backup, with its settings. Both servers need to back up to the same repository. An app using or providing a service (a database) can't move this way yet.</p>
+          <p class="hint">{props.app} stops on {current()?.name}, is backed up, and starts on the other server from that backup, with its settings. Both servers need to back up to the same repository. An app using or providing a service (a database) can't move this way yet.</p>
           <Field label="To">
             <select class="select" value={target()?.id} onChange={(e) => setTo(e.currentTarget.value)}>
-              <For each={targets()}>{(s) => <option value={s.id}>{s.name}{s.here ? " (this one)" : ""}</option>}</For>
+              <For each={targets()}>{(s) => <option value={s.id}>{s.name}{s.here ? " (this dashboard)" : ""}</option>}</For>
             </select>
           </Field>
           <div class="actions-row">
             <Show when={asking()} fallback={<button class="btn" disabled={busy() || !target()} onClick={() => setAsking(true)}>{busy() ? "Moving…" : `Move to ${target()?.name ?? ""}`}</button>}>
-              <ConfirmStrip ask={`Move ${props.app}? Its sites are down until it's started there and DNS points at ${target()?.name}. The copy here is deleted once it's running there.`} yes="Move"
+              <ConfirmStrip ask={`Move ${props.app}? Its sites are down until it's started there and DNS points at ${target()?.name}. The copy on ${current()?.name} is deleted once it's running there.`} yes="Move"
                 onNo={() => setAsking(false)} onYes={async () => {
                   setAsking(false); setBusy(true);
                   try { setDone(await api(`/api/apps/${props.app}/move`, { to: target()!.here ? links()!.self!.id : target()!.id })); }
