@@ -1,5 +1,11 @@
 # nook
 
+## 1.49.2
+
+### Patch Changes
+
+- 22379c9: The dock at the bottom of a phone-width dashboard holds five slots at most (four sections and ≡), however wide the screen, and each is 48 px tall, following build-docs' bottom row rule.
+
 ## 1.49.1
 
 ### Patch Changes
