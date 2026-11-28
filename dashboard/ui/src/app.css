@@ -25,7 +25,7 @@ body { font-family: var(--font); }
 .nav-menu a.nav-active { color: var(--accent-text); }
 .nav-ruler { position: absolute; visibility: hidden; pointer-events: none; display: flex; left: 0; top: 0; width: 0; height: 0; overflow: hidden; }
 .nav-ruler > * { flex: none; }
-.dock-link { padding-inline: var(--space-md); font-size: var(--text-xs); }
+.dock-link { padding-inline: var(--space-md); font-size: var(--text-xs); min-height: 48px; } /* build-docs: 48 in a bottom bar */
 @media (min-width: 700px) { .phone-only { display: none !important; } }
 @media (max-width: 699.98px) { .wide-only { display: none !important; } }
 
