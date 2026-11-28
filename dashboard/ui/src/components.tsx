@@ -1,4 +1,5 @@
 import { A, useLocation, useNavigate } from "@solidjs/router";
+import { ServerPick } from "./links";
 import { For, Show, createEffect, createMemo, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import { Ansi } from "./ansi";
@@ -26,6 +27,7 @@ export function Nav() {
         <A href="/" class="brand"><Logo /></A>
         <OverflowNav class="menubar wide-only" link="nav-link" />
         <div class="navbar-end">
+          <ServerPick />
           <span class="text-secondary">{user()}</span>
           <button class="btn btn-ghost btn-sm" onClick={logout}>Log out</button>
         </div>

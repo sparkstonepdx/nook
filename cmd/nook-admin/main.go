@@ -63,6 +63,7 @@ const usage = `nook-admin: run apps and static sites on this server.  (root)
   nook-admin bind APP SERVICE [--provider ID] [--as NAME=NEWNAME ...]   e.g. bind blog postgres
   nook-admin unbind APP SERVICE                  (a database is kept)
   nook-admin dns plan|set APP NAME               the records its port grant on NAME needs, through the saved Cloudflare token
+  nook-admin link [list|code|join CODE|remove ID]  servers linked with this one (#111)
   nook-admin migrate APP SERVICE TO              move it to another provider with its data (postgres-17)
   nook-admin firewall                            reload the rules that keep apps off each other's ports
   nook-admin version
@@ -294,6 +295,33 @@ func main() {
 		default:
 			die(fmt.Errorf("usage: nook-admin move code | move from CODE | move resume"))
 		}
+	case "link":
+		needRoot()
+		switch {
+		case len(args) == 0 || args[0] == "list":
+			i := core.GetLinks()
+			if len(i.Links) == 0 {
+				fmt.Println("no linked servers")
+			}
+			for _, l := range i.Links {
+				seen := "never"
+				if l.Seen > 0 {
+					seen = time.Unix(l.Seen, 0).Format(time.DateTime)
+				}
+				fmt.Printf("%s  %s  %s  last heard from %s\n", l.ID, l.Name, l.Kind, seen)
+			}
+		case args[0] == "code":
+			code, err := h.LinkCode(core.LinkSame)
+			die(err)
+			fmt.Printf("On the other server, within 24 hours: Server page, Linked servers, Link, and paste\n\n  %s\n\nor run nook-admin link join CODE there. Keep it private: whoever has it can act on this server.\n", code)
+		case len(args) == 2 && args[0] == "join":
+			_, err := h.LinkJoin(args[1])
+			die(err)
+		case len(args) == 2 && (args[0] == "remove" || args[0] == "revoke"):
+			die(h.LinkRemove(args[1], true))
+		default:
+			die(fmt.Errorf("usage: nook-admin link [list] | link code | link join CODE | link remove ID"))
+		}
 	case "helper":
 		needRoot()
 		log.SetFlags(0)
@@ -324,8 +352,10 @@ func serveWeb() {
 	die(err)
 	store, err := web.OpenStore(config.WebStateDir)
 	die(err)
+	ws := &web.Server{Store: store, Socket: config.HelperSocket, UI: ui, Version: version}
+	go ws.RunUserSync()
 	srv := &http.Server{
-		Handler:           &web.Server{Store: store, Socket: config.HelperSocket, UI: ui, Version: version},
+		Handler:           ws,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      11 * time.Minute,

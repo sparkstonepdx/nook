@@ -1,4 +1,5 @@
 import { For, Show, createResource, createSignal, onCleanup } from "solid-js";
+import { MoveRow, OtherServersApps } from "../links";
 import { A } from "@solidjs/router";
 import { api, runCmd, setResult, type CmdResult } from "../api";
 import { StatusBadge, Field, PageHead, Sheet, TokenBox, Confirm } from "../components";
@@ -177,6 +178,8 @@ export default function Apps() {
         </Show>
       </Show>
 
+      <OtherServersApps />
+
       <Show when={data()}>
         <Server caddy={data()!.system.caddy} onLimits={(a) => setLimits(a)} after={after} />
       </Show>
@@ -318,6 +321,7 @@ function ManageSheet(props: { app?: App; onClose: () => void; after: (p?: Promis
             </ul>
           </Show>
           <AppBackupRow app={a().name} after={props.after} />
+          <MoveRow app={a().name} onMoved={() => { props.onClose(); props.after(); }} />
           <Show when={a().redirects.length}><p class="hint">{a().redirects.join(", ")} redirect to the root domain.</p></Show>
           <form class="card-border danger-zone" onSubmit={(e) => { e.preventDefault(); const n = a().name; setConfirm(""); props.onClose(); props.after(runCmd(`Deleted ${n}`, `/api/apps/${n}/delete`, { confirm: n })); }}>
             <div class="field-row">

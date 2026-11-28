@@ -55,7 +55,9 @@ func newFakeServer(t *testing.T) *fakeServer {
 		}
 		return out, nil
 	}
-	t.Cleanup(func() { sshKeyscan, sshRun, sshDir, setupFile, setupScript = oldScan, oldRun, oldDir, oldFile, oldScript })
+	t.Cleanup(func() {
+		sshKeyscan, sshRun, sshDir, setupFile, setupScript = oldScan, oldRun, oldDir, oldFile, oldScript
+	})
 	return f
 }
 

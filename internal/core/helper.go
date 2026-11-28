@@ -344,6 +344,66 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	case "backupSkip":
 		on := p["skip"] == "true"
 		return command("nook-admin backup skip "+p["app"]+" "+map[bool]string{true: "on", false: "off"}[on], func(h *Host) error { return h.SetBackupSkip(p["app"], on) })
+	case "links":
+		return data(GetLinks(), nil)
+	case "linkCode":
+		code, err := h.LinkCode(cmp.Or(p["kind"], LinkSame))
+		return data(map[string]any{"code": code}, err)
+	case "linkJoin":
+		return command("nook-admin link join CODE", func(h *Host) error { _, err := h.LinkJoin(req.Secret); return err })
+	case "linkRemove":
+		return command("nook-admin link remove "+p["id"], func(h *Host) error { return h.LinkRemove(p["id"], p["tell"] != "false") })
+	case "linkHello":
+		var other LinkSelf
+		if err := json.Unmarshal([]byte(req.Set["body"]), &other); err != nil {
+			return data(nil, errors.New("bad request"))
+		}
+		me, err := h.LinkHello(req.Secret, other)
+		if err != nil {
+			return rpc.Response{Error: err.Error(), Status: 401}
+		}
+		return data(me, nil)
+	case "linkServe":
+		r := LinkServe(linkSigned(req))
+		b, _ := json.Marshal(r)
+		return rpc.Response{OK: true, Data: b}
+	case "linkCheck":
+		l, err := LinkCheck(linkSigned(req))
+		if err != nil {
+			return rpc.Response{Error: err.Error(), Status: 401}
+		}
+		return data(l, nil)
+	case "linkSend":
+		out, err := LinkSend(p["server"], cmp.Or(p["method"], "POST"), p["path"], []byte(req.Set["body"]))
+		if err != nil {
+			st := 502
+			if le, ok := err.(linkError); ok && le.status < 500 {
+				st = le.status
+			}
+			return rpc.Response{Error: err.Error(), Status: st}
+		}
+		return rpc.Response{OK: true, Data: out}
+	case "appMoveOut":
+		var out bytes.Buffer
+		b, err := New(&out).AppMoveOut(p["app"])
+		return data(map[string]any{"bundle": b, "out": out.String()}, err)
+	case "appMoveIn":
+		var b AppBundle
+		if err := json.Unmarshal([]byte(req.Set["bundle"]), &b); err != nil {
+			return data(nil, errors.New("bad bundle"))
+		}
+		var out bytes.Buffer
+		tok, err := New(&out).AppMoveIn(b)
+		if err != nil && tok == "" {
+			return data(nil, fmt.Errorf("%v\n%s", err, out.String()))
+		}
+		r := map[string]any{"token": tok, "out": out.String()}
+		if err != nil {
+			r["warning"] = err.Error()
+		}
+		return data(r, nil)
+	case "appMoveBack":
+		return command("nook-admin move-app back "+p["app"], func(h *Host) error { return h.AppMoveBack(p["app"]) })
 	case "serverScan":
 		port, _ := strconv.Atoi(p["port"])
 		keys, err := ScanHostKeys(SetupTarget{Host: p["host"], Port: port, User: p["user"]})
@@ -460,4 +520,11 @@ func Dispatch(req *rpc.Request) rpc.Response {
 	}
 	_ = h
 	return rpc.Response{Error: "unknown operation", Status: 404}
+}
+
+// linkSigned is a signed request as the dashboard passes it: the headers in Params, the body in Set (kept out of
+// the log, since a forwarded request can carry secrets).
+func linkSigned(req *rpc.Request) LinkSigned {
+	p := req.Params
+	return LinkSigned{From: p["from"], Time: p["time"], Signature: p["signature"], Method: p["method"], Path: p["path"], Body: []byte(req.Set["body"])}
 }

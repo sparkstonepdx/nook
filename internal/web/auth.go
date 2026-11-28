@@ -33,6 +33,8 @@ type Store struct {
 	Dir    string
 	mu     sync.Mutex
 	secret []byte
+	// OnChange runs (in its own goroutine) after a login is added, changed or removed: linked servers hear of it.
+	OnChange func()
 }
 
 type User struct {
@@ -44,6 +46,8 @@ type User struct {
 	// Role is "" (an admin: the whole dashboard, every app) or "member": no dashboard, only the sites of Apps.
 	Role string   `json:"role,omitempty"`
 	Apps []string `json:"apps,omitempty"`
+	// Updated is when this login last changed, which decides between linked servers' copies (RFC 3339, UTC).
+	Updated string `json:"updated,omitempty"`
 }
 
 const Member = "member"
@@ -127,13 +131,15 @@ func (s *Store) SetPassword(name, pw, invitedBy string) User {
 	prev, existed := m[name]
 	salt := make([]byte, 16)
 	rand.Read(salt)
-	u := User{Salt: hex.EncodeToString(salt), Gen: prev.Gen + 1, Created: prev.Created, InvitedBy: prev.InvitedBy, Role: prev.Role, Apps: prev.Apps}
+	u := User{Salt: hex.EncodeToString(salt), Gen: prev.Gen + 1, Created: prev.Created, InvitedBy: prev.InvitedBy, Role: prev.Role, Apps: prev.Apps, Updated: stamp()}
 	u.Hash = hashPassword(pw, u.Salt)
 	if !existed {
 		u.Created, u.InvitedBy = time.Now().UTC().Format(time.RFC3339), invitedBy
 	}
 	m[name] = u
 	s.saveUsers(m)
+	s.forgetRemoved(name)
+	s.changed()
 	return u
 }
 
@@ -150,8 +156,10 @@ func (s *Store) SetAccess(name, role string, apps []string) bool {
 	if role == Member {
 		u.Apps = cleanApps(apps)
 	}
+	u.Updated = stamp()
 	m[name] = u
 	s.saveUsers(m)
+	s.changed()
 	return true
 }
 
@@ -175,6 +183,10 @@ func (s *Store) Remove(name string) bool {
 	}
 	delete(m, name)
 	s.saveUsers(m)
+	r := s.removed()
+	r[name] = stamp()
+	s.saveRemoved(r)
+	s.changed()
 	return true
 }
 

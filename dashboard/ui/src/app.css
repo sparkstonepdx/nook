@@ -323,3 +323,7 @@ img.app-coin { background: var(--surface-2, transparent); }
 .dns-value { overflow-wrap: anywhere; }
 
 .fingerprint { word-break: break-all; }
+.server-pick .select { min-height: 2.25rem; padding-block: 0; font-size: var(--text-sm); max-width: min(14rem, 45vw); text-overflow: ellipsis; }
+.other-server { margin-top: var(--space-lg); }
+.navbar-end .btn { white-space: nowrap; }
+@media (max-width: 600px) { .server-pick + .text-secondary { display: none; } }
